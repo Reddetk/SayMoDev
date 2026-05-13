@@ -10,8 +10,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 
-	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	"github.com/Reddetk/SayMoDev/identy-service/core/consts"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 	"github.com/Reddetk/SayMoDev/identy-service/port/out"
 )
@@ -181,7 +181,10 @@ func (s *AuthService) Login(
 	)
 
 	// [10] Событие SessionOpened — fire-and-forget
-	s.eventsProducer.SessionOpened(ctx, account.UUID(), session.SessionID())
+	err = s.eventsProducer.SessionOpened(ctx, account.UUID(), session.SessionID())
+	if err != nil {
+		span.RecordError(err)
+	}
 
 	// [11] Формируем LoginResult VO
 	result, err := valobj.NewLoginResult(

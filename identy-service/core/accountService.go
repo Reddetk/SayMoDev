@@ -49,7 +49,7 @@ type AccountService struct {
 	eventsProducer out.AccountEventsProducer
 }
 
-var accTracer = otel.Tracer("identy-service/core/account")
+var accTracer = otel.Tracer("iam.AccountService")
 
 func NewAccountService(otpR out.OtpRepository, accR out.AccountRepository, eventsP out.AccountEventsProducer) *AccountService {
 	return &AccountService{otpR, accR, eventsP}

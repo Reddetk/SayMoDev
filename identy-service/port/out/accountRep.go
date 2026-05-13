@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
+	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 )
 
 type AccountRepository interface {
@@ -37,4 +38,20 @@ type AccountRepository interface {
 	// - обновляет metadata аккаунта (updated_at)
 	// Полный агрегат передаётся для консистентности; адаптер извлекает нужные поля
 	SaveSessionWithTx(ctx context.Context, account *entity.Account) error
+
+	// FindByGoogleUID загружает Account по google_uid (claim sub из Google ID token).
+	// Возвращает ErrAccountNotFound если google_uid не существует.
+	// Приоритетный lookup для OAuth flow — google_uid стабилен при смене email в Google.
+	FindByGoogleUID(ctx context.Context, googleUID string) (*entity.Account, error)
+
+	// LinkGoogleUID привязывает google_uid к существующему аккаунту.
+	// CASE C: пользователь ранее регистрировался через email/password.
+	// Атомарное UPDATE accounts SET google_uid=? WHERE id=? AND google_uid IS NULL.
+	LinkGoogleUID(ctx context.Context, accountID string, googleUID string) error
+
+	// CreateOAuthAccountWithTx создаёт аккаунт через OAuth в ACID-транзакции:
+	//   - INSERT account (password_hash=NULL, google_uid, email, role, status=active)
+	//   - INSERT outbox: AccountRegistered {registrationMethod: "oauth2", classifier}
+	// Если classifier=nil и role=patient — логика согласно missing spec / design gap выше.
+	CreateOAuthAccountWithTx(ctx context.Context, params valobj.GoogleClaims) (*entity.Account, error)
 }
