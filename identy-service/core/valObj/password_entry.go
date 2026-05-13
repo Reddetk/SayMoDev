@@ -1,8 +1,8 @@
 package valobj
 
 import (
-	"IAM/core/consts"
-	corerr "IAM/core/coreErrors"
+	"github.com/Reddetk/SayMoDev.git/identy-service/core/consts"
+	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
 )
 
 // PasswordEntry represents a bcrypt hash in password history

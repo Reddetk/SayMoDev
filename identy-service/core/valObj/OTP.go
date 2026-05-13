@@ -1,9 +1,10 @@
 package valobj
 
 import (
-	corerr "IAM/core/coreErrors"
 	"crypto/sha256"
 	"encoding/hex"
+
+	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
 )
 
 type OTP struct {

@@ -16,13 +16,14 @@
 package entity
 
 import (
-	"IAM/core/consts"
 	"time"
+
+	"github.com/Reddetk/SayMoDev.git/identy-service/core/consts"
 
 	"github.com/google/uuid"
 
-	corerr "IAM/core/coreErrors"
-	valobj "IAM/core/valObj"
+	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
+	valobj "github.com/Reddetk/SayMoDev.git/identy-service/core/valObj"
 )
 
 // Account represents the Account aggregate root

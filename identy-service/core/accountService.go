@@ -1,14 +1,14 @@
-// Package core implement core service logic for IAM
+// Package core implement core service logic for
 package core
 
 // AccountService covers:
-// POST /iam/auth/register/verify          — IssueRegistrationOTP (delegated to OTPService)
-// POST /iam/auth/register                 — Register: OTP verify -> createAccount (ACID) + events via outbox
-// POST /iam/auth/password-reset           — PasswordReset: OTP verify -> T4 mass-revoke -> update
-// POST /iam/auth/password-change          — PasswordChange: history check -> T4 mass-revoke -> update
-// POST /iam/admin/accounts/:id/lock       — LockAccount: T4 mass-revoke -> lock
-// POST /iam/admin/accounts/:id/unlock     — UnlockAccount: restore active status
-// DELETE /iam/admin/accounts/:id          — SoftDelete: T4 mass-revoke -> mark deleted
+// POST //auth/register/verify          — IssueRegistrationOTP (delegated to OTPService)
+// POST //auth/register                 — Register: OTP verify -> createAccount (ACID) + events via outbox
+// POST //auth/password-reset           — PasswordReset: OTP verify -> T4 mass-revoke -> update
+// POST //auth/password-change          — PasswordChange: history check -> T4 mass-revoke -> update
+// POST //admin/accounts/:id/lock       — LockAccount: T4 mass-revoke -> lock
+// POST //admin/accounts/:id/unlock     — UnlockAccount: restore active status
+// DELETE //admin/accounts/:id          — SoftDelete: T4 mass-revoke -> mark deleted
 //
 // Invariants enforced here (see spec §):
 //   §1  Anti-enumeration: Register and PasswordReset return identical response shape regardless of email existence
@@ -27,14 +27,16 @@ package core
 //   AccessTokenRevoked                          — published for every T4 mass-revoke operation
 
 import (
-	"IAM/core/entity"
 	"context"
 	"crypto/subtle"
 	"time"
 
-	corerr "IAM/core/coreErrors"
-	valobj "IAM/core/valObj"
-	"IAM/port/out"
+	"github.com/Reddetk/SayMoDev.git/identy-service/core/entity"
+
+	"github.com/Reddetk/SayMoDev.git/identy-service/port/out"
+
+	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
+	valobj "github.com/Reddetk/SayMoDev.git/identy-service/core/valObj"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -47,13 +49,13 @@ type AccountService struct {
 	eventsProducer out.AccountEventsProducer
 }
 
-var accTracer = otel.Tracer("iam/core/account")
+var accTracer = otel.Tracer("identy-service/core/account")
 
 func NewAccountService(otpR out.OtpRepository, accR out.AccountRepository, eventsP out.AccountEventsProducer) *AccountService {
 	return &AccountService{otpR, accR, eventsP}
 }
 
-// Register — Step 2: POST /iam/auth/register
+// Register — Step 2: POST //auth/register
 //
 // Flow:
 //  1. Anti-enumeration: if email already registered — simulate OTP latency, return nil (identical response shape)
@@ -166,7 +168,7 @@ func (a *AccountService) createAccount(
 	return nil
 }
 
-// PasswordReset — POST /iam/auth/password-reset (unauthenticated, OTP-gated)
+// PasswordReset — POST //auth/password-reset (unauthenticated, OTP-gated)
 //
 // Flow:
 //  1. Constant-time OTP verification (§7)
@@ -222,7 +224,7 @@ func (a *AccountService) PasswordReset(
 	return nil
 }
 
-// PasswordChange — POST /iam/auth/password-change (authenticated)
+// PasswordChange — POST //auth/password-change (authenticated)
 //
 // Flow:
 //  1. entity.ChangePassword performs T4 mass-revoke: rev++, all sessions cleared, returns revokedJTIs (ADR)
@@ -274,7 +276,7 @@ func (a *AccountService) PasswordChange(
 	return nil
 }
 
-// LockAccount — POST /iam/admin/accounts/:id/lock
+// LockAccount — POST //admin/accounts/:id/lock
 //
 // §6 Lock Semantics: rev++ + all jti blacklisted + sessions deleted atomically.
 // Both brute-force auto-lock and admin-lock must follow the same T4 mass-revoke procedure.
@@ -319,7 +321,7 @@ func (a *AccountService) LockAccount(
 	return nil
 }
 
-// UnlockAccount — POST /iam/admin/accounts/:id/unlock
+// UnlockAccount — POST //admin/accounts/:id/unlock
 //
 // Restores status=active, clears lockedUntil.
 // Does NOT issue a new token — actor must re-authenticate.
@@ -352,7 +354,7 @@ func (a *AccountService) UnlockAccount(
 	return nil
 }
 
-// SoftDelete — DELETE /iam/admin/accounts/:id
+// SoftDelete — DELETE //admin/accounts/:id
 //
 // T4 Mass-Revoke: status=deleted, rev++, all sessions cleared.
 // Downstream cascade (BC#2 billing archive, BC#4 PII anonymisation) is driven by AccountDeleted event.

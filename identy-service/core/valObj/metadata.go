@@ -4,7 +4,7 @@ package valobj
 import (
 	"time"
 
-	corerr "IAM/core/coreErrors"
+	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
 )
 
 // Metadata represents creation/update timestamps

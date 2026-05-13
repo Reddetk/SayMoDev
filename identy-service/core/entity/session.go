@@ -1,10 +1,11 @@
 package entity
 
 import (
-	"IAM/core/consts"
-	corerr "IAM/core/coreErrors"
-	valobj "IAM/core/valObj"
 	"time"
+
+	"github.com/Reddetk/SayMoDev.git/identy-service/core/consts"
+	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
+	valobj "github.com/Reddetk/SayMoDev.git/identy-service/core/valObj"
 
 	"github.com/google/uuid"
 )

@@ -1,6 +1,6 @@
 package valobj
 
-import corerr "IAM/core/coreErrors"
+import corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
 
 type OTPPurpose string
 

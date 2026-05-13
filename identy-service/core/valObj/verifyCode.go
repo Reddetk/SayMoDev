@@ -1,10 +1,11 @@
 package valobj
 
 import (
-	"IAM/core/consts"
 	"time"
 
-	corerr "IAM/core/coreErrors"
+	"github.com/Reddetk/SayMoDev.git/identy-service/core/consts"
+
+	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
 )
 
 // VerificationCode represents a one-time verification code record.

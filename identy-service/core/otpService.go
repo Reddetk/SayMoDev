@@ -1,15 +1,17 @@
 package core
 
 import (
-	"IAM/core/consts"
-	corerr "IAM/core/coreErrors"
-	valobj "IAM/core/valObj"
-	"IAM/port/out"
 	"context"
 	"crypto/rand"
 	"fmt"
 	"math/big"
 	"time"
+
+	"github.com/Reddetk/SayMoDev.git/identy-service/port/out"
+
+	"github.com/Reddetk/SayMoDev.git/identy-service/core/consts"
+	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
+	valobj "github.com/Reddetk/SayMoDev.git/identy-service/core/valObj"
 
 	"go.opentelemetry.io/otel"
 )
@@ -24,7 +26,7 @@ func NewOTPService(o out.OtpRepository, aR out.AccountRepository, e out.EmailBox
 	return &OTPService{o, aR, e}
 }
 
-var otpTracer = otel.Tracer("iam/core/otp")
+var otpTracer = otel.Tracer("identy-service/core/otp")
 
 func (s *OTPService) IssueRegistrationOTP(ctx context.Context, email string) error {
 	return s.issueOTP(ctx, email, valobj.OTPPurposeRegistration, consts.OTPTTL)

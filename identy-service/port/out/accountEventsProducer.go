@@ -1,8 +1,9 @@
 package out
 
 import (
-	valobj "IAM/core/valObj"
 	"context"
+
+	valobj "github.com/Reddetk/SayMoDev.git/identy-service/core/valObj"
 )
 
 // AccountEventsProducer defines outbox events for Account aggregate

@@ -1,8 +1,9 @@
 package out
 
 import (
-	"IAM/core/entity"
 	"context"
+
+	"github.com/Reddetk/SayMoDev.git/identy-service/core/entity"
 )
 
 type AccountRepository interface {

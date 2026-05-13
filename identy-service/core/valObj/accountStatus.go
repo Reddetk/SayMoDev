@@ -20,7 +20,7 @@
 //   - NewXxxNow()    -- creates VO with current time, cannot fail
 package valobj
 
-import corerr "IAM/core/coreErrors"
+import corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
 
 type AccountStatus string
 
