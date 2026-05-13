@@ -121,7 +121,7 @@ func (s *AuthService) Login(
 		return valobj.LoginResult{}, corerr.ErrInvalidCredentials
 	}
 
-	return s.openSessionAndIssueToken(ctx, span, account, fingerprint)
+	return s.openSessionAndIssueToken(ctx, account, fingerprint)
 }
 
 // InitiateGoogleOAuth реализует GET /iam/auth/oauth/google.
@@ -221,7 +221,7 @@ func (s *AuthService) HandleGoogleCallback(
 	)
 
 	// [5] Lookup / create account
-	account, err := s.resolveOAuthAccount(ctx, span, claims)
+	account, err := s.resolveOAuthAccount(ctx, claims)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "resolve account failed")
@@ -237,7 +237,7 @@ func (s *AuthService) HandleGoogleCallback(
 	}
 
 	// [7]
-	return s.openSessionAndIssueToken(ctx, span, account, fingerprint)
+	return s.openSessionAndIssueToken(ctx, account, fingerprint)
 }
 
 // resolveOAuthAccount реализует lookup-стратегию CASE A / B / C / D.
@@ -305,14 +305,12 @@ func (s *AuthService) resolveOAuthAccount(
 // Вынесен согласно KISS/YAGNI: оба публичных метода завершаются идентичным выходом.
 func (s *AuthService) openSessionAndIssueToken(
 	ctx context.Context,
-	span interface {
-		RecordError(error, ...interface{})
-		SetAttributes(...attribute.KeyValue)
-		SetStatus(codes.Code, string)
-	},
 	account *entity.Account,
 	fingerprint string,
 ) (valobj.LoginResult, error) {
+	ctx, span := authTracer.Start(ctx, "AuthService.openSessionAndIssueToken")
+	defer span.End()
+
 	sessionID := uuid.NewString()
 	jti := uuid.NewString()
 
