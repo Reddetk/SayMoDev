@@ -1,0 +1,42 @@
+package valobj
+
+import (
+	"IAM/core/consts"
+	corerr "IAM/core/coreErrors"
+)
+
+// PasswordEntry represents a bcrypt hash in password history
+type PasswordEntry struct {
+	hash     string
+	metadata Metadata
+}
+
+func validatePasswordHash(hash string) error {
+	if hash == "" {
+		return corerr.ErrPasswordHashRequired
+	}
+	if len(hash) != 60 {
+		return corerr.ErrPasswordHashInvalidLength
+	}
+	if !consts.BcryptHashRegex.MatchString(hash) {
+		return corerr.ErrPasswordHashInvalidFormat
+	}
+	return nil
+}
+
+func NewPasswordEntry(hash string, metadata Metadata) (PasswordEntry, error) {
+	if err := validatePasswordHash(hash); err != nil {
+		return PasswordEntry{}, err
+	}
+	return PasswordEntry{
+		hash:     hash,
+		metadata: metadata,
+	}, nil
+}
+
+func (p PasswordEntry) Hash() string       { return p.hash }
+func (p PasswordEntry) Metadata() Metadata { return p.metadata }
+
+func (p PasswordEntry) Equals(other PasswordEntry) bool {
+	return p.hash == other.hash && p.metadata == other.metadata
+}
