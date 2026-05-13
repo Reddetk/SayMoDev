@@ -119,7 +119,4 @@ type AccountEventsProducer interface {
 		deletedAt int64,
 		adminID string,
 	) error
-
-
-	SessionOpened(ctx context.Context, accountID string, sessionID string) error
 }

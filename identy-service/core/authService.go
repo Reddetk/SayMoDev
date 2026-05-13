@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -180,8 +181,8 @@ func (s *AuthService) Login(
 		attribute.String("auth.jti", issuedJTI),
 	)
 
-	// [10] Событие SessionOpened — fire-and-forget
-	err = s.eventsProducer.SessionOpened(ctx, account.UUID(), session.SessionID())
+	// [10] Событие SessionCreated — fire-and-forget
+	err = s.eventsProducer.SessionCreated(ctx, account.UUID(), session.SessionID(), fingerprint, time.Now().Unix())
 	if err != nil {
 		span.RecordError(err)
 	}
