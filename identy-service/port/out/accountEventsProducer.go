@@ -70,12 +70,26 @@ type AccountEventsProducer interface {
 		createdAt int64,
 	) error
 
-	// SessionTerminated — Logout, eviction, админ-отзыв
-	// Adds JTI to Redis blacklist with TTL = remaining token lifetime
+	// SessionTerminated — Logout или eviction (LRU-вытеснение при 6-м логине).
+	// Добавляет JTI в Redis blacklist с TTL = остаток жизни токена.
+	// Инициатор: сам пользователь (logout) или система (eviction).
 	SessionTerminated(
 		ctx context.Context,
 		accountID string,
 		sessionID string,
+		terminatedAt int64,
+	) error
+
+	// SessionTerminatedByAdmin — Административное завершение сессии.
+	// Используется только для DELETE /iam/admin/sessions/:id.
+	// Отличается от SessionTerminated наличием adminID в теле события —
+	// обеспечивает audit-трейл для compliance и инцидент-респонса.
+	// ADR-001: введен отдельным методом вместо перегрузки SessionTerminated полем adminID.
+	SessionTerminatedByAdmin(
+		ctx context.Context,
+		accountID string,
+		sessionID string,
+		adminID string,
 		terminatedAt int64,
 	) error
 
@@ -112,7 +126,7 @@ type AccountEventsProducer interface {
 	// Mandatory event for financial and medical data compliance
 	// BC#2: (1) recurring_unbind, (2) billing_archive snapshot, (3) physical DELETE subscription + payment_method
 	// BC#4: PII anonymisation in lesson_answers, physical DELETE active_programs, accessible_lessons
-	// Invariant: unbind → archive → delete
+	// Invariant: unbind -> archive -> delete
 	AccountDeleted(
 		ctx context.Context,
 		accountID string,
