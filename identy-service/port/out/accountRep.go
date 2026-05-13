@@ -30,6 +30,14 @@ type AccountRepository interface {
 	// Возвращает ErrAccountNotFound если email не существует
 	FindByEmail(ctx context.Context, email string) (*entity.Account, error)
 
+	// FindByAccountID загружает Account aggregate по UUID аккаунта.
+	// Используется SessionService: accountID поступает из AuthContext JWT,
+	// избавляя от дополнительного lookup по email или sessionID.
+	// Включает все активные сессии (нужны для eviction-проверки и RevokeSession).
+	// Возвращает ErrAccountNotFound если accountID не существует.
+	// ADR-001: симметрично FindByEmail, не нарушает гексагональную архитектуру.
+	FindByAccountID(ctx context.Context, accountID string) (*entity.Account, error)
+
 	// SaveSessionWithTx сохраняет состояние Account после account.OpenSession()
 	// ACID транзакция:
 	// - upsert активных сессий аккаунта
@@ -37,6 +45,16 @@ type AccountRepository interface {
 	// - обновляет metadata аккаунта (updated_at)
 	// Полный агрегат передаётся для консистентности; адаптер извлекает нужные поля
 	SaveSessionWithTx(ctx context.Context, account *entity.Account) error
+
+	// DeleteSessionWithTx удаляет сессию из агрегата и персистирует результат.
+	// ACID транзакция:
+	// - DELETE sessions WHERE session_id=? AND account_id=?
+	// - INSERT blacklist (jti, ttl) через outbox (L3)
+	// - обновляет metadata аккаунта (updated_at)
+	// Полный агрегат передаётся после account.RevokeSession(); адаптер берёт нужные поля.
+	// ADR-001: выделен отдельно от SaveSessionWithTx для явного разделения
+	// жизненного цикла создания и завершения сессии.
+	DeleteSessionWithTx(ctx context.Context, account *entity.Account, revokedJTI string) error
 
 	// FindByGoogleUID загружает Account по google_uid (claim sub из Google ID token).
 	// Возвращает ErrAccountNotFound если google_uid не существует.
