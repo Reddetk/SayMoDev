@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
-	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 )
 
 type AccountRepository interface {
@@ -53,5 +52,5 @@ type AccountRepository interface {
 	//   - INSERT account (password_hash=NULL, google_uid, email, role, status=active)
 	//   - INSERT outbox: AccountRegistered {registrationMethod: "oauth2", classifier}
 	// Если classifier=nil и role=patient — логика согласно missing spec / design gap выше.
-	CreateOAuthAccountWithTx(ctx context.Context, params valobj.GoogleClaims) (*entity.Account, error)
+	CreateOAuthAccountWithTx(ctx context.Context, params *entity.Account) (*entity.Account, error)
 }
