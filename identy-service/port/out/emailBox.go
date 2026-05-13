@@ -4,7 +4,7 @@ package out
 import (
 	"context"
 
-	valobj "github.com/Reddetk/SayMoDev.git/identy-service/core/valObj"
+	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 )
 
 type EmailBox interface {

@@ -1,8 +1,8 @@
 package valobj
 
 import (
-	"github.com/Reddetk/SayMoDev.git/identy-service/core/consts"
-	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
+	"github.com/Reddetk/SayMoDev/identy-service/core/consts"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 )
 
 // Classifier represents immutable tuple (difficulty, aphasiaType)

@@ -1,7 +1,7 @@
 package valobj
 
 import (
-	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 
 	"github.com/google/uuid"
 )

@@ -7,11 +7,11 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/Reddetk/SayMoDev.git/identy-service/port/out"
+	"github.com/Reddetk/SayMoDev/identy-service/port/out"
 
-	"github.com/Reddetk/SayMoDev.git/identy-service/core/consts"
-	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
-	valobj "github.com/Reddetk/SayMoDev.git/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/core/consts"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 
 	"go.opentelemetry.io/otel"
 )

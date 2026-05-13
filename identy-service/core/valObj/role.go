@@ -1,6 +1,6 @@
 package valobj
 
-import corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
+import corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 
 type Role string
 

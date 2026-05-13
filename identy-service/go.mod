@@ -1,4 +1,4 @@
-module github.com/Reddetk/SayMoDev.git/identy-service
+module github.com/Reddetk/SayMoDev/identy-service
 
 go 1.25.0
 

@@ -31,12 +31,12 @@ import (
 	"crypto/subtle"
 	"time"
 
-	"github.com/Reddetk/SayMoDev.git/identy-service/core/entity"
+	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
 
-	"github.com/Reddetk/SayMoDev.git/identy-service/port/out"
+	"github.com/Reddetk/SayMoDev/identy-service/port/out"
 
-	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
-	valobj "github.com/Reddetk/SayMoDev.git/identy-service/core/valObj"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"

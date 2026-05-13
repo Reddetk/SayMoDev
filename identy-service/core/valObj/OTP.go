@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
-	corerr "github.com/Reddetk/SayMoDev.git/identy-service/core/coreErrors"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 )
 
 type OTP struct {
