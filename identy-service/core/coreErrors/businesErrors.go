@@ -240,3 +240,44 @@ var (
 var (
 	ErrInvalidRegistrationMethod = errors.New("invalid registration method: must be 'email' or 'oauth2'")
 )
+
+// ---------------------------------------------------------------------------
+// Token domain errors — Spec §Token Model and Lifecycle Invariant
+// ---------------------------------------------------------------------------
+var (
+	// ErrJTIGenerationFailed is returned by TokenIssuer.Issue when all
+	// consts.JTIMaxRetries UUID v4 generation attempts produce a colliding jti.
+	// Probability per attempt: ~10^-18. Returning this error indicates
+	// a catastrophic failure in the UUID source, not a business rule violation.
+	// Mapped to HTTP 500.
+	ErrJTIGenerationFailed = errors.New("jti generation failed after max retries")
+
+	// ErrTokenRevoked is returned by token validation middleware when
+	// TokenBlacklist.Contains returns true for the incoming jti.
+	// Spec §Blacklist: "L1 in-memory → L2 Redis → L3 PostgreSQL (source of truth)"
+	// Mapped to HTTP 401.
+	ErrTokenRevoked = errors.New("token has been revoked")
+
+	// ErrJWKSKeysEmpty is returned by TokenIssuer.GetPublicKeys when the
+	// adapter finds no active RSA keys in the key store.
+	// This is a configuration error, not a transient failure.
+	// Mapped to HTTP 503 (downstream cannot verify tokens).
+	ErrJWKSKeysEmpty = errors.New("no active JWKS keys found")
+)
+
+// ---------------------------------------------------------------------------
+// JWKS Key VO construction errors — RFC 7517
+// ---------------------------------------------------------------------------
+var (
+	// ErrJWKSKeyIDEmpty is returned by NewJWKSKey when kid is blank.
+	// kid must match the kid header in the signed JWT.
+	ErrJWKSKeyIDEmpty = errors.New("jwks key: kid is required")
+
+	// ErrJWKSKeyModulusEmpty is returned by NewJWKSKey when the RSA modulus (n) is blank.
+	// n is the base64url-encoded modulus of the RSA public key (RFC 7518 §6.3.1.1).
+	ErrJWKSKeyModulusEmpty = errors.New("jwks key: modulus (n) is required")
+
+	// ErrJWKSKeyExponentEmpty is returned by NewJWKSKey when the RSA exponent (e) is blank.
+	// e is the base64url-encoded public exponent of the RSA key (RFC 7518 §6.3.1.2).
+	ErrJWKSKeyExponentEmpty = errors.New("jwks key: exponent (e) is required")
+)
