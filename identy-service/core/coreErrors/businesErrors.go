@@ -19,6 +19,7 @@ var (
 	ErrEmailDeliveryFailed = errors.New("email selivery failed")
 	ErrOTPRepository       = errors.New("otp rep req is failed")
 	ErrAccountRepository   = errors.New("acc rep is failed")
+	ErrAccountNotFound     = errors.New("account not found")
 )
 
 // ---------------------------------------------------------------------------

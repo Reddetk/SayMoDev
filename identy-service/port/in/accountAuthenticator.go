@@ -24,4 +24,16 @@ type AccountAuthenticator interface {
 		fingerprint string,
 		clientIP string,
 	) (valobj.LoginResult, error)
+	InitiateGoogleOAuth(
+		ctx context.Context,
+		clientIP string,
+	) (redirectURL string, state valobj.OAuthState, err error)
+	HandleGoogleCallback(
+		ctx context.Context,
+		code string,
+		receivedCSRF string,
+		storedState valobj.OAuthState,
+		fingerprint string,
+		clientIP string,
+	) (valobj.LoginResult, error)
 }
