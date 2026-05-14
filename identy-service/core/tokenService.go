@@ -15,26 +15,20 @@ import (
 
 var tokenTracer = otel.Tracer("iam.tokenService")
 
-// TokenService реализует in-port TokenOperator.
+// TokenService реализует in-порты TokenOperator и TokenValidator.
 //
-// Изолированная ответственность: выпуск и отзыв токенов.
+// Изолированная ответственность: выпуск, отзыв и валидация токенов.
 // Не знает о AuthService, SessionService или AccountService.
 //
 // Зависимости (out-порты):
-//   - TokenIssuer     -- Issue (RS256 подпись, jti retry) + GetPublicKeys (JWKS)
-//   - TokenBlacklist  -- Add (L2 Redis)
+//   - TokenIssuer          -- Issue + Verify (RS256) + GetPublicKeys (JWKS)
+//   - TokenBlacklist       -- Add (L2 запись) + Contains (L1->L2 чтение)
 //   - AccountEventsProducer -- AccessTokenRevoked
 //
 // G9 Write Order (blacklist):
 //
 //	[1] tokenBlacklist.Add   -- Redis L2
-//	[2] AccessTokenRevoked   -- outbox → PostgreSQL L3 (асинхронно через отдельный out-порт)
-//
-// Замечание по G9: в этом сервисе L2 пишется первым
-// (отличие от SessionService/AccountService, где L3 атомарно через DeleteSessionWithTx).
-// RevokeToken может вызываться автономно (mass-revoke через AccountService)
-// без удаления сессии -- поэтому L3 запись происходит как fire-and-forget
-// через событие с outbox-доставкой.
+//	[2] AccessTokenRevoked   -- outbox → PostgreSQL L3 (асинхронно)
 type TokenService struct {
 	tokenIssuer    out.TokenIssuer
 	tokenBlacklist out.TokenBlacklist
@@ -59,8 +53,7 @@ func NewTokenService(
 //
 //	[1] tokenIssuer.Issue -- RS256, kid из активного ключа, jti retry до JTIMaxRetries
 //
-// TokenService не знает о сессии. AuthService вызывает IssueToken
-// после успешного SaveSessionWithTx -- порядок гарантирует handler.
+// Вызывается только из AuthService после успешного SaveSessionWithTx.
 func (s *TokenService) IssueToken(
 	ctx context.Context,
 	accountID string,
@@ -92,12 +85,12 @@ func (s *TokenService) IssueToken(
 //
 // G9 Write Order:
 //
-//	[1] tokenBlacklist.Add (L2 Redis)   -- блокирующее действие; ошибка == откат операции
-//	[2] AccessTokenRevoked event        -- fire-and-forget; outbox worker доставит в L3
+//	[1] tokenBlacklist.Add (L2 Redis)  -- блокирующее действие; ошибка == откат
+//	[2] AccessTokenRevoked event       -- fire-and-forget; outbox worker → L3
 //
-// reason: "password_changed" | "account_locked" | "admin_revoke" | ...
-// expiresAtUnix: exp claim токена -- адаптер вычислит TTL как (exp - now).
-// если TTL <= 0 — tokenBlacklist.Add является no-op (токен уже истёк).
+// reason: "password_changed" | "account_locked" | "admin_revoke"
+// expiresAtUnix: exp claim; адаптер вычислит TTL как (exp - now).
+// TTL <= 0 -- Add является no-op (токен уже истёк).
 func (s *TokenService) RevokeToken(
 	ctx context.Context,
 	accountID string,
@@ -115,18 +108,12 @@ func (s *TokenService) RevokeToken(
 		attribute.String("token.revoke_reason", reason),
 	)
 
-	// [1] L2 Redis -- блокирующее действие.
-	// Ошибка L2 -- жёсткий отказ: токен останется валидным до истечения, если L2 недоступен.
-	// Отличие от SessionService: здесь нет синхронной L3-записи через DeleteSessionWithTx,
-	// поэтому L2-ошибка -- основание для отката.
 	if err := s.tokenBlacklist.Add(ctx, jti, expiresAtUnix); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "blacklist write failed")
 		return corerr.ErrTokenRevoked
 	}
 
-	// [2] fire-and-forget: outbox worker доставит в L3.
-	// Ошибка публикации не отменяет запись в L2 -- токен уже заблокирован.
 	if evErr := s.eventsProducer.AccessTokenRevoked(
 		ctx,
 		accountID,
@@ -145,10 +132,9 @@ func (s *TokenService) RevokeToken(
 // Цепочка:
 //
 //	[1] tokenIssuer.GetPublicKeys -- адаптер возвращает кешированный срез []JWKSKey
-//	[2] valobj.NewJWKSResponse   -- строит VO, валидирует непустоту среза
+//	[2] valobj.NewJWKSResponse    -- строит VO, валидирует непустоту среза
 //
 // Fail-closed: пустой срез или ошибка адаптера → ErrJWKSKeysEmpty → HTTP 503.
-// Кеширование (TTL=consts.JWKSCacheTTLSeconds) — ответственность адаптера.
 func (s *TokenService) GetJWKS(ctx context.Context) (valobj.JWKSResponse, error) {
 	ctx, span := tokenTracer.Start(ctx, "TokenService.GetJWKS")
 	defer span.End()
@@ -162,7 +148,6 @@ func (s *TokenService) GetJWKS(ctx context.Context) (valobj.JWKSResponse, error)
 
 	resp, err := valobj.NewJWKSResponse(keys)
 	if err != nil {
-		// GetPublicKeys вернул пустой срез без ошибки -- нарушение контракта адаптера
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "empty keys slice from adapter")
 		return valobj.JWKSResponse{}, corerr.ErrJWKSKeysEmpty
@@ -170,4 +155,69 @@ func (s *TokenService) GetJWKS(ctx context.Context) (valobj.JWKSResponse, error)
 
 	span.SetAttributes(attribute.Int("token.jwks_key_count", len(keys)))
 	return resp, nil
+}
+
+// ValidateToken верифицирует rawToken и возвращает AuthContext.
+//
+// Реализует in-порт TokenValidator. Вызывается исключительно из JWTMiddleware.
+//
+// Цепочка:
+//
+//	[1] tokenIssuer.Verify      -- RS256 подпись, exp, iss, aud, kid (re-fetch при неизвестном kid)
+//	[2] tokenBlacklist.Contains -- jti blacklist (L1->L2); fail-closed: ошибка == 401
+//	[3] valobj.NewAuthContext    -- UUID-валидация accountID/sessionID, rev >= 1
+//
+// Все ошибки кроме ErrJWKSKeysEmpty маппируются в ErrTokenRevoked.
+// ErrJWKSKeysEmpty пробрасывается as-is для HTTP 503 в middleware.
+func (s *TokenService) ValidateToken(
+	ctx context.Context,
+	rawToken string,
+) (valobj.AuthContext, error) {
+	ctx, span := tokenTracer.Start(ctx, "TokenService.ValidateToken")
+	defer span.End()
+
+	// [1] RS256 верификация + распарсинг claims
+	accountID, role, sessionID, jti, rev, _, err := s.tokenIssuer.Verify(ctx, rawToken)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "token verification failed")
+		// ErrJWKSKeysEmpty пробрасываем для HTTP 503; все остальные → ErrTokenRevoked
+		if err == corerr.ErrJWKSKeysEmpty {
+			return valobj.AuthContext{}, corerr.ErrJWKSKeysEmpty
+		}
+		return valobj.AuthContext{}, corerr.ErrTokenRevoked
+	}
+
+	span.SetAttributes(
+		attribute.String("token.account_id", accountID),
+		attribute.String("token.jti", jti),
+		attribute.Int64("token.rev", rev),
+	)
+
+	// [2] jti blacklist check -- fail-closed
+	blacklisted, err := s.tokenBlacklist.Contains(ctx, jti)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "blacklist check failed")
+		return valobj.AuthContext{}, corerr.ErrTokenRevoked
+	}
+	if blacklisted {
+		span.SetStatus(codes.Error, "token is blacklisted")
+		return valobj.AuthContext{}, corerr.ErrTokenRevoked
+	}
+
+	// [3] Сборка AuthContext -- UUID и rev валидируются внутри конструктора
+	parsedRole, err := valobj.ParseRole(role)
+	if err != nil {
+		span.RecordError(err)
+		return valobj.AuthContext{}, corerr.ErrTokenRevoked
+	}
+
+	authCtx, err := valobj.NewAuthContext(accountID, parsedRole, sessionID, rev)
+	if err != nil {
+		span.RecordError(err)
+		return valobj.AuthContext{}, corerr.ErrTokenRevoked
+	}
+
+	return authCtx, nil
 }

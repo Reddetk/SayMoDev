@@ -1,5 +1,3 @@
+// Файл удалён: BlackListPort заменён корректным in-портом TokenValidator
+// см. feat(token): ValidateToken commit
 package in
-
-type BlackListPort interface {
-	IsBlackListed(id string) bool
-}
