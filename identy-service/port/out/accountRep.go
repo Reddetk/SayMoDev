@@ -28,6 +28,9 @@ type AccountRepository interface {
 	// FindByEmail загружает Account aggregate по email
 	// Включает все активные сессии и passwordHistory (последние 5)
 	// Возвращает ErrAccountNotFound если email не существует
+	// FindByEmail — ТОЛЬКО для unauthenticated flows:
+	// Login, ConfrimPasswordReset, Register (anti-enumeration check).
+	// Для всех аутентифицированных операций использовать FindByAccountID.
 	FindByEmail(ctx context.Context, email string) (*entity.Account, error)
 
 	// FindByAccountID загружает Account aggregate по UUID аккаунта.

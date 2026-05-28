@@ -20,12 +20,14 @@ import (
 // RouterDeps -- зависимости роутера.
 // Все поля -- in-порты; router не знает о реализациях.
 type RouterDeps struct {
-	TokenValidator    inport.TokenValidator
-	Authenticator     inport.AccountAuthenticator
-	Registrator       inport.AccountRegistrator
-	SessionOperator   inport.SessionOperator
-	TokenOperator     inport.TokenOperator
-	OTPIssuer         inport.OTPIssuer
+	TokenValidator   inport.TokenValidator
+	Authenticator    inport.AccountAuthenticator
+	Registrator      inport.AccountRegistrator
+	SessionOperator  inport.SessionOperator
+	TokenOperator    inport.TokenOperator
+	AccountOpertator inport.AccountOperator
+	PasswordOperator inport.PasswordOperator
+	OTPIssuer        inport.OTPIssuer
 }
 
 // NewGinRouter строит *gin.Engine с полным набором маршрутов BC#1.
@@ -53,7 +55,7 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 			// POST /iam/auth/password-reset
 			auth.POST("/password-reset", handlePasswordResetRequest(deps.OTPIssuer))
 			// POST /iam/auth/password-reset/confirm
-			auth.POST("/password-reset/confirm", handlePasswordResetConfirm(deps.OTPChecker))
+			auth.POST("/password-reset/confirm", handlePasswordResetConfirm(deps.PasswordOperator))
 			// GET /iam/auth/oauth/google
 			auth.GET("/oauth/google", handleOAuthGoogleInitiate(deps.Authenticator))
 			// GET /iam/auth/oauth/google/callback

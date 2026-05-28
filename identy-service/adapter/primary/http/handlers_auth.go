@@ -79,7 +79,7 @@ func handlePasswordResetRequest(otp inport.OTPIssuer) gin.HandlerFunc {
 // handlePasswordResetConfirm -- POST /iam/auth/password-reset/confirm
 // Body: { email, code, newPassword }
 // Response: 200 { message }
-func handlePasswordResetConfirm(otp inport.OTPChecker) gin.HandlerFunc {
+func handlePasswordResetConfirm(otp inport.PasswordOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement
 		c.Status(http.StatusNotImplemented)

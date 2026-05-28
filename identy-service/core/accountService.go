@@ -1,6 +1,8 @@
 // Package core implement core service logic for
 package core
 
+// TODO: optimistic concurrency — адаптер должен проверять rowsAffected и возвращать ErrConflict при rev mismatch
+
 // AccountService covers:
 // POST //auth/register/verify          — IssueRegistrationOTP (delegated to OTPService)
 // POST //auth/register                 — Register: OTP verify -> createAccount (ACID) + events via outbox
@@ -188,13 +190,19 @@ func (a *AccountService) ConfrimPasswordReset(
 	ctx, span := accTracer.Start(ctx, "AccountService.ConfrimPasswordReset")
 	defer span.End()
 
+	account, err := a.accRep.FindByEmail(ctx, email)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
 	if err := a.checkOTP(ctx, email, otp, valobj.OTPPurposePasswordReset); err != nil {
 		span.RecordError(err)
 		return err
 	}
 
 	// T4 Mass-Revoke: ChangePassword increments rev, clears all sessions, returns their JTIs (ADR)
-	revokedJTIs, err := a.ChangePassword(newPasswordHash)
+	revokedJTIs, err := account.ChangePassword(newPasswordHash)
 	if err != nil {
 		span.RecordError(err)
 		return err
@@ -237,11 +245,17 @@ func (a *AccountService) ConfrimPasswordReset(
 // Caller (HTTP handler / application layer) is responsible for verifying the current password before calling this method.
 func (a *AccountService) PasswordChange(
 	ctx context.Context,
-	account *entity.Account,
+	accountID string,
 	newPasswordHash string,
 ) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.PasswordChange")
 	defer span.End()
+
+	account, err := a.accRep.FindByAccountID(ctx, accountID)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
 
 	// T4 Mass-Revoke (ADR: ChangePassword Return Contract)
 	revokedJTIs, err := account.ChangePassword(newPasswordHash)
@@ -284,12 +298,18 @@ func (a *AccountService) PasswordChange(
 // actorID is taken from JWT claims (token.sub), never from the request body (§ Audit).
 func (a *AccountService) LockAccount(
 	ctx context.Context,
-	account *entity.Account,
+	accountID string,
 	until *int64,
 	actorID string,
 ) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.LockAccount")
 	defer span.End()
+
+	account, err := a.accRep.FindByAccountID(ctx, accountID)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
 
 	// T4 Mass-Revoke: sets status=blocked, rev++, clears sessions
 	revokedJTIs, err := account.Lock(until)
@@ -328,10 +348,16 @@ func (a *AccountService) LockAccount(
 // RBAC and actorID sourcing follow the same rules as LockAccount.
 func (a *AccountService) UnlockAccount(
 	ctx context.Context,
-	account *entity.Account,
+	accountID string,
 ) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.UnlockAccount")
 	defer span.End()
+
+	account, err := a.accRep.FindByAccountID(ctx, accountID)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
 
 	if err := account.Unlock(); err != nil {
 		span.RecordError(err)
@@ -361,11 +387,17 @@ func (a *AccountService) UnlockAccount(
 // actorID is sourced from JWT claims in the calling layer.
 func (a *AccountService) SoftDelete(
 	ctx context.Context,
-	account *entity.Account,
+	accountID string,
 	actorID string,
 ) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.SoftDelete")
 	defer span.End()
+
+	account, err := a.accRep.FindByAccountID(ctx, accountID)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
 
 	revokedJTIs, err := account.SoftDelete()
 	if err != nil {
