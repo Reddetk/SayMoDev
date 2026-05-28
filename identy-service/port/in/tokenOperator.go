@@ -2,8 +2,6 @@ package in
 
 import (
 	context "context"
-
-	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 )
 
 // TokenOperator -- in-port для TokenService.
@@ -56,5 +54,5 @@ type TokenOperator interface {
 	// GetJWKS возвращает JWKSResponse с активными RSA-публичными ключами.
 	// Используется HTTP-адаптером для GET /iam/.well-known/jwks.json.
 	// Fail-closed: ErrJWKSKeysEmpty → HTTP 503.
-	GetJWKS(ctx context.Context) (valobj.JWKSResponse, error)
+	GetJWKS(ctx context.Context) ([]string, error)
 }

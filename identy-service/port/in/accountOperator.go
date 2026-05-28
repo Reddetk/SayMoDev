@@ -3,6 +3,9 @@ package in
 import context "context"
 
 type AccountOperator interface {
+	AdminGetAccountData() error
+	AdminChangeAccountData() error
+
 	// LockAccount — POST //admin/accounts/:id/lock
 	//
 	// §6 Lock Semantics: rev++ + all jti blacklisted + sessions deleted atomically.

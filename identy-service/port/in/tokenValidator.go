@@ -2,8 +2,6 @@ package in
 
 import (
 	context "context"
-
-	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 )
 
 // TokenValidator -- in-port для JWTMiddleware.
@@ -27,5 +25,12 @@ type TokenValidator interface {
 	//
 	// rawToken -- Bearer значение без префикса "Bearer ".
 	// AuthContext записывается middleware в c.Keys["аутхCонтехт"] для handler'a.
-	ValidateToken(ctx context.Context, rawToken string) (valobj.AuthContext, error)
+	ValidateToken(ctx context.Context, rawToken string) (AuthContext, error)
+}
+
+type AuthContext struct {
+	AccountID string
+	Role      string
+	SessionID string
+	Rev       int64
 }

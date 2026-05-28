@@ -2,9 +2,6 @@ package in
 
 import (
 	context "context"
-
-	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
-	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 )
 
 type PasswordOperator interface {
@@ -21,8 +18,8 @@ type PasswordOperator interface {
 	// §3: rev++ performed by entity; revokedJTIs returned and passed to events producer.
 	ConfrimPasswordReset(
 		ctx context.Context,
-		account *entity.Account,
-		otp valobj.OTP,
+		accountID string,
+		otp string,
 		newPasswordHash string,
 	) error
 

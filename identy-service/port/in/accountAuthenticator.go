@@ -2,8 +2,6 @@ package in
 
 import (
 	context "context"
-
-	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 )
 
 // AccountAuthenticator -- in-port для AuthService
@@ -23,17 +21,31 @@ type AccountAuthenticator interface {
 		passwordHash string,
 		fingerprint string,
 		clientIP string,
-	) (valobj.LoginResult, error)
+	) (LoginResult, error)
 	InitiateGoogleOAuth(
 		ctx context.Context,
 		clientIP string,
-	) (redirectURL string, state valobj.OAuthState, err error)
+	) (redirectURL string, state OAuthState, err error)
 	HandleGoogleCallback(
 		ctx context.Context,
 		code string,
 		receivedCSRF string,
-		storedState valobj.OAuthState,
+		storedState OAuthState,
 		fingerprint string,
 		clientIP string,
-	) (valobj.LoginResult, error)
+	) (LoginResult, error)
+}
+
+type LoginResult struct {
+	AccessToken string
+	AccountID   string
+	Role        string
+	SessionID   string
+}
+
+type OAuthState struct {
+	CsrfToken     string
+	CodeVerifier  string
+	CodeChallenge string
+	ExpiresAt     int64
 }

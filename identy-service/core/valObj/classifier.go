@@ -3,6 +3,7 @@ package valobj
 import (
 	"github.com/Reddetk/SayMoDev/identy-service/core/consts"
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 )
 
 // Classifier represents immutable tuple (difficulty, aphasiaType)
@@ -39,6 +40,10 @@ func NewClassifier(difficulty, aphasiaType string) (Classifier, error) {
 		return Classifier{}, err
 	}
 	return Classifier{difficulty: difficulty, aphasiaType: aphasiaType}, nil
+}
+
+func MapClassifier(classifierDTO in.ClassifierDTO) (Classifier, error) {
+	return NewClassifier(classifierDTO.Difficulty, classifierDTO.AphasiaType)
 }
 
 func (c Classifier) Difficulty() string  { return c.difficulty }

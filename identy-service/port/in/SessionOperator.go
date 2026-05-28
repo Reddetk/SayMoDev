@@ -3,6 +3,9 @@ package in
 import context "context"
 
 type SessionOperator interface {
+	AdminCreateSesions() error
+	AdminGetSessions() error
+
 	Logout(
 		ctx context.Context,
 		accountID string,

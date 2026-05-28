@@ -10,6 +10,7 @@ import (
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 	"github.com/Reddetk/SayMoDev/identy-service/port/out"
 )
 
@@ -135,7 +136,7 @@ func (s *TokenService) RevokeToken(
 //	[2] valobj.NewJWKSResponse    -- строит VO, валидирует непустоту среза
 //
 // Fail-closed: пустой срез или ошибка адаптера → ErrJWKSKeysEmpty → HTTP 503.
-func (s *TokenService) GetJWKS(ctx context.Context) (valobj.JWKSResponse, error) {
+func (s *TokenService) GetJWKS(ctx context.Context) ([]string, error) {
 	ctx, span := tokenTracer.Start(ctx, "TokenService.GetJWKS")
 	defer span.End()
 
@@ -143,18 +144,11 @@ func (s *TokenService) GetJWKS(ctx context.Context) (valobj.JWKSResponse, error)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "get public keys failed")
-		return valobj.JWKSResponse{}, corerr.ErrJWKSKeysEmpty
-	}
-
-	resp, err := valobj.NewJWKSResponse(keys)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "empty keys slice from adapter")
-		return valobj.JWKSResponse{}, corerr.ErrJWKSKeysEmpty
+		return nil, corerr.ErrJWKSKeysEmpty
 	}
 
 	span.SetAttributes(attribute.Int("token.jwks_key_count", len(keys)))
-	return resp, nil
+	return keys, nil
 }
 
 // ValidateToken верифицирует rawToken и возвращает AuthContext.
@@ -172,7 +166,7 @@ func (s *TokenService) GetJWKS(ctx context.Context) (valobj.JWKSResponse, error)
 func (s *TokenService) ValidateToken(
 	ctx context.Context,
 	rawToken string,
-) (valobj.AuthContext, error) {
+) (in.AuthContext, error) {
 	ctx, span := tokenTracer.Start(ctx, "TokenService.ValidateToken")
 	defer span.End()
 
@@ -183,9 +177,9 @@ func (s *TokenService) ValidateToken(
 		span.SetStatus(codes.Error, "token verification failed")
 		// ErrJWKSKeysEmpty пробрасываем для HTTP 503; все остальные → ErrTokenRevoked
 		if err == corerr.ErrJWKSKeysEmpty {
-			return valobj.AuthContext{}, corerr.ErrJWKSKeysEmpty
+			return in.AuthContext{}, corerr.ErrJWKSKeysEmpty
 		}
-		return valobj.AuthContext{}, corerr.ErrTokenRevoked
+		return in.AuthContext{}, corerr.ErrTokenRevoked
 	}
 
 	span.SetAttributes(
@@ -199,25 +193,25 @@ func (s *TokenService) ValidateToken(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "blacklist check failed")
-		return valobj.AuthContext{}, corerr.ErrTokenRevoked
+		return in.AuthContext{}, corerr.ErrTokenRevoked
 	}
 	if blacklisted {
 		span.SetStatus(codes.Error, "token is blacklisted")
-		return valobj.AuthContext{}, corerr.ErrTokenRevoked
+		return in.AuthContext{}, corerr.ErrTokenRevoked
 	}
 
 	// [3] Сборка AuthContext -- UUID и rev валидируются внутри конструктора
 	parsedRole, err := valobj.ParseRole(role)
 	if err != nil {
 		span.RecordError(err)
-		return valobj.AuthContext{}, corerr.ErrTokenRevoked
+		return in.AuthContext{}, corerr.ErrTokenRevoked
 	}
 
 	authCtx, err := valobj.NewAuthContext(accountID, parsedRole, sessionID, rev)
 	if err != nil {
 		span.RecordError(err)
-		return valobj.AuthContext{}, corerr.ErrTokenRevoked
+		return in.AuthContext{}, corerr.ErrTokenRevoked
 	}
 
-	return authCtx, nil
+	return valobj.MapAuthContext(authCtx), nil
 }

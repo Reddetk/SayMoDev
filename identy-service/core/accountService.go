@@ -35,6 +35,7 @@ import (
 
 	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
 
+	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 	"github.com/Reddetk/SayMoDev/identy-service/port/out"
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
@@ -69,12 +70,18 @@ func NewAccountService(otpR out.OtpRepository, accR out.AccountRepository, event
 func (a *AccountService) Register(
 	ctx context.Context,
 	email, usrVerifyCode, personalInfo, passwordHash string,
-	role valobj.Role,
-	classifier valobj.Classifier,
+	roleDTO string,
+	classifier in.ClassifierDTO,
 	fingerprint string,
 ) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.Register")
 	defer span.End()
+
+	role, err := valobj.ParseRole(roleDTO)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
 
 	emailExists, err := a.accRep.EmailExist(ctx, email)
 	if err != nil {
@@ -100,7 +107,11 @@ func (a *AccountService) Register(
 		return err
 	}
 
-	return a.createAccount(ctx, email, personalInfo, role, passwordHash)
+	cls, err := valobj.MapClassifier(classifier)
+	if err != nil {
+		return err
+	}
+	return a.createAccount(ctx, email, personalInfo, role, passwordHash, valobj.RegistrationMethodEmail, cls)
 }
 
 // checkOTP loads the stored verification record and performs constant-time hash comparison.
@@ -141,6 +152,8 @@ func (a *AccountService) createAccount(
 	email, personalInfo string,
 	role valobj.Role,
 	passwordHash string,
+	registrationMethod valobj.RegistrationMethod,
+	clasifier valobj.Classifier,
 ) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.createAccount")
 	defer span.End()
@@ -163,6 +176,8 @@ func (a *AccountService) createAccount(
 		span.RecordError(err)
 		return err
 	}
+
+	a.eventsProducer.AccountRegistered(ctx, accountID, role, clasifier, registrationMethod.String())
 
 	span.AddEvent("account.created",
 		trace.WithAttributes(attribute.String("accountID", accountID)),

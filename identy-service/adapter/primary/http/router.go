@@ -72,25 +72,25 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 		accounts := protected.Group("/iam/accounts/:accountId")
 		{
 			// GET  /iam/accounts/:accountId
-			accounts.GET("", handleGetAccount())
+			accounts.GET("", handleGetAccount(deps.AccountOpertator))
 			// PATCH /iam/accounts/:accountId
-			accounts.PATCH("", handlePatchAccount())
+			accounts.PATCH("", handlePatchAccount(deps.AccountOpertator))
 			// DELETE /iam/accounts/:accountId
-			accounts.DELETE("", handleDeleteAccount())
+			accounts.DELETE("", handleDeleteAccount(deps.AccountOpertator))
 
 			// POST   /iam/accounts/:accountId/sessions  (admin: create session)
-			accounts.POST("/sessions", handleAdminCreateSession())
+			accounts.POST("/sessions", handleAdminCreateSession(deps.SessionOperator))
 			// GET    /iam/accounts/:accountId/sessions
-			accounts.GET("/sessions", handleListSessions())
+			accounts.GET("/sessions", handleListSessions(deps.SessionOperator))
 			// DELETE /iam/accounts/:accountId/sessions/:sessionId
 			accounts.DELETE("/sessions/:sessionId", handleTerminateSession(deps.SessionOperator))
 
 			// POST /iam/accounts/:accountId/password
-			accounts.POST("/password", handleChangePassword())
+			accounts.POST("/password", handleChangePassword(deps.PasswordOperator))
 			// POST /iam/accounts/:accountId/lock
-			accounts.POST("/lock", handleLockAccount())
+			accounts.POST("/lock", handleLockAccount(deps.AccountOpertator))
 			// POST /iam/accounts/:accountId/unlock
-			accounts.POST("/unlock", handleUnlockAccount())
+			accounts.POST("/unlock", handleUnlockAccount(deps.AccountOpertator))
 		}
 	}
 

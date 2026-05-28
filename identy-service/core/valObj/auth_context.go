@@ -2,6 +2,7 @@ package valobj
 
 import (
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 
 	"github.com/google/uuid"
 )
@@ -52,6 +53,15 @@ func NewAuthContext(accountID string, role Role, sessionID string, rev int64) (A
 		sessionID: sessionID,
 		rev:       rev,
 	}, nil
+}
+
+func MapAuthContext(authCtxVO AuthContext) (in.AuthContext) {
+	return in.AuthContext{
+		AccountID: authCtxVO.AccountID(),
+		Role:      authCtxVO.Role().String(),
+		SessionID: authCtxVO.SessionID(),
+		Rev:       authCtxVO.Rev(),
+	}
 }
 
 func (a AuthContext) AccountID() string { return a.accountID }

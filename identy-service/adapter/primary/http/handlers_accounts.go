@@ -11,7 +11,7 @@ import (
 // handleGetAccount -- GET /iam/accounts/:accountId
 // Response: 200 { email, role, status, created_at, rev }
 // Guards: ownership (token.sub == accountId) OR role == administrator
-func handleGetAccount() gin.HandlerFunc {
+func handleGetAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement
 		c.Status(http.StatusNotImplemented)
@@ -21,7 +21,7 @@ func handleGetAccount() gin.HandlerFunc {
 // handlePatchAccount -- PATCH /iam/accounts/:accountId
 // Body: { role?, personalInfo? }
 // Response: 200 { email, role, status, rev }
-func handlePatchAccount() gin.HandlerFunc {
+func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement
 		c.Status(http.StatusNotImplemented)
@@ -31,7 +31,7 @@ func handlePatchAccount() gin.HandlerFunc {
 // handleDeleteAccount -- DELETE /iam/accounts/:accountId
 // Response: 204 No Content
 // Guard: role == administrator
-func handleDeleteAccount() gin.HandlerFunc {
+func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement
 		c.Status(http.StatusNotImplemented)
@@ -42,7 +42,7 @@ func handleDeleteAccount() gin.HandlerFunc {
 // Auth: role == administrator
 // Body: { fingerprint }
 // Response: 201 { access_token, session_id }
-func handleAdminCreateSession() gin.HandlerFunc {
+func handleAdminCreateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement
 		c.Status(http.StatusNotImplemented)
@@ -51,7 +51,7 @@ func handleAdminCreateSession() gin.HandlerFunc {
 
 // handleListSessions -- GET /iam/accounts/:accountId/sessions
 // Response: 200 [{ session_id, fingerprint, last_activity, created_at }]
-func handleListSessions() gin.HandlerFunc {
+func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement
 		c.Status(http.StatusNotImplemented)
@@ -73,7 +73,7 @@ func handleTerminateSession(session inport.SessionOperator) gin.HandlerFunc {
 // Body: { current_password, new_password }
 // Response: 200 { message }
 // Side effects: rev++, all sessions terminated
-func handleChangePassword() gin.HandlerFunc {
+func handleChangePassword(passOp inport.PasswordOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement
 		c.Status(http.StatusNotImplemented)
@@ -84,7 +84,7 @@ func handleChangePassword() gin.HandlerFunc {
 // Auth: role == administrator
 // Body: { locked_until?: DateTime | null }
 // Response: 200 { status: "blocked", locked_until }
-func handleLockAccount() gin.HandlerFunc {
+func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement
 		c.Status(http.StatusNotImplemented)
@@ -94,7 +94,7 @@ func handleLockAccount() gin.HandlerFunc {
 // handleUnlockAccount -- POST /iam/accounts/:accountId/unlock
 // Auth: role == administrator
 // Response: 200 { status: "active" }
-func handleUnlockAccount() gin.HandlerFunc {
+func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement
 		c.Status(http.StatusNotImplemented)

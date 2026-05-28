@@ -2,8 +2,6 @@ package out
 
 import (
 	"context"
-
-	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 )
 
 // TokenIssuer -- out-port для выпуска JWT Access Token, верификации
@@ -70,12 +68,12 @@ type TokenIssuer interface {
 		rawToken string,
 	) (accountID, role, sessionID, jti string, rev int64, expiresAt int64, err error)
 
-	// GetPublicKeys возвращает срез активных RSA публичных ключей в виде JWKSKey VO.
+	// GetPublicKeys возвращает срез активных RSA публичных ключей в виде JWKSKey json.
 	//
 	// Используется TokenService.GetJWKS для формирования ответа
 	// GET /iam/.well-known/jwks.json.
 	//
 	// Ошибки:
 	//   - ErrJWKSKeysEmpty -- активных ключей нет (ошибка конфигурации)
-	GetPublicKeys(ctx context.Context) ([]valobj.JWKSKey, error)
+	GetPublicKeys(ctx context.Context) ([]string, error)
 }

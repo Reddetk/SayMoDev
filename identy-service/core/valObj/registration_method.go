@@ -16,9 +16,9 @@ const (
 	RegistrationMethodOAuth2 RegistrationMethod = "oauth2"
 )
 
-// NewRegistrationMethod parses and validates a raw string.
+// ParseRegistrationMethod parses and validates a raw string.
 // Returns ErrInvalidRegistrationMethod for unknown values.
-func NewRegistrationMethod(raw string) (RegistrationMethod, error) {
+func ParseRegistrationMethod(raw string) (RegistrationMethod, error) {
 	switch RegistrationMethod(raw) {
 	case RegistrationMethodEmail, RegistrationMethodOAuth2:
 		return RegistrationMethod(raw), nil

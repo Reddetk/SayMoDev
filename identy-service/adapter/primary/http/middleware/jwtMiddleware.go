@@ -1,3 +1,4 @@
+// Package middleware stands for serios injection on data route for Gin handlers
 package middleware
 
 import (

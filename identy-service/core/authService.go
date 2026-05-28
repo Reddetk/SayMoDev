@@ -17,6 +17,7 @@ import (
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 	"github.com/Reddetk/SayMoDev/identy-service/port/out"
 )
 
@@ -78,14 +79,14 @@ func (s *AuthService) Login(
 	passwordHash string,
 	fingerprint string,
 	clientIP string,
-) (valobj.LoginResult, error) {
+) (in.LoginResult, error) {
 	ctx, span := authTracer.Start(ctx, "AuthService.Login")
 	defer span.End()
 
 	if err := s.rateLimiter.CheckIP(ctx, clientIP); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "rate limit ip")
-		return valobj.LoginResult{}, corerr.ErrRateLimitIP
+		return in.LoginResult{}, corerr.ErrRateLimitIP
 	}
 
 	account, err := s.accRep.FindByEmail(ctx, email)
@@ -94,20 +95,20 @@ func (s *AuthService) Login(
 		span.RecordError(corerr.ErrInvalidCredentials)
 		span.SetAttributes(attribute.Bool("auth.account_found", false))
 		span.SetStatus(codes.Error, "invalid credentials")
-		return valobj.LoginResult{}, corerr.ErrInvalidCredentials
+		return in.LoginResult{}, corerr.ErrInvalidCredentials
 	}
 
 	if account.IsLocked() {
 		span.RecordError(corerr.ErrAccountLocked)
 		span.SetAttributes(attribute.Bool("auth.account_locked", true))
 		span.SetStatus(codes.Error, "invalid credentials")
-		return valobj.LoginResult{}, corerr.ErrInvalidCredentials
+		return in.LoginResult{}, corerr.ErrInvalidCredentials
 	}
 
 	if err := s.rateLimiter.CheckAccount(ctx, account.UUID()); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "rate limit account")
-		return valobj.LoginResult{}, corerr.ErrRateLimitAccount
+		return in.LoginResult{}, corerr.ErrRateLimitAccount
 	}
 
 	if err := bcrypt.CompareHashAndPassword(
@@ -119,7 +120,7 @@ func (s *AuthService) Login(
 		}
 		span.RecordError(corerr.ErrInvalidCredentials)
 		span.SetStatus(codes.Error, "invalid credentials")
-		return valobj.LoginResult{}, corerr.ErrInvalidCredentials
+		return in.LoginResult{}, corerr.ErrInvalidCredentials
 	}
 
 	return s.openSessionAndIssueToken(ctx, account, fingerprint)
@@ -183,7 +184,7 @@ func (s *AuthService) HandleGoogleCallback(
 	storedState valobj.OAuthState,
 	fingerprint string,
 	clientIP string,
-) (valobj.LoginResult, error) {
+) (in.LoginResult, error) {
 	ctx, span := authTracer.Start(ctx, "AuthService.HandleGoogleCallback")
 	defer span.End()
 
@@ -191,14 +192,14 @@ func (s *AuthService) HandleGoogleCallback(
 	if err := s.rateLimiter.CheckIP(ctx, clientIP); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "rate limit ip")
-		return valobj.LoginResult{}, corerr.ErrRateLimitIP
+		return in.LoginResult{}, corerr.ErrRateLimitIP
 	}
 
 	// [2] CSRF — до любых DB-вызовов
 	if err := s.googleOAuth.ValidateState(ctx, receivedCSRF, storedState); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "state validation failed")
-		return valobj.LoginResult{}, err
+		return in.LoginResult{}, err
 	}
 
 	// [3] Code exchange + JWKS verify
@@ -206,7 +207,7 @@ func (s *AuthService) HandleGoogleCallback(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "exchange code failed")
-		return valobj.LoginResult{}, err
+		return in.LoginResult{}, err
 	}
 
 	// [4] Defence-in-depth: core самостоятельно проверяет email_verified,
@@ -214,7 +215,7 @@ func (s *AuthService) HandleGoogleCallback(
 	if !claims.EmailVerified() {
 		span.RecordError(corerr.ErrOAuthEmailNotVerified)
 		span.SetStatus(codes.Error, "email not verified")
-		return valobj.LoginResult{}, corerr.ErrOAuthEmailNotVerified
+		return in.LoginResult{}, corerr.ErrOAuthEmailNotVerified
 	}
 
 	span.SetAttributes(
@@ -227,7 +228,7 @@ func (s *AuthService) HandleGoogleCallback(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "resolve account failed")
-		return valobj.LoginResult{}, err
+		return in.LoginResult{}, err
 	}
 
 	// [6] Заблокированный аккаунт не получает токен
@@ -235,7 +236,7 @@ func (s *AuthService) HandleGoogleCallback(
 		span.RecordError(corerr.ErrAccountLocked)
 		span.SetAttributes(attribute.Bool("auth.account_locked", true))
 		span.SetStatus(codes.Error, "account locked")
-		return valobj.LoginResult{}, corerr.ErrAccountLocked
+		return in.LoginResult{}, corerr.ErrAccountLocked
 	}
 
 	// [7]
@@ -349,7 +350,7 @@ func (s *AuthService) openSessionAndIssueToken(
 	ctx context.Context,
 	account *entity.Account,
 	fingerprint string,
-) (valobj.LoginResult, error) {
+) (in.LoginResult, error) {
 	ctx, span := authTracer.Start(ctx, "AuthService.openSessionAndIssueToken")
 	defer span.End()
 
@@ -360,13 +361,13 @@ func (s *AuthService) openSessionAndIssueToken(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "open session failed")
-		return valobj.LoginResult{}, err
+		return in.LoginResult{}, err
 	}
 
 	if err := s.accRep.SaveSessionWithTx(ctx, account); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "save session failed")
-		return valobj.LoginResult{}, err
+		return in.LoginResult{}, err
 	}
 
 	// G9 Write Order: outbox (L3) уже записан в SaveSessionWithTx.
@@ -388,7 +389,7 @@ func (s *AuthService) openSessionAndIssueToken(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "token issue failed")
-		return valobj.LoginResult{}, err
+		return in.LoginResult{}, err
 	}
 
 	span.SetAttributes(
@@ -408,16 +409,11 @@ func (s *AuthService) openSessionAndIssueToken(
 		span.RecordError(evErr)
 	}
 
-	result, err := valobj.NewLoginResult(
-		accessToken,
-		account.UUID(),
-		string(account.Role()),
-		session.SessionID(),
-	)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "login result build failed")
-		return valobj.LoginResult{}, err
+	result := in.LoginResult{
+		AccessToken: accessToken,
+		AccountID:   account.UUID(),
+		Role:        account.Role().String(),
+		SessionID:   session.SessionID(),
 	}
 
 	// Дочерний span закрывается через defer; родительский span получает
