@@ -26,7 +26,6 @@ type RouterDeps struct {
 	SessionOperator   inport.SessionOperator
 	TokenOperator     inport.TokenOperator
 	OTPIssuer         inport.OTPIssuer
-	OTPChecker        inport.OTPChecker
 }
 
 // NewGinRouter строит *gin.Engine с полным набором маршрутов BC#1.

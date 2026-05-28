@@ -4,22 +4,22 @@ package core
 // AccountService covers:
 // POST //auth/register/verify          — IssueRegistrationOTP (delegated to OTPService)
 // POST //auth/register                 — Register: OTP verify -> createAccount (ACID) + events via outbox
-// POST //auth/password-reset           — PasswordReset: OTP verify -> T4 mass-revoke -> update
+// POST //auth/password-reset           — ConfrimPasswordReset: OTP verify -> T4 mass-revoke -> update
 // POST //auth/password-change          — PasswordChange: history check -> T4 mass-revoke -> update
 // POST //admin/accounts/:id/lock       — LockAccount: T4 mass-revoke -> lock
 // POST //admin/accounts/:id/unlock     — UnlockAccount: restore active status
 // DELETE //admin/accounts/:id          — SoftDelete: T4 mass-revoke -> mark deleted
 //
 // Invariants enforced here (see spec §):
-//   §1  Anti-enumeration: Register and PasswordReset return identical response shape regardless of email existence
+//   §1  Anti-enumeration: Register and ConfrimPasswordReset return identical response shape regardless of email existence
 //   §2  Password policy: bcrypt hash length/format validated in entity; history reuse checked via ResetPassword port
 //   §3  Token lifecycle: rev++ is performed by entity.ChangePassword/Lock/SoftDelete; revokedJTIs passed to port
-//   §6  Lock semantics: both LockAccount and PasswordReset perform T4 mass-revoke (rev++ + sessions cleared)
+//   §6  Lock semantics: both LockAccount and ConfrimPasswordReset perform T4 mass-revoke (rev++ + sessions cleared)
 //   §7  OTP security: constant-time comparison in checkOTP; generic error on mismatch; OTP plaintext never logged
 //
 // Event publishing:
 //   AccountRegistered, AccountEmailVerified     — via outbox inside CreateAccountWithTx (repository layer)
-//   AccountPasswordResetCompleted               — published after successful ResetPassword TX
+//   AccountConfrimPasswordResetCompleted               — published after successful ResetPassword TX
 //   AccountPasswordChanged                      — published after successful ChangePassword TX
 //   AccountLockedByAdmin                        — published after successful LockAccount TX
 //   AccountUnlocked                             — published after successful UnlockAccount TX
@@ -168,7 +168,7 @@ func (a *AccountService) createAccount(
 	return nil
 }
 
-// PasswordReset — POST //auth/password-reset (unauthenticated, OTP-gated)
+// ConfrimPasswordReset — POST //auth/password-reset (unauthenticated, OTP-gated)
 //
 // Flow:
 //  1. Constant-time OTP verification (§7)
@@ -179,22 +179,22 @@ func (a *AccountService) createAccount(
 //
 // §6: mass-revoke is mandatory — a locked/reset account must not leave valid 30-day tokens outstanding.
 // §3: rev++ performed by entity; revokedJTIs returned and passed to events producer.
-func (a *AccountService) PasswordReset(
+func (a *AccountService) ConfrimPasswordReset(
 	ctx context.Context,
-	account *entity.Account,
+	email string,
 	otp valobj.OTP,
 	newPasswordHash string,
 ) error {
-	ctx, span := accTracer.Start(ctx, "AccountService.PasswordReset")
+	ctx, span := accTracer.Start(ctx, "AccountService.ConfrimPasswordReset")
 	defer span.End()
 
-	if err := a.checkOTP(ctx, account.Email(), otp, valobj.OTPPurposePasswordReset); err != nil {
+	if err := a.checkOTP(ctx, email, otp, valobj.OTPPurposePasswordReset); err != nil {
 		span.RecordError(err)
 		return err
 	}
 
 	// T4 Mass-Revoke: ChangePassword increments rev, clears all sessions, returns their JTIs (ADR)
-	revokedJTIs, err := account.ChangePassword(newPasswordHash)
+	revokedJTIs, err := a.ChangePassword(newPasswordHash)
 	if err != nil {
 		span.RecordError(err)
 		return err
