@@ -446,7 +446,7 @@ func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
-			case err == corerr.ErrAccountNotActive: // TODO some shit with Locking acc
+			case err == corerr.ErrAccountNotActive:
 				c.JSON(http.StatusConflict, gin.H{"error": "account is not locked"})
 			case isInfraError(err):
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
@@ -459,10 +459,3 @@ func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{"status": "active"})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// NOTE: handleAdminCreateSession stub -- removed from this file.
-// POST /iam/accounts/:accountId/sessions is not backed by a port/in method
-// in the current version of SessionOperator. This is a missing spec / design gap.
-// When AdminCreateSession is added to port/in, the handler should be wired here.
-// ---------------------------------------------------------------------------
