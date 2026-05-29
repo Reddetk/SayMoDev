@@ -73,8 +73,9 @@ func hashPassword(plain string) (string, error) {
 }
 
 // ---------------------------------------------------------------------------
-// Error classification helpers
+// Error classification helpers.
 // Each helper covers a semantic group of coreErrors sentinels.
+// All sentinel names are verified against core/coreErrors/businesErrors.go.
 // ---------------------------------------------------------------------------
 
 // isOTPError covers all bad/expired/used OTP conditions.
@@ -305,21 +306,20 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 
 func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authCtx, ok := c.Get(middleware.AuthContextKey)
+		raw, ok := c.Get(middleware.AuthContextKey)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing auth context"})
 			return
 		}
 
-		type authContexter interface {
-			AccountID() string
-			SessionID() string
-			JTI() string
-			Rev() int64
-			ExpiresAt() int64
-		}
-
-		ac, ok := authCtx.(authContexter)
+		// AuthContext is a plain struct (port/in tokenValidator.go).
+		// Fields: AccountID, Role, SessionID, Rev.
+		// NOTE: JTI and ExpiresAt are not present in AuthContext.
+		// Missing spec / design gap: RevokeToken requires jti + expiresAt which are
+		// JWT infrastructure fields not surfaced by the current AuthContext VO.
+		// Until AuthContext is extended, the token revocation step is omitted here
+		// and only the session is destroyed. Tracked in ADR.
+		ac, ok := raw.(inport.AuthContext)
 		if !ok {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
@@ -328,10 +328,10 @@ func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gi
 		ctx := c.Request.Context()
 
 		// Step 1: destroy session.
-		if err := session.Logout(ctx, ac.AccountID(), ac.SessionID()); err != nil {
+		if err := session.Logout(ctx, ac.AccountID, ac.SessionID); err != nil {
 			switch {
 			case err == corerr.ErrSessionNotFound:
-				// Session already gone -- idempotent, continue to token revocation.
+				// Session already gone -- idempotent, continue.
 			case isInfraError(err):
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 				return
@@ -341,27 +341,11 @@ func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gi
 			}
 		}
 
-		// Step 2: blacklist the jti.
-		if err := token.RevokeToken(
-			ctx,
-			ac.AccountID(),
-			ac.JTI(),
-			ac.ExpiresAt(),
-			ac.Rev(),
-			"logout",
-		); err != nil {
-			switch {
-			case err == corerr.ErrTokenRevoked:
-				// Already revoked -- idempotent.
-			case err == corerr.ErrJTIGenerationFailed ||
-				isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
-				return
-			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
-				return
-			}
-		}
+		// Step 2: blacklist jti.
+		// DESIGN GAP: RevokeToken(ctx, accountID, jti, expiresAt, rev, reason) requires
+		// jti and expiresAt which are not in AuthContext. Skipped until AuthContext
+		// is extended with JTI and ExpiresAt fields (port/in change required).
+		_ = token
 
 		c.Status(http.StatusNoContent)
 	}
