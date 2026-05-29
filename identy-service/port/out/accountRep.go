@@ -21,6 +21,19 @@ type AccountRepository interface {
 	// - добавляет запись в password_history
 	ResetPassword(ctx context.Context, account *entity.Account, newPasswordHash string) error
 
+	// UpdateAccountStatusTx выполняет атомарное обновление статуса аккаунта:
+	// - обновляет status, lockedUntil и revision в accounts
+	// - удаляет все активные сессии аккаунта (уже очищены entity-методом)
+	// - записывает все jti сессий в blacklist (outbox L3)
+	// - обновляет metadata (updated_at)
+	//
+	// Используется исключительно операциями изменения статуса: LockAccount, UnlockAccount, SoftDelete.
+	// Не затрагивает passwordHash и password_history — в отличие от ResetPassword.
+	//
+	// revokedJTIs передаются отдельно, так как к моменту вызова entity уже очистила sessions;
+	// адаптер обязан записать их в blacklist в рамках одной транзакции.
+	UpdateAccountStatusTx(ctx context.Context, account *entity.Account, revokedJTIs []string) error
+
 	// EmailExist проверяет существование email без загрузки агрегата
 	// Используется в Registration flow перед созданием аккаунта
 	EmailExist(ctx context.Context, email string) (bool, error)

@@ -259,7 +259,7 @@ func (a *AccountService) ConfrimPasswordReset(
 		return err
 	}
 
-	// T4 Mass-Revoke: ChangePassword increments rev, clears all sessions, returns their JTIs (ADR)
+	// T4 Mass-Revoke: ChangePassword increments rev, clears all sessions, returns their JTIs
 	revokedJTIs, err := account.ChangePassword(newPasswordHash)
 	if err != nil {
 		span.RecordError(err)
@@ -274,10 +274,8 @@ func (a *AccountService) ConfrimPasswordReset(
 
 	now := time.Now().UnixMilli()
 
-	// Publish AccessTokenRevoked for every invalidated JTI (G9: outbox write order)
 	a.publishRevokedJTIs(ctx, account.UUID(), account.Revision(), now, "password_reset", revokedJTIs)
 
-	// Audit event
 	if err := a.eventsProducer.AccountPasswordResetCompleted(ctx, account.UUID(), now); err != nil {
 		span.RecordError(err)
 		// non-fatal: outbox will retry; do not block the caller
@@ -293,7 +291,7 @@ func (a *AccountService) ConfrimPasswordReset(
 // PasswordChange — POST //auth/password-change (authenticated)
 //
 // Flow:
-//  1. entity.ChangePassword performs T4 mass-revoke: rev++, all sessions cleared, returns revokedJTIs (ADR)
+//  1. entity.ChangePassword performs T4 mass-revoke: rev++, all sessions cleared, returns revokedJTIs
 //  2. ACID transaction: new hash + rev + cleared sessions persisted via ResetPassword port
 //     History reuse check (O(5) bcrypt.Compare, not byte equality) is enforced inside the repository TX
 //  3. Publish AccessTokenRevoked for every revoked jti
@@ -315,7 +313,7 @@ func (a *AccountService) PasswordChange(
 		return err
 	}
 
-	// T4 Mass-Revoke (ADR: ChangePassword Return Contract)
+	// T4 Mass-Revoke
 	revokedJTIs, err := account.ChangePassword(newPasswordHash)
 	if err != nil {
 		span.RecordError(err)
@@ -368,18 +366,16 @@ func (a *AccountService) LockAccount(
 		span.RecordError(err)
 		return err
 	}
-	// TODO: implement persistence
-	// T4 Mass-Revoke: sets status=blocked, rev++, clears sessions
+
+	// T4 Mass-Revoke: sets status=blocked, lockedUntil, rev++, clears all sessions
 	revokedJTIs, err := account.Lock(until)
 	if err != nil {
 		span.RecordError(err)
 		return err
 	}
 
-
-	if err := a.accRep.ResetPassword(ctx, account, ""); err != nil {
-		// ResetPassword is reused to persist state; a dedicated UpdateAccountTx port method
-		// would be cleaner — see missing spec note below.
+	// ACID: persist status + lockedUntil + rev + blacklist entries for all revoked JTIs
+	if err := a.accRep.UpdateAccountStatusTx(ctx, account, revokedJTIs); err != nil {
 		span.RecordError(err)
 		return err
 	}
@@ -418,12 +414,15 @@ func (a *AccountService) UnlockAccount(
 		return err
 	}
 
+	// Restores status=active, lockedUntil=nil; no sessions to revoke
 	if err := account.Unlock(); err != nil {
 		span.RecordError(err)
 		return err
 	}
 
-	if err := a.accRep.ResetPassword(ctx, account, ""); err != nil {
+	// ACID: persist status + cleared lockedUntil + incremented metadata
+	// revokedJTIs is empty — Unlock does not perform T4 mass-revoke
+	if err := a.accRep.UpdateAccountStatusTx(ctx, account, nil); err != nil {
 		span.RecordError(err)
 		return err
 	}
@@ -458,13 +457,15 @@ func (a *AccountService) SoftDelete(
 		return err
 	}
 
+	// T4 Mass-Revoke: sets status=deleted, rev++, clears all sessions
 	revokedJTIs, err := account.SoftDelete()
 	if err != nil {
 		span.RecordError(err)
 		return err
 	}
 
-	if err := a.accRep.ResetPassword(ctx, account, ""); err != nil {
+	// ACID: persist status + rev + blacklist entries for all revoked JTIs
+	if err := a.accRep.UpdateAccountStatusTx(ctx, account, revokedJTIs); err != nil {
 		span.RecordError(err)
 		return err
 	}
