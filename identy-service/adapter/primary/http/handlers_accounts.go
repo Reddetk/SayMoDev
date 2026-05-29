@@ -200,6 +200,8 @@ func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
+			case err == corerr.ErrAccountAlreadyDeleted:
+				c.JSON(http.StatusConflict, gin.H{"error": "account already deleted"})
 			case isInfraError(err):
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
@@ -405,8 +407,11 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
-			case err == corerr.ErrAccountLocked:
-				c.JSON(http.StatusConflict, gin.H{"error": "account already locked"})
+			case err == corerr.ErrAccountAlreadyLocked:
+				// entity.Account.Lock guard: status == StatusBlocked -> 409.
+				c.JSON(http.StatusConflict, gin.H{"error": "account is already locked"})
+			case err == corerr.ErrAccountDeleted:
+				c.JSON(http.StatusConflict, gin.H{"error": "account is deleted"})
 			case isInfraError(err):
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
@@ -446,8 +451,11 @@ func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
-			case err == corerr.ErrAccountNotActive:
+			case err == corerr.ErrAccountNotLocked:
+				// entity.Account.Unlock guard: status != StatusBlocked -> 409.
 				c.JSON(http.StatusConflict, gin.H{"error": "account is not locked"})
+			case err == corerr.ErrAccountDeleted:
+				c.JSON(http.StatusConflict, gin.H{"error": "account is deleted"})
 			case isInfraError(err):
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
