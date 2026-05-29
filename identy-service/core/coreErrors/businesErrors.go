@@ -62,10 +62,21 @@ var (
 	ErrAccountDeleted                           = errors.New("account deleted")
 	ErrAccountNotActive                         = errors.New("account not active")
 	ErrAccountAlreadyDeleted                    = errors.New("account already deleted")
-	ErrOTPAlreadyExpired                        = errors.New("otp hash already expired")
-	ErrOTPHashRequired                          = errors.New("otp hash req")
-	ErrOTPHashInvalidLength                     = errors.New("otp hash invalid length")
-	ErrVerificationCodeIDRequired               = errors.New("verf code id req")
+
+	// ErrAccountAlreadyLocked is returned by entity.Account.Lock when the account
+	// is already in StatusBlocked. Prevents rev increment and silent no-op on
+	// empty sessions. Mapped to HTTP 409 Conflict by the admin handler.
+	ErrAccountAlreadyLocked = errors.New("account is already locked")
+
+	// ErrAccountNotLocked is returned by entity.Account.Unlock when the account
+	// is not in StatusBlocked. Prevents silently overwriting an active account
+	// status. Mapped to HTTP 409 Conflict by the admin handler.
+	ErrAccountNotLocked = errors.New("account is not locked")
+
+	ErrOTPAlreadyExpired             = errors.New("otp hash already expired")
+	ErrOTPHashRequired               = errors.New("otp hash req")
+	ErrOTPHashInvalidLength          = errors.New("otp hash invalid length")
+	ErrVerificationCodeIDRequired    = errors.New("verf code id req")
 )
 
 // ---------------------------------------------------------------------------
@@ -149,12 +160,12 @@ var (
 	ErrAccountLocked = errors.New("account is locked")
 
 	// ErrRateLimitIP is returned when the per-IP hourly threshold is exceeded.
-	// Spec: "100 login attempts per hour per IP → 429"
+	// Spec: "100 login attempts per hour per IP -> 429"
 	// Mapped to HTTP 429.
 	ErrRateLimitIP = errors.New("rate limit exceeded for IP")
 
 	// ErrRateLimitAccount is returned when the per-account daily threshold is exceeded.
-	// Spec: "50 failed login attempts per day per account → account locked 24h"
+	// Spec: "50 failed login attempts per day per account -> account locked 24h"
 	// The account is locked automatically before this error is returned.
 	// Mapped to HTTP 429.
 	ErrRateLimitAccount = errors.New("rate limit exceeded for account")
@@ -194,7 +205,7 @@ var (
 	ErrOAuthStateNotFound = errors.New("oauth state not found")
 
 	// ErrOAuthJWKSUnavailable is returned when Google JWKS cannot be fetched.
-	// Spec: "Fail-closed на недоступность: если JWKS недоступен → 503"
+	// Spec: "Fail-closed на недоступность: если JWKS недоступен -> 503"
 	ErrOAuthJWKSUnavailable = errors.New("google JWKS endpoint unavailable")
 
 	// ErrOAuthIDTokenInvalid is returned when the Google ID token fails RS256 verification
@@ -254,7 +265,7 @@ var (
 
 	// ErrTokenRevoked is returned by token validation middleware when
 	// TokenBlacklist.Contains returns true for the incoming jti.
-	// Spec §Blacklist: "L1 in-memory → L2 Redis → L3 PostgreSQL (source of truth)"
+	// Spec §Blacklist: "L1 in-memory -> L2 Redis -> L3 PostgreSQL (source of truth)"
 	// Mapped to HTTP 401.
 	ErrTokenRevoked = errors.New("token has been revoked")
 

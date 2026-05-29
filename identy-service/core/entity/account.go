@@ -261,10 +261,41 @@ func (a *Account) oldestSessionIndex() int {
 	return oldest
 }
 
-// Unlock restores active status
+// Lock performs T4 Mass-Revoke and transitions status to StatusBlocked.
+//
+// Invariants:
+//   - ErrAccountDeleted  -- cannot lock a deleted account
+//   - ErrAccountAlreadyLocked -- idempotency guard; prevents silent rev++ on double-lock
+//
+// Returns revokedJTIs for blacklist propagation (§6).
+func (a *Account) Lock(until *int64) (revokedJTIs []string, err error) {
+	if a.status == valobj.StatusDeleted {
+		return nil, corerr.ErrAccountDeleted
+	}
+	if a.status == valobj.StatusBlocked {
+		return nil, corerr.ErrAccountAlreadyLocked
+	}
+	revokedJTIs = a.RevokeAllSessions()
+	a.status = valobj.StatusBlocked
+	a.lockedUntil = until
+	a.revision++
+	a.metadata = a.metadata.Touch()
+	return revokedJTIs, nil
+}
+
+// Unlock restores status to StatusActive and clears lockedUntil.
+//
+// Invariants:
+//   - ErrAccountDeleted  -- cannot unlock a deleted account
+//   - ErrAccountNotLocked -- idempotency guard; prevents silent status overwrite on active account
+//
+// Does not perform T4 Mass-Revoke -- account has no sessions while blocked.
 func (a *Account) Unlock() error {
 	if a.status == valobj.StatusDeleted {
 		return corerr.ErrAccountDeleted
+	}
+	if a.status != valobj.StatusBlocked {
+		return corerr.ErrAccountNotLocked
 	}
 	a.status = valobj.StatusActive
 	a.lockedUntil = nil
@@ -282,18 +313,6 @@ func (a *Account) ChangePassword(newHash string) (revokedJTIs []string, err erro
 	}
 	revokedJTIs = a.RevokeAllSessions()
 	a.passwordHash = &newHash
-	a.revision++
-	a.metadata = a.metadata.Touch()
-	return revokedJTIs, nil
-}
-
-func (a *Account) Lock(until *int64) (revokedJTIs []string, err error) {
-	if a.status == valobj.StatusDeleted {
-		return nil, corerr.ErrAccountDeleted
-	}
-	revokedJTIs = a.RevokeAllSessions()
-	a.status = valobj.StatusBlocked
-	a.lockedUntil = until
 	a.revision++
 	a.metadata = a.metadata.Touch()
 	return revokedJTIs, nil
