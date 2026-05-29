@@ -236,7 +236,7 @@ func (a *AccountService) createAccount(
 func (a *AccountService) ConfrimPasswordReset(
 	ctx context.Context,
 	email string,
-	otp valobj.OTP,
+	otp string,
 	newPasswordHash string,
 ) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.ConfrimPasswordReset")
@@ -248,7 +248,13 @@ func (a *AccountService) ConfrimPasswordReset(
 		return err
 	}
 
-	if err := a.checkOTP(ctx, email, otp, valobj.OTPPurposePasswordReset); err != nil {
+	otpVO, err := valobj.NewOTP(otp)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	if err := a.checkOTP(ctx, email, otpVO, valobj.OTPPurposePasswordReset); err != nil {
 		span.RecordError(err)
 		return err
 	}

@@ -18,7 +18,7 @@ type PasswordOperator interface {
 	// §3: rev++ performed by entity; revokedJTIs returned and passed to events producer.
 	ConfrimPasswordReset(
 		ctx context.Context,
-		accountID string,
+		email string,
 		otp string,
 		newPasswordHash string,
 	) error
