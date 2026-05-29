@@ -3,8 +3,9 @@ package in
 import context "context"
 
 type AccountOperator interface {
-	AdminGetAccountData() error
-	AdminChangeAccountData() error
+	AdminGetAccountData(ctx context.Context, accountID string) (AccountDTO, error)
+
+	AdminChangeAccountData(ctx context.Context, accountDTO AccountDTO) error
 
 	// LockAccount — POST //admin/accounts/:id/lock
 	//
@@ -39,4 +40,14 @@ type AccountOperator interface {
 		accountID string,
 		actorID string,
 	) error
+}
+
+type AccountDTO struct {
+	ID           string
+	Email        string
+	PersonalInfo string
+	Role         string
+	Status       string
+	LockedUntil  *int64
+	Metadata     string
 }

@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 	"github.com/Reddetk/SayMoDev/identy-service/port/out"
 )
 
@@ -186,4 +187,13 @@ func (s *SessionService) AdminTerminateSession(
 	return nil
 }
 
+func (s *SessionService) AdminGetSessions(ctx context.Context, AccID string) ([]in.SessionDTO, error) {
+	ctx, span := sessTracer.Start(ctx, "SessionService.AdminGetSessions")
+	defer span.End()
 
+	acc, err := s.accRep.FindByAccountID(ctx, AccID)
+	if err != nil {
+		return nil, err
+	}
+	return acc.SessionsDTO(), nil
+}

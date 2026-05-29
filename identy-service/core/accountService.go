@@ -1,7 +1,7 @@
 // Package core implement core service logic for
 package core
 
-// TODO: optimistic concurrency — адаптер должен проверять rowsAffected и возвращать ErrConflict при rev mismatch
+// TODO v1+: optimistic concurrency — адаптер должен проверять rowsAffected и возвращать ErrConflict при rev mismatch
 
 // AccountService covers:
 // POST //auth/register/verify          — IssueRegistrationOTP (delegated to OTPService)
@@ -56,6 +56,40 @@ var accTracer = otel.Tracer("iam.AccountService")
 
 func NewAccountService(otpR out.OtpRepository, accR out.AccountRepository, eventsP out.AccountEventsProducer) *AccountService {
 	return &AccountService{otpR, accR, eventsP}
+}
+
+func (a *AccountService) AdminGetAccountData(ctx context.Context, accountID string) (in.AccountDTO, error) {
+	ctx, span := accTracer.Start(ctx, "AccountService.AdminGetAccount")
+	defer span.End()
+
+	acc, err := a.accRep.FindByAccountID(ctx, accountID)
+	if err != nil {
+		return in.AccountDTO{}, err
+	}
+
+	return *acc.MapToDTO(), nil
+}
+
+// AdminChangeAccountData DEBUG OPTION ! NOT SAFE OPTION DONT USE FOR CHAGE STATUS OR METADATA NEVER!!!!!!!!!!!
+func (a *AccountService) AdminChangeAccountData(ctx context.Context, accountDTO in.AccountDTO) error {
+	ctx, span := accTracer.Start(ctx, "AccountService.AdminChangeAccountData")
+	defer span.End()
+
+	acc, err := a.accRep.FindByAccountID(ctx, accountDTO.ID)
+	if err != nil {
+		return nil
+	}
+
+	acc, err = acc.NotSafeGhange(accountDTO)
+	if err != nil {
+		return err
+	}
+
+	if err := a.accRep.ChangeAccountData(ctx, acc); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Register — Step 2: POST //auth/register
@@ -177,7 +211,10 @@ func (a *AccountService) createAccount(
 		return err
 	}
 
-	a.eventsProducer.AccountRegistered(ctx, accountID, role, clasifier, registrationMethod.String())
+	err = a.eventsProducer.AccountRegistered(ctx, accountID, role, clasifier, registrationMethod.String())
+	if err != nil {
+		return err
+	}
 
 	span.AddEvent("account.created",
 		trace.WithAttributes(attribute.String("accountID", accountID)),

@@ -12,7 +12,7 @@ import (
 // Auth: none (public)
 // Cache-Control: max-age=3600, public
 func handleGetJWKS(op inport.TokenOperator) gin.HandlerFunc {
-	return func(c *gin.Context) {
+	return func(c *gin.Context) {	
 		resp, err := op.GetJWKS(c.Request.Context())
 		if err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "jwks unavailable"})

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Reddetk/SayMoDev/identy-service/core/consts"
+	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 
 	"github.com/google/uuid"
 
@@ -114,6 +115,24 @@ func newAccount(
 	}, nil
 }
 
+// NotSafeGhange you can not change AccountID, email by this, but can personalInfo,
+// JUST FOR DEBUGGING -|role,status, metadata|
+func (a *Account) NotSafeGhange(params in.AccountDTO) (*Account, error) {
+	a.personalInfo = params.PersonalInfo
+	var err error
+	a.role, err = valobj.ParseRole(params.Role)
+	if err != nil {
+		return nil, err
+	}
+	a.status, err = valobj.ParseAccountStatus(params.Status)
+	if err != nil {
+		return nil, err
+	}
+
+	a.metadata = a.Metadata().Touch()
+	return a, nil
+}
+
 func NewAccount(email, personalInfo string, role valobj.Role, passwordHash string) (*Account, error) {
 	return newAccount(email, personalInfo, role, nil, &passwordHash)
 }
@@ -173,6 +192,18 @@ func (a *Account) OpenSession(sessionID, jti, fingerprint string) (session *Sess
 	a.sessions = append(a.sessions, *s)
 	a.metadata = a.metadata.Touch()
 	return s, evictedJTI, nil
+}
+
+func (a *Account) MapToDTO() *in.AccountDTO {
+	return &in.AccountDTO{
+		ID:           a.uuid,
+		Email:        a.email,
+		PersonalInfo: a.PersonalInfo(),
+		Role:         a.Role().String(),
+		Status:       a.Status().String(),
+		LockedUntil:  a.lockedUntil,
+		Metadata:     a.Metadata().String(),
+	}
 }
 
 // RevokeSession -- удалить конкретную сессию (E4 logout, E14 admin terminate)
@@ -300,15 +331,22 @@ func (a *Account) IsLocked() bool {
 
 // -- Getters --
 
-func (a *Account) UUID() string                            { return a.uuid }
-func (a *Account) Email() string                           { return a.email }
-func (a *Account) PersonalInfo() string                    { return a.personalInfo }
-func (a *Account) Role() valobj.Role                       { return a.role }
-func (a *Account) GoogleUID() *string                      { return a.googleUID }
-func (a *Account) PasswordHash() *string                   { return a.passwordHash }
-func (a *Account) Revision() int64                         { return a.revision }
-func (a *Account) Status() valobj.AccountStatus            { return a.status }
-func (a *Account) LockedUntil() *int64                     { return a.lockedUntil }
-func (a *Account) Metadata() valobj.Metadata               { return a.metadata }
-func (a *Account) Sessions() []Session                     { return a.sessions }
+func (a *Account) UUID() string                 { return a.uuid }
+func (a *Account) Email() string                { return a.email }
+func (a *Account) PersonalInfo() string         { return a.personalInfo }
+func (a *Account) Role() valobj.Role            { return a.role }
+func (a *Account) GoogleUID() *string           { return a.googleUID }
+func (a *Account) PasswordHash() *string        { return a.passwordHash }
+func (a *Account) Revision() int64              { return a.revision }
+func (a *Account) Status() valobj.AccountStatus { return a.status }
+func (a *Account) LockedUntil() *int64          { return a.lockedUntil }
+func (a *Account) Metadata() valobj.Metadata    { return a.metadata }
+func (a *Account) Sessions() []Session          { return a.sessions }
+func (a *Account) SessionsDTO() []in.SessionDTO {
+	SessionsDTOs := []in.SessionDTO{}
+	for _, session := range a.Sessions() {
+		SessionsDTOs = append(SessionsDTOs, *session.MapToDTO())
+	}
+	return SessionsDTOs
+}
 func (a *Account) PasswordHistory() []valobj.PasswordEntry { return a.passwordHistory }

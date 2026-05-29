@@ -3,8 +3,7 @@ package in
 import context "context"
 
 type SessionOperator interface {
-	AdminCreateSesions() error
-	AdminGetSessions() error
+	AdminGetSessions(ctx context.Context, AccID string) ([]SessionDTO, error)
 
 	Logout(
 		ctx context.Context,
@@ -18,4 +17,11 @@ type SessionOperator interface {
 		sessionID string,
 		adminID string,
 	) error
+}
+
+type SessionDTO struct {
+	SessionID    string
+	Fingerprint  string
+	LastActivity string
+	Metadata     string
 }

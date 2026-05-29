@@ -74,4 +74,7 @@ type AccountRepository interface {
 	//   - INSERT outbox: AccountRegistered {registrationMethod: "oauth2", classifier}
 	// Если classifier=nil и role=patient — логика согласно missing spec / design gap выше.
 	CreateOAuthAccountWithTx(ctx context.Context, params *entity.Account) (*entity.Account, error)
+
+	// ChangeAccountData stands for UNSAFE admin changing of general account data
+	ChangeAccountData(ctx context.Context, params *entity.Account) error
 }

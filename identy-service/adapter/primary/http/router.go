@@ -78,8 +78,9 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 			// DELETE /iam/accounts/:accountId
 			accounts.DELETE("", handleDeleteAccount(deps.AccountOpertator))
 
-			// POST   /iam/accounts/:accountId/sessions  (admin: create session)
-			accounts.POST("/sessions", handleAdminCreateSession(deps.SessionOperator))
+			// POST   /iam/accounts/:accountId/sessions  - Deadend because of MOCK unneaded
+			// accounts.POST("/sessions", handleAdminCreateSession(deps.SessionOperator))
+			
 			// GET    /iam/accounts/:accountId/sessions
 			accounts.GET("/sessions", handleListSessions(deps.SessionOperator))
 			// DELETE /iam/accounts/:accountId/sessions/:sessionId

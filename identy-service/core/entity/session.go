@@ -1,11 +1,13 @@
 package entity
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Reddetk/SayMoDev/identy-service/core/consts"
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 
 	"github.com/google/uuid"
 )
@@ -18,6 +20,15 @@ type Session struct {
 	fingerprint  string
 	lastActivity int64
 	metadata     valobj.Metadata
+}
+
+func (s *Session) MapToDTO() *in.SessionDTO {
+	return &in.SessionDTO{
+		SessionID:    s.sessionID,
+		Fingerprint:  s.fingerprint,
+		LastActivity: s.LastActivityString(),
+		Metadata:     s.Metadata().String(),
+	}
 }
 
 // validateSessionFields -- без accountID, он валидируется на уровне Account
@@ -88,8 +99,9 @@ func (s *Session) UpdateActivity() {
 	s.metadata = s.metadata.Touch()
 }
 
-func (s *Session) SessionID() string         { return s.sessionID }
-func (s *Session) JTI() string               { return s.jti }
-func (s *Session) Fingerprint() string       { return s.fingerprint }
-func (s *Session) LastActivity() int64       { return s.lastActivity }
-func (s *Session) Metadata() valobj.Metadata { return s.metadata }
+func (s *Session) SessionID() string          { return s.sessionID }
+func (s *Session) JTI() string                { return s.jti }
+func (s *Session) Fingerprint() string        { return s.fingerprint }
+func (s *Session) LastActivity() int64        { return s.lastActivity }
+func (s *Session) LastActivityString() string { return fmt.Sprintf("lastActivity=%d", s.lastActivity) }
+func (s *Session) Metadata() valobj.Metadata  { return s.metadata }

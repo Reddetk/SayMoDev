@@ -2,6 +2,8 @@
 package valobj
 
 import (
+	"fmt"
+	"strconv"
 	"time"
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
@@ -53,4 +55,10 @@ func (m Metadata) UpdatedAt() int64 { return m.updatedAt }
 
 func (m Metadata) Equals(other Metadata) bool {
 	return m.createdAt == other.createdAt && m.updatedAt == other.updatedAt
+}
+
+func (m Metadata) String() string {
+	cA := strconv.FormatInt(m.CreatedAt(), 10)
+	uA := strconv.FormatInt(m.UpdatedAt(), 10)
+	return fmt.Sprintf("created_at=%s updated_at=%s", cA, uA)
 }
