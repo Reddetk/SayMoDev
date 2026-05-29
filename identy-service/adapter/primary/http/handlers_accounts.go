@@ -5,8 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	"github.com/Reddetk/SayMoDev/identy-service/adapter/primary/http/middleware"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	inport "github.com/Reddetk/SayMoDev/identy-service/port/in"
 )
 
@@ -405,7 +405,7 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
-			case err == corerr.ErrAccountAlreadyLocked:
+			case err == corerr.ErrAccountLocked:
 				c.JSON(http.StatusConflict, gin.H{"error": "account already locked"})
 			case isInfraError(err):
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
@@ -416,7 +416,7 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"status":      "blocked",
+			"status":       "blocked",
 			"locked_until": req.LockedUntil,
 		})
 	}
@@ -446,7 +446,7 @@ func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
-			case err == corerr.ErrAccountNotLocked:
+			case err == corerr.ErrAccountNotActive: // TODO some shit with Locking acc
 				c.JSON(http.StatusConflict, gin.H{"error": "account is not locked"})
 			case isInfraError(err):
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})

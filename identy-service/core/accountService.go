@@ -368,13 +368,14 @@ func (a *AccountService) LockAccount(
 		span.RecordError(err)
 		return err
 	}
-
+	// TODO: implement persistence
 	// T4 Mass-Revoke: sets status=blocked, rev++, clears sessions
 	revokedJTIs, err := account.Lock(until)
 	if err != nil {
 		span.RecordError(err)
 		return err
 	}
+
 
 	if err := a.accRep.ResetPassword(ctx, account, ""); err != nil {
 		// ResetPassword is reused to persist state; a dedicated UpdateAccountTx port method
