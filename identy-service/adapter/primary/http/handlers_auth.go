@@ -7,8 +7,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
-	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	"github.com/Reddetk/SayMoDev/identy-service/adapter/primary/http/middleware"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	inport "github.com/Reddetk/SayMoDev/identy-service/port/in"
 )
 
@@ -19,12 +19,12 @@ type registerVerifyReq struct {
 }
 
 type registerReq struct {
-	Email       string             `json:"email"       binding:"required,email"`
-	VerifyCode  string             `json:"verifyCode"  binding:"required"`
-	Password    string             `json:"password"    binding:"required,min=8,max=72"`
-	Role        string             `json:"role"        binding:"required"`
-	Fingerprint string             `json:"fingerprint" binding:"required"`
-	Classifier  classifierReqBody  `json:"classifier"  binding:"required"`
+	Email       string            `json:"email"       binding:"required,email"`
+	VerifyCode  string            `json:"verifyCode"  binding:"required"`
+	Password    string            `json:"password"    binding:"required,min=8,max=72"`
+	Role        string            `json:"role"        binding:"required"`
+	Fingerprint string            `json:"fingerprint" binding:"required"`
+	Classifier  classifierReqBody `json:"classifier"  binding:"required"`
 }
 
 type classifierReqBody struct {
@@ -43,9 +43,9 @@ type passwordResetReq struct {
 }
 
 type passwordResetConfirmReq struct {
-	Email           string `json:"email"           binding:"required,email"`
-	Code            string `json:"code"            binding:"required"`
-	NewPassword     string `json:"newPassword"     binding:"required,min=8,max=72"`
+	Email       string `json:"email"           binding:"required,email"`
+	Code        string `json:"code"            binding:"required"`
+	NewPassword string `json:"newPassword"     binding:"required,min=8,max=72"`
 }
 
 type jwksKeyJSON struct {
@@ -149,9 +149,9 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 			req.Fingerprint,
 		); err != nil {
 			switch err {
-			case corerr.ErrOTPInvalid, corerr.ErrOTPExpired:
+			case corerr.ErrUserOTPisNotCorrect, corerr.ErrOTPAlreadyExpired:
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or expired verification code"})
-			case corerr.ErrEmailAlreadyTaken:
+			case corerr.ErrEmailAlreadyExists:
 				c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
 			case corerr.ErrRateLimitIP, corerr.ErrRateLimitAccount:
 				c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
@@ -348,11 +348,11 @@ func handleOAuthGoogleInitiate(auth inport.AccountAuthenticator) gin.HandlerFunc
 		c.SetCookie(
 			oauthStateCookieName,
 			cookieVal,
-			600,   // 10 min TTL matches OAuthState.ExpiresAt typical window
+			600, // 10 min TTL matches OAuthState.ExpiresAt typical window
 			"/",
-			"",    // domain: same-site
-			true,  // secure
-			true,  // httpOnly
+			"",   // domain: same-site
+			true, // secure
+			true, // httpOnly
 		)
 
 		c.Redirect(http.StatusFound, redirectURL)
