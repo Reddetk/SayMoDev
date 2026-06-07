@@ -9,7 +9,7 @@ import "context"
 //   - L2: Redis -- Add и Contains работают через этот слой
 //   - L3: PostgreSQL (source of truth) -- пишется через outbox в AccountRepository
 //
-// AuthService пишет в L2 напрямую после успешного коммита транзакции.
+// AccountService пишет в L2 напрямую после успешного коммита транзакции.
 // Outbox-воркер реплицирует L2 -> L3 асинхронно.
 // При промахе L2 адаптер должен упасть с ошибкой (не silent fail).
 type TokenBlacklist interface {
@@ -33,4 +33,18 @@ type TokenBlacklist interface {
 	// Redis недоступен: возвращает 0, err.
 	//   TokenService должен вернуть ErrTokenRevoked (fail-closed по спецификации BC#1 Step 3).
 	GetAccountRev(ctx context.Context, accountID string) (int64, error)
+
+	// SetAccountRev записывает текущий rev аккаунта в Redis L2 после T4 mass-revoke.
+	//
+	// Вызывается из AccountService после каждого успешного *Tx вызова, который
+	// инкрементировал rev: LockAccount, PasswordChange, ConfirmPasswordReset, SoftDelete.
+	//
+	// Семантика: при следующем запросе любого токена с token.rev < rev
+	// TokenService получит актуальный rev из Redis и отклонит токен без
+	// обращения к PostgreSQL.
+	//
+	// TTL = 30 дней (max token lifetime). Redis недоступен: возвращает err;
+	// AccountService логирует как WARN -- транзакция уже закоммичена,
+	// rev в PostgreSQL актуален; деградация только до L3 lookup.
+	SetAccountRev(ctx context.Context, accountID string, rev int64) error
 }

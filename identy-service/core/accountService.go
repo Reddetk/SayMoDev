@@ -18,6 +18,7 @@ package core
 //   §3  Token lifecycle: rev++ is performed by entity.ChangePassword/Lock/SoftDelete; revokedJTIs passed to port
 //   §6  Lock semantics: both LockAccount and ConfrimPasswordReset perform T4 mass-revoke (rev++ + sessions cleared)
 //   §7  OTP security: constant-time comparison in checkOTP; generic error on mismatch; OTP plaintext never logged
+//   §G9 Revocation write order: after each *Tx commit, SetAccountRev writes new rev to Redis L2 (non-fatal on error)
 //
 // Event publishing:
 //   AccountRegistered, AccountEmailVerified     — via outbox inside CreateAccountWithTx (repository layer)
@@ -50,12 +51,18 @@ type AccountService struct {
 	otpRep         out.OtpRepository
 	accRep         out.AccountRepository
 	eventsProducer out.AccountEventsProducer
+	tokenBlacklist out.TokenBlacklist
 }
 
 var accTracer = otel.Tracer("iam.AccountService")
 
-func NewAccountService(otpR out.OtpRepository, accR out.AccountRepository, eventsP out.AccountEventsProducer) *AccountService {
-	return &AccountService{otpR, accR, eventsP}
+func NewAccountService(
+	otpR out.OtpRepository,
+	accR out.AccountRepository,
+	eventsP out.AccountEventsProducer,
+	tokenBL out.TokenBlacklist,
+) *AccountService {
+	return &AccountService{otpR, accR, eventsP, tokenBL}
 }
 
 func (a *AccountService) AdminGetAccountData(ctx context.Context, accountID string) (in.AccountDTO, error) {
@@ -228,8 +235,9 @@ func (a *AccountService) createAccount(
 //  1. Constant-time OTP verification (§7)
 //  2. entity.ChangePassword performs T4 mass-revoke: rev++, all sessions cleared, returns revokedJTIs (ADR)
 //  3. ACID transaction: password update + rev + cleared sessions persisted via ResetPassword port
-//  4. Publish AccessTokenRevoked for every revoked jti (outbox — async durable)
-//  5. Publish AccountPasswordResetCompleted (audit)
+//  4. SetAccountRev writes new rev to Redis L2 (§G9; non-fatal on error)
+//  5. Publish AccessTokenRevoked for every revoked jti (outbox — async durable)
+//  6. Publish AccountPasswordResetCompleted (audit)
 //
 // §6: mass-revoke is mandatory — a locked/reset account must not leave valid 30-day tokens outstanding.
 // §3: rev++ performed by entity; revokedJTIs returned and passed to events producer.
@@ -272,6 +280,9 @@ func (a *AccountService) ConfrimPasswordReset(
 		return err
 	}
 
+	// §G9: write new rev to Redis L2 for immediate rev-check without PostgreSQL lookup
+	a.setAccountRevOrWarn(ctx, span, account.UUID(), account.Revision())
+
 	now := time.Now().UnixMilli()
 
 	a.publishRevokedJTIs(ctx, account.UUID(), account.Revision(), now, "password_reset", revokedJTIs)
@@ -294,8 +305,9 @@ func (a *AccountService) ConfrimPasswordReset(
 //  1. entity.ChangePassword performs T4 mass-revoke: rev++, all sessions cleared, returns revokedJTIs
 //  2. ACID transaction: new hash + rev + cleared sessions persisted via ResetPassword port
 //     History reuse check (O(5) bcrypt.Compare, not byte equality) is enforced inside the repository TX
-//  3. Publish AccessTokenRevoked for every revoked jti
-//  4. Publish AccountPasswordChanged (audit)
+//  3. SetAccountRev writes new rev to Redis L2 (§G9; non-fatal on error)
+//  4. Publish AccessTokenRevoked for every revoked jti
+//  5. Publish AccountPasswordChanged (audit)
 //
 // §2: history reuse check uses bcrypt.Compare — random salt means byte equality is always false for valid passwords.
 // Caller (HTTP handler / application layer) is responsible for verifying the current password before calling this method.
@@ -325,6 +337,9 @@ func (a *AccountService) PasswordChange(
 		span.RecordError(err)
 		return err
 	}
+
+	// §G9: write new rev to Redis L2 for immediate rev-check without PostgreSQL lookup
+	a.setAccountRevOrWarn(ctx, span, account.UUID(), account.Revision())
 
 	now := time.Now().UnixMilli()
 
@@ -379,6 +394,9 @@ func (a *AccountService) LockAccount(
 		span.RecordError(err)
 		return err
 	}
+
+	// §G9: write new rev to Redis L2 for immediate rev-check without PostgreSQL lookup
+	a.setAccountRevOrWarn(ctx, span, account.UUID(), account.Revision())
 
 	now := time.Now().UnixMilli()
 
@@ -470,6 +488,9 @@ func (a *AccountService) SoftDelete(
 		return err
 	}
 
+	// §G9: write new rev to Redis L2 for immediate rev-check without PostgreSQL lookup
+	a.setAccountRevOrWarn(ctx, span, account.UUID(), account.Revision())
+
 	now := time.Now().UnixMilli()
 
 	a.publishRevokedJTIs(ctx, account.UUID(), account.Revision(), now, "account_deleted", revokedJTIs)
@@ -492,29 +513,47 @@ func (a *AccountService) SoftDelete(
 // behind the AccountEventsProducer (outbox pattern). Errors are logged as spans but do not
 // propagate to the caller — the outbox guarantees eventual delivery to L3 PostgreSQL.
 //
-// §6: every T4 mass-revoke operation (Lock, ChangePassword, SoftDelete) must call this helper
-// to ensure all outstanding tokens are invalidated before their natural expiry.
+// §6: every T4 mass-revoke operation (Lock, ChangePassword, SoftDelete) calls this helper.
 func (a *AccountService) publishRevokedJTIs(
 	ctx context.Context,
 	accountID string,
-	revision int64,
-	revokedAt int64,
+	rev int64,
+	now int64,
 	reason string,
-	jtis []string,
+	revokedJTIs []string,
 ) {
-	if len(jtis) == 0 {
-		return
+	for _, jti := range revokedJTIs {
+		if err := a.eventsProducer.AccessTokenRevoked(ctx, jti, accountID, rev, now, reason); err != nil {
+			// non-fatal: span records the error; outbox will retry delivery
+			_, span := accTracer.Start(ctx, "AccountService.publishRevokedJTIs.warn")
+			span.RecordError(err)
+			span.SetAttributes(
+				attribute.String("jti", jti),
+				attribute.String("accountID", accountID),
+				attribute.String("reason", reason),
+			)
+			span.End()
+		}
 	}
-	_, span := accTracer.Start(ctx, "AccountService.publishRevokedJTIs")
-	defer span.End()
+}
 
-	for _, jti := range jtis {
-		_ = jti // jti published per-event via producer; producer handles batching internally
-	}
-
-	// Publish a single AccessTokenRevoked event with the current revision.
-	// The event signals to all downstream caches to invalidate tokens where token.rev < revision.
-	if err := a.eventsProducer.AccessTokenRevoked(ctx, accountID, revision, revokedAt, reason); err != nil {
+// setAccountRevOrWarn writes the new rev to Redis L2 after a successful T4 mass-revoke transaction.
+//
+// §G9: the TX is already committed when this is called; failure here only degrades the
+// rev-check path to L3 PostgreSQL lookup (TokenService falls back automatically).
+// Error is recorded as a span warning, not propagated to the caller.
+func (a *AccountService) setAccountRevOrWarn(
+	ctx context.Context,
+	span trace.Span,
+	accountID string,
+	rev int64,
+) {
+	if err := a.tokenBlacklist.SetAccountRev(ctx, accountID, rev); err != nil {
 		span.RecordError(err)
+		span.SetAttributes(
+			attribute.String("warn", "SetAccountRev failed; degraded to L3 lookup"),
+			attribute.String("accountID", accountID),
+			attribute.Int64("rev", rev),
+		)
 	}
 }
