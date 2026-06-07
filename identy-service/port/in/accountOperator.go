@@ -50,6 +50,6 @@ type AccountDTO struct {
 	Status       string
 	LockedUntil  *int64
 	Metadata     string
-	PasswordHash string
+	PasswordHash *string
 	Rev          int64
 }

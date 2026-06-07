@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	blacklistKeyPrefix = "jwt:black:"
+	blacklistKeyPrefix  = "jwt:black:"
 	accountRevKeyPrefix = "account:rev:"
-	accountRevTTL = 30 * 24 * time.Hour // 30 дней -- max token lifetime
+	accountRevTTL       = 30 * 24 * time.Hour // 30 дней -- max token lifetime
 
 	l1TTL      = 60 * time.Second
 	l1Capacity = 10_000

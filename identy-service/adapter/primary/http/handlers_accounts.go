@@ -292,6 +292,7 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 
 		// Step 2: verify currentPassword against stored hash.
 		// bcrypt.CompareHashAndPassword is constant-time.
+		// TODO fix
 		if err := bcrypt.CompareHashAndPassword([]byte(current.PasswordHash), []byte(req.CurrentPassword)); err != nil {
 			if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid current password"})
