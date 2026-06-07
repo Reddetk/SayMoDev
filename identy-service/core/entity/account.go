@@ -203,6 +203,8 @@ func (a *Account) MapToDTO() *in.AccountDTO {
 		Status:       a.Status().String(),
 		LockedUntil:  a.lockedUntil,
 		Metadata:     a.Metadata().String(),
+		PasswordHash: *a.PasswordHash(),
+		Rev:          a.revision,
 	}
 }
 
