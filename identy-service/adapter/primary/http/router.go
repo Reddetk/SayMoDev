@@ -82,7 +82,10 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 
 			accounts.GET("/sessions", handleListSessions(deps.SessionOperator))
 			accounts.DELETE("/sessions/:sessionId", handleTerminateSession(deps.SessionOperator))
-			accounts.POST("/password", handleChangePassword(deps.PasswordOperator))
+
+			// handleChangePassword requires both AccountOperator (currentPassword verification)
+			// and PasswordOperator (use case execution).
+			accounts.POST("/password", handleChangePassword(deps.AccountOpertator, deps.PasswordOperator))
 
 			// lock/unlock: только administrator.
 			accounts.POST("/lock", middleware.RequireRole(middleware.RoleAdministrator), handleLockAccount(deps.AccountOpertator))
