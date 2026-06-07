@@ -22,8 +22,8 @@ var tokenTracer = otel.Tracer("iam.tokenService")
 // Не знает о AuthService, SessionService или AccountService.
 //
 // Зависимости (out-порты):
-//   - TokenIssuer          -- Issue + Verify (RS256) + GetPublicKeys (JWKS)
-//   - TokenBlacklist       -- Add (L2 запись) + Contains (L1->L2 чтение)
+//   - TokenIssuer           -- Issue + Verify (RS256) + GetPublicKeys (JWKS)
+//   - TokenBlacklist        -- Add (L2 запись) + Contains (L1->L2 чтение) + GetAccountRev (L2)
 //   - AccountEventsProducer -- AccessTokenRevoked
 //
 // G9 Write Order (blacklist):
@@ -155,14 +155,17 @@ func (s *TokenService) GetJWKS(ctx context.Context) ([]string, error) {
 //
 // Реализует in-порт TokenValidator. Вызывается исключительно из JWTMiddleware.
 //
-// Цепочка:
+// Цепочка (BC#1 Token Validation Flow):
 //
-//	[1] tokenIssuer.Verify      -- RS256 подпись, exp, iss, aud, kid (re-fetch при неизвестном kid)
-//	[2] tokenBlacklist.Contains -- jti blacklist (L1->L2); fail-closed: ошибка == 401
-//	[3] valobj.NewAuthContext    -- UUID-валидация accountID/sessionID, rev >= 1
+//	[1] tokenIssuer.Verify          -- RS256 подпись, exp, iss, aud, kid
+//	[2] tokenBlacklist.Contains     -- jti blacklist L1->L2 (fail-closed)
+//	[3] tokenBlacklist.GetAccountRev -- account:rev L2 mass-revoke check (fail-closed)
+//	[4] valobj.NewAuthContext        -- UUID-валидация accountID/sessionID, rev >= 1
 //
-// Все ошибки кроме ErrJWKSKeysEmpty маппируются в ErrTokenRevoked.
-// ErrJWKSKeysEmpty пробрасывается as-is для HTTP 503 в middleware.
+// Fail-closed semantics:
+//
+//	Redis недоступен на шаге 2 или 3 → ErrTokenRevoked (401).
+//	ErrJWKSKeysEmpty пробрасывается as-is → HTTP 503 в middleware.
 func (s *TokenService) ValidateToken(
 	ctx context.Context,
 	rawToken string,
@@ -175,7 +178,6 @@ func (s *TokenService) ValidateToken(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "token verification failed")
-		// ErrJWKSKeysEmpty пробрасываем для HTTP 503; все остальные → ErrTokenRevoked
 		if err == corerr.ErrJWKSKeysEmpty {
 			return in.AuthContext{}, corerr.ErrJWKSKeysEmpty
 		}
@@ -200,7 +202,22 @@ func (s *TokenService) ValidateToken(
 		return in.AuthContext{}, corerr.ErrTokenRevoked
 	}
 
-	// [3] Сборка AuthContext -- UUID и rev валидируются внутри конструктора
+	// [3] account rev check -- mass-revoke (смена пароля, блокировка, удаление аккаунта)
+	// Spec BC#1 Step 3 L2: account:rev > token.rev → 401
+	// Fail-closed: Redis недоступен → ErrTokenRevoked
+	accountRev, err := s.tokenBlacklist.GetAccountRev(ctx, accountID)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "account rev check failed")
+		return in.AuthContext{}, corerr.ErrTokenRevoked
+	}
+	if accountRev > rev {
+		span.SetAttributes(attribute.Int64("token.account_rev", accountRev))
+		span.SetStatus(codes.Error, "token rev outdated (mass-revoked)")
+		return in.AuthContext{}, corerr.ErrTokenRevoked
+	}
+
+	// [4] Сборка AuthContext -- UUID и rev валидируются внутри конструктора
 	parsedRole, err := valobj.ParseRole(role)
 	if err != nil {
 		span.RecordError(err)

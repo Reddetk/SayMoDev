@@ -22,4 +22,15 @@ type TokenBlacklist interface {
 	// Contains проверяет наличие jti в blacklist (L1 -> L2)
 	// Используется в middleware валидации токена
 	Contains(ctx context.Context, jti string) (bool, error)
+
+	// GetAccountRev возвращает текущий rev аккаунта из Redis L2.
+	// Ключ: account:rev:<accountID>, TTL 30 дней (обновляется при каждом rev++).
+	//
+	// L2 miss (ключ отсутствует): возвращает 0, nil.
+	//   Семантика: rev в Redis не установлен -- mass-revoke не был инициирован.
+	//   TokenService интерпретирует 0 как "rev не отозван" и продолжает.
+	//
+	// Redis недоступен: возвращает 0, err.
+	//   TokenService должен вернуть ErrTokenRevoked (fail-closed по спецификации BC#1 Step 3).
+	GetAccountRev(ctx context.Context, accountID string) (int64, error)
 }
