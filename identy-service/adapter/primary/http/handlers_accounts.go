@@ -30,43 +30,14 @@ type changePasswordReq struct {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: extract AuthContext from Gin context (set by JWTMiddleware).
-// ---------------------------------------------------------------------------
-
-func mustAuthContext(c *gin.Context) (inport.AuthContext, bool) {
-	raw, ok := c.Get(middleware.AuthContextKey)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing auth context"})
-		return inport.AuthContext{}, false
-	}
-	ac, ok := raw.(inport.AuthContext)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
-		return inport.AuthContext{}, false
-	}
-	return ac, true
-}
-
-// ---------------------------------------------------------------------------
 // GET /iam/accounts/:accountId
 // Response: 200 AccountDTO
-// Guard: ownership (token.sub == accountId) OR role == administrator
+// Guard: OwnershipOrAdmin middleware (applied at router group level)
 // ---------------------------------------------------------------------------
 
 func handleGetAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ac, ok := mustAuthContext(c)
-		if !ok {
-			return
-		}
-
 		accountID := c.Param("accountId")
-
-		// Ownership OR admin check.
-		if ac.AccountID != accountID && ac.Role != "administrator" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
 
 		dto, err := accOp.AdminGetAccountData(c.Request.Context(), accountID)
 		if err != nil {
@@ -97,23 +68,14 @@ func handleGetAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 // PATCH /iam/accounts/:accountId
 // Body: { role?, personalInfo? }
 // Response: 200 AccountDTO
-// Guard: ownership (token.sub == accountId) OR role == administrator
+// Guard: OwnershipOrAdmin middleware (applied at router group level)
+// Business rule: role change is administrator-only (checked here, not in middleware)
 // ---------------------------------------------------------------------------
 
 func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ac, ok := mustAuthContext(c)
-		if !ok {
-			return
-		}
-
+		ac := middleware.MustGetAuthContext(c)
 		accountID := c.Param("accountId")
-
-		// Role change is administrator-only; personalInfo update is ownership-allowed.
-		if ac.AccountID != accountID && ac.Role != "administrator" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
 
 		var req patchAccountReq
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -121,13 +83,14 @@ func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			return
 		}
 
-		// Non-admin cannot change role.
-		if req.Role != nil && ac.Role != "administrator" {
+		// Business rule: only administrator may change account role.
+		// This is intentionally kept in the handler (not middleware) because
+		// it depends on the request body, not just identity.
+		if req.Role != nil && ac.Role != inport.RoleAdministrator {
 			c.JSON(http.StatusForbidden, gin.H{"error": "role change requires administrator"})
 			return
 		}
 
-		// Fetch current state to build patched DTO.
 		current, err := accOp.AdminGetAccountData(c.Request.Context(), accountID)
 		if err != nil {
 			switch {
@@ -177,22 +140,13 @@ func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 // ---------------------------------------------------------------------------
 // DELETE /iam/accounts/:accountId
 // Response: 204 No Content
-// Guard: role == administrator
+// Guard: RequireRole(administrator) middleware (applied at router route level)
 // Side effects: T4 mass-revoke, AccountDeleted event -> BC#2, BC#4 cascade.
 // ---------------------------------------------------------------------------
 
 func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ac, ok := mustAuthContext(c)
-		if !ok {
-			return
-		}
-
-		if ac.Role != "administrator" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
-
+		ac := middleware.MustGetAuthContext(c)
 		accountID := c.Param("accountId")
 
 		// actorID sourced from JWT claims -- never from request body (§ Audit).
@@ -217,22 +171,12 @@ func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 // ---------------------------------------------------------------------------
 // GET /iam/accounts/:accountId/sessions
 // Response: 200 [SessionDTO]
-// Guard: ownership (token.sub == accountId) OR role == administrator
+// Guard: OwnershipOrAdmin middleware (applied at router group level)
 // ---------------------------------------------------------------------------
 
 func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ac, ok := mustAuthContext(c)
-		if !ok {
-			return
-		}
-
 		accountID := c.Param("accountId")
-
-		if ac.AccountID != accountID && ac.Role != "administrator" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
 
 		sessions, err := sesOp.AdminGetSessions(c.Request.Context(), accountID)
 		if err != nil {
@@ -254,31 +198,21 @@ func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
 // ---------------------------------------------------------------------------
 // DELETE /iam/accounts/:accountId/sessions/:sessionId
 // Response: 204 No Content
-// Guard: ownership OR role == administrator
+// Guard: OwnershipOrAdmin middleware (applied at router group level)
+// Business logic: administrator uses AdminTerminateSession (audit trail),
+// owner uses Logout (self-service path). Branching is intentional here.
 // ---------------------------------------------------------------------------
 
 func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ac, ok := mustAuthContext(c)
-		if !ok {
-			return
-		}
-
+		ac := middleware.MustGetAuthContext(c)
 		accountID := c.Param("accountId")
 		sessionID := c.Param("sessionId")
 
-		isOwner := ac.AccountID == accountID
-		isAdmin := ac.Role == "administrator"
-
-		if !isOwner && !isAdmin {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
-
 		ctx := c.Request.Context()
 
-		if isAdmin && !isOwner {
-			// Administrator terminating another account's session.
+		if ac.Role == inport.RoleAdministrator && ac.AccountID != accountID {
+			// Administrator terminating another account's session (audit trail path).
 			if err := sesOp.AdminTerminateSession(ctx, accountID, sessionID, ac.AccountID); err != nil {
 				switch {
 				case err == corerr.ErrSessionNotFound:
@@ -318,25 +252,14 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 // POST /iam/accounts/:accountId/password
 // Body: { currentPassword, newPassword }
 // Response: 204 No Content
-// Guard: ownership (token.sub == accountId)
-// Side effects: T4 mass-revoke -- rev++, all sessions cleared, AccessTokenRevoked events.
-// Caller is responsible for verifying currentPassword before delegating to PasswordChange (port/in contract).
+// Guard: OwnershipOrAdmin middleware (applied at router group level)
+// NOTE: missing spec -- whether administrator may change another account's password
+// is not defined in BC#1. Until resolved, no additional gate is applied here.
 // ---------------------------------------------------------------------------
 
 func handleChangePassword(passOp inport.PasswordOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ac, ok := mustAuthContext(c)
-		if !ok {
-			return
-		}
-
 		accountID := c.Param("accountId")
-
-		// Only the account owner may change their own password.
-		if ac.AccountID != accountID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
 
 		var req changePasswordReq
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -344,7 +267,6 @@ func handleChangePassword(passOp inport.PasswordOperator) gin.HandlerFunc {
 			return
 		}
 
-		// port/in PasswordChange contract: caller must hash the new password.
 		newPasswordHash, err := hashPassword(req.NewPassword)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
@@ -358,7 +280,6 @@ func handleChangePassword(passOp inport.PasswordOperator) gin.HandlerFunc {
 		); err != nil {
 			switch {
 			case err == corerr.ErrInvalidCredentials:
-				// Current password verification failed inside the service.
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid current password"})
 			case isPasswordPolicyError(err):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "password policy violation"})
@@ -380,22 +301,13 @@ func handleChangePassword(passOp inport.PasswordOperator) gin.HandlerFunc {
 // POST /iam/accounts/:accountId/lock
 // Body: { locked_until?: int64 | null }
 // Response: 200 { status, locked_until }
-// Guard: role == administrator
+// Guard: RequireRole(administrator) middleware (applied at router route level)
 // Side effects: §6 Lock Semantics -- rev++, all jti blacklisted, sessions deleted atomically.
 // ---------------------------------------------------------------------------
 
 func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ac, ok := mustAuthContext(c)
-		if !ok {
-			return
-		}
-
-		if ac.Role != "administrator" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
-
+		ac := middleware.MustGetAuthContext(c)
 		accountID := c.Param("accountId")
 
 		var req lockAccountReq
@@ -408,7 +320,6 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
 			case err == corerr.ErrAccountAlreadyLocked:
-				// entity.Account.Lock guard: status == StatusBlocked -> 409.
 				c.JSON(http.StatusConflict, gin.H{"error": "account is already locked"})
 			case err == corerr.ErrAccountDeleted:
 				c.JSON(http.StatusConflict, gin.H{"error": "account is deleted"})
@@ -430,21 +341,11 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 // ---------------------------------------------------------------------------
 // POST /iam/accounts/:accountId/unlock
 // Response: 200 { status }
-// Guard: role == administrator
+// Guard: RequireRole(administrator) middleware (applied at router route level)
 // ---------------------------------------------------------------------------
 
 func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ac, ok := mustAuthContext(c)
-		if !ok {
-			return
-		}
-
-		if ac.Role != "administrator" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
-
 		accountID := c.Param("accountId")
 
 		if err := accOp.UnlockAccount(c.Request.Context(), accountID); err != nil {
@@ -452,7 +353,6 @@ func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
 			case err == corerr.ErrAccountNotLocked:
-				// entity.Account.Unlock guard: status != StatusBlocked -> 409.
 				c.JSON(http.StatusConflict, gin.H{"error": "account is not locked"})
 			case err == corerr.ErrAccountDeleted:
 				c.JSON(http.StatusConflict, gin.H{"error": "account is deleted"})

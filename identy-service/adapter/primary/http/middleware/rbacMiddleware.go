@@ -6,30 +6,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RequireRole возвращает middleware, который проверяет что role из AuthContext
-// входит в список разрешённых ролей.
+// RequireRole -- gate middleware: пропускает запрос только если роль из AuthContext
+// совпадает с одной из переданных roles.
 //
-// При несоответствии возвращает 403 Forbidden.
-//
-// Должен применяться ПОСЛЕ JWTMiddleware -- использует MustGetAuthContext.
-//
-// Пример использования в router.go:
-//
-//	accounts.POST("/lock", RequireRole("administrator"), handleLockAccount(...))
+// Паникует если вызван без предшествующего JWTMiddleware (AuthContext отсутствует).
+// Это ошибка конфигурации роутера, не runtime-ошибка.
 func RequireRole(roles ...string) gin.HandlerFunc {
-	allowed := make(map[string]struct{}, len(roles))
-	for _, r := range roles {
-		allowed[r] = struct{}{}
-	}
-
 	return func(c *gin.Context) {
-		authCtx := MustGetAuthContext(c)
-
-		if _, ok := allowed[authCtx.Role]; !ok {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
+		ac := MustGetAuthContext(c)
+		for _, r := range roles {
+			if ac.Role == r {
+				c.Next()
+				return
+			}
 		}
-
-		c.Next()
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 	}
 }

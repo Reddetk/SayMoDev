@@ -4,33 +4,29 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	inport "github.com/Reddetk/SayMoDev/identy-service/port/in"
 )
 
-// OwnershipOrAdmin проверяет что запрашивающий является владельцем ресурса
-// или имеет роль administrator.
+// OwnershipOrAdmin -- gate middleware для маршрутов /iam/accounts/:accountId.
 //
-// Spec: IAM §Token Validation Flow Step 4:
-//   "Patient data: query with account_id filter -> empty result -> 404 (not 403)"
-//   "Why 404 not 403: 403 reveals resource exists; 404 prevents enumeration (IDOR prevention)"
+// Пропускает запрос если:
+//   - role == administrator (доступ ко всем аккаунтам)
+//   - token.sub == accountId (владелец видит только свои данные)
 //
-// Ожидает path-параметр :accountId в маршруте.
-// Должен применяться ПОСЛЕ JWTMiddleware.
+// IDOR prevention: не-владелец получает 404, не 403.
+// Spec §Token Validation Flow Step 4.
 func OwnershipOrAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authCtx := MustGetAuthContext(c)
-		paramAccountID := c.Param("accountId")
+		ac := MustGetAuthContext(c)
+		accountID := c.Param("accountId")
 
-		if authCtx.Role == "administrator" {
+		if ac.Role == inport.RoleAdministrator || ac.AccountID == accountID {
 			c.Next()
 			return
 		}
 
-		if authCtx.AccountID != paramAccountID {
-			// 404, не 403 -- IDOR prevention согласно спецификации
-			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "not found"})
-			return
-		}
-
-		c.Next()
+		// 404, не 403 -- IDOR prevention: не раскрываем факт существования аккаунта.
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "not found"})
 	}
 }

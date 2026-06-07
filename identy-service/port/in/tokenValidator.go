@@ -28,9 +28,19 @@ type TokenValidator interface {
 	ValidateToken(ctx context.Context, rawToken string) (AuthContext, error)
 }
 
+// AuthContext -- доменная абстракция результата валидации токена.
+// Передаётся из JWTMiddleware в handlers через c.Keys.
 type AuthContext struct {
 	AccountID string
 	Role      string
 	SessionID string
 	Rev       int64
 }
+
+// Роли аккаунта. Согласованы с глоссарием (Ubiquitous Language).
+// Используются во всём первичном адаптере вместо магических строк.
+const (
+	RolePatient       = "patient"
+	RoleRelative      = "relative"
+	RoleAdministrator = "administrator"
+)

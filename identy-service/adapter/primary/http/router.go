@@ -9,8 +9,8 @@
 // Middleware порядок выполнения на protected-маршрутах:
 //   gin.Recovery() -> JWTMiddleware -> [OwnershipOrAdmin | RequireRole] -> handler
 //
-// Все handler-функции -- заглушки (placeholder).
-// Реальная реализация -- в handler-файлах соответствующих групп.
+// Gate-контроль (кто может достучаться до handler) -- только в middleware.
+// Бизнес-правила (что именно разрешено делать) -- только в handler.
 package http
 
 import (
@@ -82,7 +82,8 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 			// PATCH /iam/accounts/:accountId
 			accounts.PATCH("", handlePatchAccount(deps.AccountOpertator))
 			// DELETE /iam/accounts/:accountId
-			accounts.DELETE("", handleDeleteAccount(deps.AccountOpertator))
+			// RequireRole: пациент не может удалить даже свой аккаунт.
+			accounts.DELETE("", middleware.RequireRole(inport.RoleAdministrator), handleDeleteAccount(deps.AccountOpertator))
 
 			// GET    /iam/accounts/:accountId/sessions
 			accounts.GET("/sessions", handleListSessions(deps.SessionOperator))
@@ -94,11 +95,11 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 
 			// POST /iam/accounts/:accountId/lock
 			// Spec §Lock Semantics §6 + §RBAC: requires role=administrator
-			accounts.POST("/lock", middleware.RequireRole("administrator"), handleLockAccount(deps.AccountOpertator))
+			accounts.POST("/lock", middleware.RequireRole(inport.RoleAdministrator), handleLockAccount(deps.AccountOpertator))
 
 			// POST /iam/accounts/:accountId/unlock
 			// Spec §Account Lock / Unlock (admin): requires role=administrator
-			accounts.POST("/unlock", middleware.RequireRole("administrator"), handleUnlockAccount(deps.AccountOpertator))
+			accounts.POST("/unlock", middleware.RequireRole(inport.RoleAdministrator), handleUnlockAccount(deps.AccountOpertator))
 		}
 	}
 
