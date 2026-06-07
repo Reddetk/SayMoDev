@@ -7,9 +7,11 @@ import "errors"
 // Business errors
 // ---------------------------------------------------------------------------
 var (
-	ErrUserOTPisNotCorrect = errors.New("otp is not correct")
-	ErrUserOTPisNotValid   = errors.New("otp is not valid")
-	ErrEmailAlreadyExists  = errors.New("email already exists")
+	// core/coreErrors/errors.go
+	ErrFederatedAccountHasNoPassword = errors.New("federated account has no password set")
+	ErrUserOTPisNotCorrect           = errors.New("otp is not correct")
+	ErrUserOTPisNotValid             = errors.New("otp is not valid")
+	ErrEmailAlreadyExists            = errors.New("email already exists")
 )
 
 // ---------------------------------------------------------------------------
@@ -73,10 +75,10 @@ var (
 	// status. Mapped to HTTP 409 Conflict by the admin handler.
 	ErrAccountNotLocked = errors.New("account is not locked")
 
-	ErrOTPAlreadyExpired             = errors.New("otp hash already expired")
-	ErrOTPHashRequired               = errors.New("otp hash req")
-	ErrOTPHashInvalidLength          = errors.New("otp hash invalid length")
-	ErrVerificationCodeIDRequired    = errors.New("verf code id req")
+	ErrOTPAlreadyExpired          = errors.New("otp hash already expired")
+	ErrOTPHashRequired            = errors.New("otp hash req")
+	ErrOTPHashInvalidLength       = errors.New("otp hash invalid length")
+	ErrVerificationCodeIDRequired = errors.New("verf code id req")
 )
 
 // ---------------------------------------------------------------------------

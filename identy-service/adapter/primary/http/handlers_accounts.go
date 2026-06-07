@@ -284,16 +284,24 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid current password"})
 			case isInfraError(err):
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			case err == corerr.ErrFederatedAccountHasNoPassword:
+				c.JSON(http.StatusConflict, gin.H{"error": "federated account has no password set"})
 			default:
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			}
 			return
 		}
 
+		// Federated account edge case
+		if current.PasswordHash == nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "federated account has no password set"})
+			return
+		}
+
 		// Step 2: verify currentPassword against stored hash.
 		// bcrypt.CompareHashAndPassword is constant-time.
 		// TODO fix
-		if err := bcrypt.CompareHashAndPassword([]byte(current.PasswordHash), []byte(req.CurrentPassword)); err != nil {
+		if err := bcrypt.CompareHashAndPassword([]byte(*current.PasswordHash), []byte(req.CurrentPassword)); err != nil {
 			if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid current password"})
 				return
