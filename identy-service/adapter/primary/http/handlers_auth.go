@@ -196,7 +196,7 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 
 		passwordHash, err := hashPassword(req.Password)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			respondInternalErr(c)
 			return
 		}
 
@@ -228,12 +228,8 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "password policy violation"})
 			case isFingerprintError(err):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid fingerprint"})
-			case isRateLimit(err):
-				c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -257,7 +253,7 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 
 		passwordHash, err := hashPassword(req.Password)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			respondInternalErr(c)
 			return
 		}
 
@@ -279,14 +275,10 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 			case err == corerr.ErrAccountDeleted:
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-			case isRateLimit(err):
-				c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
 			case isFingerprintError(err):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid fingerprint"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -321,7 +313,7 @@ func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gi
 		// and only the session is destroyed. Tracked in ADR.
 		ac, ok := raw.(inport.AuthContext)
 		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			respondInternalErr(c)
 			return
 		}
 
@@ -332,11 +324,8 @@ func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gi
 			switch {
 			case err == corerr.ErrSessionNotFound:
 				// Session already gone -- idempotent, continue.
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
-				return
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 				return
 			}
 		}
@@ -387,7 +376,7 @@ func handlePasswordResetConfirm(pwdOp inport.PasswordOperator) gin.HandlerFunc {
 
 		newPasswordHash, err := hashPassword(req.NewPassword)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			respondInternalErr(c)
 			return
 		}
 
@@ -406,12 +395,8 @@ func handlePasswordResetConfirm(pwdOp inport.PasswordOperator) gin.HandlerFunc {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or expired code"})
 			case isPasswordPolicyError(err):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "password policy violation"})
-			case isRateLimit(err):
-				c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -430,12 +415,10 @@ func handleOAuthGoogleInitiate(auth inport.AccountAuthenticator) gin.HandlerFunc
 		redirectURL, state, err := auth.InitiateGoogleOAuth(c.Request.Context(), c.ClientIP())
 		if err != nil {
 			switch {
-			case isRateLimit(err):
-				c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
 			case err == corerr.ErrOAuthJWKSUnavailable:
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "oauth provider unavailable"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -510,15 +493,11 @@ func handleOAuthGoogleCallback(auth inport.AccountAuthenticator) gin.HandlerFunc
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 			case err == corerr.ErrAccountDeleted:
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-			case isRateLimit(err):
-				c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
 			case err == corerr.ErrPKCECodeVerifierInvalidLength ||
 				err == corerr.ErrPKCECodeChallengeEmpty:
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pkce parameters"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}

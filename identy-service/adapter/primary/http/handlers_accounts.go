@@ -46,10 +46,8 @@ func handleGetAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -97,10 +95,8 @@ func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -118,10 +114,8 @@ func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
 			case err == corerr.ErrInvalidRole:
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -156,10 +150,8 @@ func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
 			case err == corerr.ErrAccountAlreadyDeleted:
 				c.JSON(http.StatusConflict, gin.H{"error": "account already deleted"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -183,10 +175,8 @@ func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -219,11 +209,8 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 				case err == corerr.ErrAccountNotFound:
 					c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
 					return
-				case isInfraError(err):
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
-					return
 				default:
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+					respondErr(c, err)
 					return
 				}
 			}
@@ -232,11 +219,8 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 				switch {
 				case err == corerr.ErrSessionNotFound:
 					// Idempotent.
-				case isInfraError(err):
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
-					return
 				default:
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+					respondErr(c, err)
 					return
 				}
 			}
@@ -275,19 +259,16 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 		}
 
 		// Step 1: fetch stored hash to verify currentPassword.
-		// AccountOperator.AdminGetAccountData returns AccountDTO which includes PasswordHash.
 		current, err := accOp.AdminGetAccountData(c.Request.Context(), accountID)
 		if err != nil {
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				// Anti-enumeration: 401, not 404.
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid current password"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			case err == corerr.ErrFederatedAccountHasNoPassword:
 				c.JSON(http.StatusConflict, gin.H{"error": "federated account has no password set"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -307,14 +288,14 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 				return
 			}
 			// bcrypt.ErrHashTooShort or unexpected error -- treat as infra failure.
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			respondInternalErr(c)
 			return
 		}
 
 		// Step 3: hash new password and delegate to use case.
 		newPasswordHash, err := hashPassword(req.NewPassword)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			respondInternalErr(c)
 			return
 		}
 
@@ -330,10 +311,8 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 				c.JSON(http.StatusBadRequest, gin.H{"error": "password policy violation"})
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -366,10 +345,8 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 				c.JSON(http.StatusConflict, gin.H{"error": "account is already locked"})
 			case err == corerr.ErrAccountDeleted:
 				c.JSON(http.StatusConflict, gin.H{"error": "account is deleted"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
@@ -399,10 +376,8 @@ func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 				c.JSON(http.StatusConflict, gin.H{"error": "account is not locked"})
 			case err == corerr.ErrAccountDeleted:
 				c.JSON(http.StatusConflict, gin.H{"error": "account is deleted"})
-			case isInfraError(err):
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			default:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+				respondErr(c, err)
 			}
 			return
 		}
