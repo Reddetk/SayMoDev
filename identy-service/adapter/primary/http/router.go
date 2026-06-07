@@ -6,8 +6,11 @@
 //   - public:    без JWT (JWKS, login, register, password-reset, OAuth)
 //   - protected: JWT required (logout, account CRUD, sessions, password change, lock/unlock)
 //
-// Middleware порядок выполнения на protected-маршрутах:
-//   gin.Recovery() -> JWTMiddleware -> [OwnershipOrAdmin | RequireRole] -> handler
+// Middleware порядок выполнения на каждом маршруте:
+//   CORSMiddleware -> gin.Recovery() -> JWTMiddleware -> [OwnershipOrAdmin | RequireRole] -> handler
+//
+// CORSMiddleware регистрируется первым: preflight OPTIONS должен получить
+// ответ до того как JWTMiddleware потребует Authorization-заголовок.
 //
 // Gate-контроль (кто может достучаться до handler) -- только в middleware.
 // Бизнес-правила (что именно разрешено делать) -- только в handler.
@@ -22,7 +25,9 @@ import (
 
 // RouterDeps -- зависимости роутера.
 // Все поля -- in-порты; router не знает о реализациях.
+// CORS инжектируется из cmd при запуске сервиса.
 type RouterDeps struct {
+	CORS             middleware.CORSConfig
 	TokenValidator   inport.TokenValidator
 	Authenticator    inport.AccountAuthenticator
 	Registrator      inport.AccountRegistrator
@@ -36,6 +41,9 @@ type RouterDeps struct {
 // NewGinRouter строит *gin.Engine с полным набором маршрутов BC#1.
 func NewGinRouter(deps RouterDeps) *gin.Engine {
 	router := gin.New()
+
+	// CORSMiddleware -- первым: preflight OPTIONS не должен доходить до JWT-валидации.
+	router.Use(middleware.NewCORSMiddleware(deps.CORS))
 	router.Use(gin.Recovery())
 
 	jwtMW := middleware.NewJWTMiddleware(deps.TokenValidator)
