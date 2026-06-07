@@ -523,7 +523,7 @@ func (a *AccountService) publishRevokedJTIs(
 	revokedJTIs []string,
 ) {
 	for _, jti := range revokedJTIs {
-		if err := a.eventsProducer.AccessTokenRevoked(ctx, jti, accountID, rev, now, reason); err != nil {
+		if err := a.eventsProducer.AccessTokenRevoked(ctx, accountID, rev, now, reason); err != nil {
 			// non-fatal: span records the error; outbox will retry delivery
 			_, span := accTracer.Start(ctx, "AccountService.publishRevokedJTIs.warn")
 			span.RecordError(err)
