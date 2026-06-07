@@ -3,8 +3,11 @@
 // Маршрутизация соответствует спецификации endpoints.md (BC#1).
 //
 // Группы маршрутов:
-//   - public:   без JWT (JWKS, login, register, password-reset, OAuth)
+//   - public:    без JWT (JWKS, login, register, password-reset, OAuth)
 //   - protected: JWT required (logout, account CRUD, sessions, password change, lock/unlock)
+//
+// Middleware порядок выполнения на protected-маршрутах:
+//   gin.Recovery() -> JWTMiddleware -> [OwnershipOrAdmin | RequireRole] -> handler
 //
 // Все handler-функции -- заглушки (placeholder).
 // Реальная реализация -- в handler-файлах соответствующих групп.
@@ -69,7 +72,10 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 		// POST /iam/auth/logout
 		protected.POST("/iam/auth/logout", handleLogout(deps.SessionOperator, deps.TokenOperator))
 
-		accounts := protected.Group("/iam/accounts/:accountId")
+		// Группа /iam/accounts/:accountId
+		// OwnershipOrAdmin: пациент видит только свои данные (404 на чужой accountId);
+		// administrator -- любой. Spec §Token Validation Flow Step 4 (IDOR prevention).
+		accounts := protected.Group("/iam/accounts/:accountId", middleware.OwnershipOrAdmin())
 		{
 			// GET  /iam/accounts/:accountId
 			accounts.GET("", handleGetAccount(deps.AccountOpertator))
@@ -78,9 +84,6 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 			// DELETE /iam/accounts/:accountId
 			accounts.DELETE("", handleDeleteAccount(deps.AccountOpertator))
 
-			// POST   /iam/accounts/:accountId/sessions  - Deadend because of MOCK unneaded
-			// accounts.POST("/sessions", handleAdminCreateSession(deps.SessionOperator))
-			
 			// GET    /iam/accounts/:accountId/sessions
 			accounts.GET("/sessions", handleListSessions(deps.SessionOperator))
 			// DELETE /iam/accounts/:accountId/sessions/:sessionId
@@ -88,10 +91,14 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 
 			// POST /iam/accounts/:accountId/password
 			accounts.POST("/password", handleChangePassword(deps.PasswordOperator))
+
 			// POST /iam/accounts/:accountId/lock
-			accounts.POST("/lock", handleLockAccount(deps.AccountOpertator))
+			// Spec §Lock Semantics §6 + §RBAC: requires role=administrator
+			accounts.POST("/lock", middleware.RequireRole("administrator"), handleLockAccount(deps.AccountOpertator))
+
 			// POST /iam/accounts/:accountId/unlock
-			accounts.POST("/unlock", handleUnlockAccount(deps.AccountOpertator))
+			// Spec §Account Lock / Unlock (admin): requires role=administrator
+			accounts.POST("/unlock", middleware.RequireRole("administrator"), handleUnlockAccount(deps.AccountOpertator))
 		}
 	}
 
