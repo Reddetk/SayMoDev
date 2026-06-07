@@ -1,9 +1,11 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/Reddetk/SayMoDev/identy-service/adapter/primary/http/middleware"
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
@@ -249,11 +251,20 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 // Body: { currentPassword, newPassword }
 // Response: 204 No Content
 // Guard: OwnershipOrAdmin middleware (applied at router group level)
-// NOTE: missing spec -- whether administrator may change another account's password
-// is not defined in BC#1. Until resolved, no additional gate is applied here.
+//
+// Port contract (passwordOperator.go):
+//   "Caller is responsible for verifying the current password before calling this method."
+//
+// Verification flow:
+//  1. Fetch current account data to obtain stored password hash.
+//  2. bcrypt.CompareHashAndPassword(storedHash, currentPassword) -- 401 on mismatch.
+//  3. Hash newPassword, call PasswordChange.
+//
+// NOTE: missing spec -- whether administrator may bypass currentPassword check
+// is not defined in BC#1. Until resolved, currentPassword is always required.
 // ---------------------------------------------------------------------------
 
-func handleChangePassword(passOp inport.PasswordOperator) gin.HandlerFunc {
+func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accountID := c.Param("accountId")
 
@@ -263,6 +274,35 @@ func handleChangePassword(passOp inport.PasswordOperator) gin.HandlerFunc {
 			return
 		}
 
+		// Step 1: fetch stored hash to verify currentPassword.
+		// AccountOperator.AdminGetAccountData returns AccountDTO which includes PasswordHash.
+		current, err := accOp.AdminGetAccountData(c.Request.Context(), accountID)
+		if err != nil {
+			switch {
+			case err == corerr.ErrAccountNotFound:
+				// Anti-enumeration: 401, not 404.
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid current password"})
+			case isInfraError(err):
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			default:
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			}
+			return
+		}
+
+		// Step 2: verify currentPassword against stored hash.
+		// bcrypt.CompareHashAndPassword is constant-time.
+		if err := bcrypt.CompareHashAndPassword([]byte(current.PasswordHash), []byte(req.CurrentPassword)); err != nil {
+			if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid current password"})
+				return
+			}
+			// bcrypt.ErrHashTooShort or unexpected error -- treat as infra failure.
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+
+		// Step 3: hash new password and delegate to use case.
 		newPasswordHash, err := hashPassword(req.NewPassword)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
