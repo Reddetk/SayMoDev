@@ -83,10 +83,9 @@ func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			return
 		}
 
-		// Business rule: only administrator may change account role.
-		// This is intentionally kept in the handler (not middleware) because
-		// it depends on the request body, not just identity.
-		if req.Role != nil && ac.Role != inport.RoleAdministrator {
+		// Business rule: только administrator может менять роль аккаунта.
+		// Остаётся в handler, так как зависит от тела запроса, а не только от identity.
+		if req.Role != nil && ac.Role != middleware.RoleAdministrator {
 			c.JSON(http.StatusForbidden, gin.H{"error": "role change requires administrator"})
 			return
 		}
@@ -149,7 +148,6 @@ func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 		ac := middleware.MustGetAuthContext(c)
 		accountID := c.Param("accountId")
 
-		// actorID sourced from JWT claims -- never from request body (§ Audit).
 		if err := accOp.SoftDelete(c.Request.Context(), accountID, ac.AccountID); err != nil {
 			switch {
 			case err == corerr.ErrAccountNotFound:
@@ -211,8 +209,7 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 
 		ctx := c.Request.Context()
 
-		if ac.Role == inport.RoleAdministrator && ac.AccountID != accountID {
-			// Administrator terminating another account's session (audit trail path).
+		if ac.Role == middleware.RoleAdministrator && ac.AccountID != accountID {
 			if err := sesOp.AdminTerminateSession(ctx, accountID, sessionID, ac.AccountID); err != nil {
 				switch {
 				case err == corerr.ErrSessionNotFound:
@@ -229,7 +226,6 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 				}
 			}
 		} else {
-			// Owner terminating own session (self-logout path for a specific session).
 			if err := sesOp.Logout(ctx, accountID, sessionID); err != nil {
 				switch {
 				case err == corerr.ErrSessionNotFound:
@@ -311,10 +307,8 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 		accountID := c.Param("accountId")
 
 		var req lockAccountReq
-		// Body is optional -- lock without expiry is valid.
 		_ = c.ShouldBindJSON(&req)
 
-		// actorID from JWT claims -- never from request body (§ Audit).
 		if err := accOp.LockAccount(c.Request.Context(), accountID, req.LockedUntil, ac.AccountID); err != nil {
 			switch {
 			case err == corerr.ErrAccountNotFound:

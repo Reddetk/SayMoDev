@@ -4,8 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
-	inport "github.com/Reddetk/SayMoDev/identy-service/port/in"
 )
 
 // OwnershipOrAdmin -- gate middleware для маршрутов /iam/accounts/:accountId.
@@ -21,7 +19,7 @@ func OwnershipOrAdmin() gin.HandlerFunc {
 		ac := MustGetAuthContext(c)
 		accountID := c.Param("accountId")
 
-		if ac.Role == inport.RoleAdministrator || ac.AccountID == accountID {
+		if ac.Role == RoleAdministrator || ac.AccountID == accountID {
 			c.Next()
 			return
 		}

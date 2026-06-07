@@ -24,7 +24,7 @@ type TokenValidator interface {
 	// ValidateToken верифицирует rawToken и возвращает AuthContext.
 	//
 	// rawToken -- Bearer значение без префикса "Bearer ".
-	// AuthContext записывается middleware в c.Keys["аутхCонтехт"] для handler'a.
+	// AuthContext записывается middleware в c.Keys[AuthContextKey] для handler'a.
 	ValidateToken(ctx context.Context, rawToken string) (AuthContext, error)
 }
 
@@ -36,11 +36,3 @@ type AuthContext struct {
 	SessionID string
 	Rev       int64
 }
-
-// Роли аккаунта. Согласованы с глоссарием (Ubiquitous Language).
-// Используются во всём первичном адаптере вместо магических строк.
-const (
-	RolePatient       = "patient"
-	RoleRelative      = "relative"
-	RoleAdministrator = "administrator"
-)
