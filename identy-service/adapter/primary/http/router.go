@@ -35,8 +35,8 @@ import (
 // CORS, Logger и Metrics инжектируются из cmd при запуске сервиса.
 type RouterDeps struct {
 	CORS             middleware.CORSConfig
-	Logger           *zap.Logger            // ZAP logger; используется ObservabilityMiddleware
-	Metrics          prometheus.Registerer  // Prometheus registerer; используется ObservabilityMiddleware
+	Logger           *zap.Logger           // ZAP logger; используется ObservabilityMiddleware
+	Metrics          prometheus.Registerer // Prometheus registerer; используется ObservabilityMiddleware
 	TokenValidator   inport.TokenValidator
 	Authenticator    inport.AccountAuthenticator
 	Registrator      inport.AccountRegistrator
@@ -65,7 +65,7 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 	// 3. gin.Recovery() -- перехватывает паники после того как observability span открыт.
 	router.Use(gin.Recovery())
 
-	jwtMW := middleware.NewJWTMiddleware(deps.TokenValidator)
+	jwtMW := middleware.NewJWTMiddleware(deps.TokenValidator, deps.Logger)
 
 	// --- Public endpoints (no JWT) ---
 	public := router.Group("/")
