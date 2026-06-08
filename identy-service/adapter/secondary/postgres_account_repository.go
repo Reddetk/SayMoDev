@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
@@ -53,16 +53,16 @@ const (
 // operation -- the outbox worker replicates to Kafka asynchronously.
 type PostgresAccountRepository struct {
 	pool   *pgxpool.Pool
-	logger *slog.Logger
+	logger *zap.Logger
 	tracer trace.Tracer
 }
 
-func NewPostgresAccountRepository(pool *pgxpool.Pool, logger *slog.Logger) (*PostgresAccountRepository, error) {
+func NewPostgresAccountRepository(pool *pgxpool.Pool, logger *zap.Logger) (*PostgresAccountRepository, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("postgres account repo: pool is required")
 	}
 	if logger == nil {
-		logger = slog.Default()
+		logger = zap.NewNop()
 	}
 	return &PostgresAccountRepository{
 		pool:   pool,
@@ -88,9 +88,9 @@ type pgxQuerier interface {
 // rollbackOnError should be deferred immediately after tx.Begin.
 // Rolls back if the transaction was not yet committed (pgx.ErrTxClosed means
 // Commit already ran). Does not overwrite the originating error.
-func rollbackOnError(ctx context.Context, tx pgx.Tx, logger *slog.Logger) {
+func rollbackOnError(ctx context.Context, tx pgx.Tx, logger *zap.Logger) {
 	if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-		logger.WarnContext(ctx, "repo: rollback failed", slog.String("error", err.Error()))
+		logger.Warn("repo: rollback failed", zap.Error(err))
 	}
 }
 
@@ -339,7 +339,7 @@ func (r *PostgresAccountRepository) EmailExist(ctx context.Context, email string
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		r.logger.ErrorContext(ctx, "repo: EmailExist failed", slog.String("error", err.Error()))
+		r.logger.Error("repo: EmailExist failed", zap.Error(err))
 		return false, fmt.Errorf("EmailExist: %w", err)
 	}
 	return true, nil
@@ -367,7 +367,7 @@ func (r *PostgresAccountRepository) FindByEmail(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		r.logger.ErrorContext(ctx, "repo: FindByEmail failed", slog.String("error", err.Error()))
+		r.logger.Error("repo: FindByEmail failed", zap.Error(err))
 		return nil, err
 	}
 	return acc, nil
@@ -391,9 +391,9 @@ func (r *PostgresAccountRepository) FindByAccountID(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		r.logger.ErrorContext(ctx, "repo: FindByAccountID failed",
-			slog.String("account_id", accountID),
-			slog.String("error", err.Error()),
+		r.logger.Error("repo: FindByAccountID failed",
+			zap.String("account_id", accountID),
+			zap.Error(err),
 		)
 		return nil, err
 	}
@@ -422,7 +422,7 @@ func (r *PostgresAccountRepository) FindByGoogleUID(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		r.logger.ErrorContext(ctx, "repo: FindByGoogleUID failed", slog.String("error", err.Error()))
+		r.logger.Error("repo: FindByGoogleUID failed", zap.Error(err))
 		return nil, err
 	}
 	return acc, nil
@@ -503,9 +503,9 @@ func (r *PostgresAccountRepository) CreateAccountWithTx(
 		return "", fmt.Errorf("CreateAccountWithTx commit: %w", err)
 	}
 
-	r.logger.InfoContext(ctx, "repo: account created",
-		slog.String("account_id", account.UUID()),
-		slog.String("role", account.Role().String()),
+	r.logger.Info("repo: account created",
+		zap.String("account_id", account.UUID()),
+		zap.String("role", account.Role().String()),
 	)
 	return account.UUID(), nil
 }
@@ -586,10 +586,10 @@ func (r *PostgresAccountRepository) SaveSessionWithTx(
 		return fmt.Errorf("SaveSessionWithTx commit: %w", err)
 	}
 
-	r.logger.InfoContext(ctx, "repo: session saved",
-		slog.String("account_id", account.UUID()),
-		slog.Int("sessions_count", len(account.Sessions())),
-		slog.Bool("session_evicted", evictedJTI != ""),
+	r.logger.Info("repo: session saved",
+		zap.String("account_id", account.UUID()),
+		zap.Int("sessions_count", len(account.Sessions())),
+		zap.Bool("session_evicted", evictedJTI != ""),
 	)
 	return nil
 }
@@ -643,8 +643,8 @@ func (r *PostgresAccountRepository) DeleteSessionWithTx(
 		return fmt.Errorf("DeleteSessionWithTx commit: %w", err)
 	}
 
-	r.logger.InfoContext(ctx, "repo: session deleted",
-		slog.String("account_id", account.UUID()),
+	r.logger.Info("repo: session deleted",
+		zap.String("account_id", account.UUID()),
 	)
 	return nil
 }
@@ -730,10 +730,10 @@ func (r *PostgresAccountRepository) UpdateAccountStatusTx(
 		return fmt.Errorf("UpdateAccountStatusTx commit: %w", err)
 	}
 
-	r.logger.InfoContext(ctx, "repo: account status updated",
-		slog.String("account_id", account.UUID()),
-		slog.String("status", account.Status().String()),
-		slog.Int("revoked_sessions", len(revokedJTIs)),
+	r.logger.Info("repo: account status updated",
+		zap.String("account_id", account.UUID()),
+		zap.String("status", account.Status().String()),
+		zap.Int("revoked_sessions", len(revokedJTIs)),
 	)
 	return nil
 }
@@ -842,9 +842,9 @@ func (r *PostgresAccountRepository) ResetPassword(
 		return fmt.Errorf("ResetPassword commit: %w", err)
 	}
 
-	r.logger.InfoContext(ctx, "repo: password reset",
-		slog.String("account_id", account.UUID()),
-		slog.Int("sessions_revoked", len(deletedJTIs)),
+	r.logger.Info("repo: password reset",
+		zap.String("account_id", account.UUID()),
+		zap.Int("sessions_revoked", len(deletedJTIs)),
 	)
 	return nil
 }
@@ -869,16 +869,16 @@ func (r *PostgresAccountRepository) LinkGoogleUID(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		r.logger.ErrorContext(ctx, "repo: LinkGoogleUID failed",
-			slog.String("account_id", accountID),
-			slog.String("error", err.Error()),
+		r.logger.Error("repo: LinkGoogleUID failed",
+			zap.String("account_id", accountID),
+			zap.Error(err),
 		)
 		return fmt.Errorf("LinkGoogleUID: %w", err)
 	}
 	// 0 rows affected means google_uid was already set -- no-op per spec.
 	if tag.RowsAffected() == 0 {
-		r.logger.InfoContext(ctx, "repo: LinkGoogleUID no-op, already linked",
-			slog.String("account_id", accountID),
+		r.logger.Info("repo: LinkGoogleUID no-op, already linked",
+			zap.String("account_id", accountID),
 		)
 	}
 	return nil
@@ -938,8 +938,8 @@ func (r *PostgresAccountRepository) CreateOAuthAccountWithTx(
 		return nil, fmt.Errorf("CreateOAuthAccountWithTx commit: %w", err)
 	}
 
-	r.logger.InfoContext(ctx, "repo: oauth account created",
-		slog.String("account_id", account.UUID()),
+	r.logger.Info("repo: oauth account created",
+		zap.String("account_id", account.UUID()),
 	)
 	return account, nil
 }
@@ -969,15 +969,15 @@ func (r *PostgresAccountRepository) ChangeAccountData(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		r.logger.ErrorContext(ctx, "repo: ChangeAccountData failed",
-			slog.String("account_id", account.UUID()),
-			slog.String("error", err.Error()),
+		r.logger.Error("repo: ChangeAccountData failed",
+			zap.String("account_id", account.UUID()),
+			zap.Error(err),
 		)
 		return fmt.Errorf("ChangeAccountData: %w", err)
 	}
 
-	r.logger.InfoContext(ctx, "repo: account data changed",
-		slog.String("account_id", account.UUID()),
+	r.logger.Info("repo: account data changed",
+		zap.String("account_id", account.UUID()),
 	)
 	return nil
 }
