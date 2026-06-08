@@ -1,6 +1,6 @@
 // Package testdata provides reusable domain object fixtures for unit tests.
-// Fixtures use RestoreAccount to bypass constructor validation so tests
-// can set arbitrary state without coupling to NewAccount invariants.
+// Fixtures use Restore* constructors to bypass validation invariants so tests
+// can set arbitrary state without coupling to production constructor rules.
 package testdata
 
 import (
@@ -18,7 +18,6 @@ const (
 	FixtureEmail = "fixture@example.com"
 
 	// FixturePasswordHash is a valid bcrypt hash (cost 10) of the string "Password1!".
-	// Length is exactly 60 characters as required by entity invariants.
 	FixturePasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 
 	// FixtureGoogleUID is the stable google_uid used in OAuth fixture.
@@ -32,6 +31,18 @@ const (
 
 	// FixtureFingerprint is the stable device fingerprint string.
 	FixtureFingerprint = "Mozilla/5.0 fixture-fingerprint"
+
+	// FixtureOTPHash is a valid SHA256 hex string (64 chars) used in VerificationCode fixtures.
+	FixtureOTPHash = "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+
+	// FixtureCSRFToken is a stable CSRF token for OAuthState fixtures.
+	FixtureCSRFToken = "csrf-token-fixture-001"
+
+	// FixtureCodeVerifier is a 50-char PKCE code_verifier (RFC 7636: 43-128 chars).
+	FixtureCodeVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk99"
+
+	// FixtureCodeChallenge is the BASE64URL(SHA256(FixtureCodeVerifier)) value.
+	FixtureCodeChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 )
 
 // NewActiveAccount returns a restored active patient Account with a password hash
@@ -87,4 +98,44 @@ func NewOAuthAccount() *entity.Account {
 		[]valobj.PasswordEntry{},
 	)
 	return account
+}
+
+// NewFreshVerificationCode returns a VerificationCode that is NOT expired.
+// expiresAt is set 10 minutes in the future so IsExpired() returns false.
+func NewFreshVerificationCode() *valobj.VerificationCode {
+	futureMs := time.Now().Add(10 * time.Minute).UnixMilli()
+	vc, _ := valobj.RestoreVerificationCode(
+		"00000000-0000-0000-0000-000000000010",
+		FixtureEmail,
+		FixtureOTPHash,
+		valobj.OTPPurposeRegistration,
+		futureMs,
+	)
+	return vc
+}
+
+// NewExpiredVerificationCode returns a VerificationCode where IsExpired() == true.
+// expiresAt is set 1 minute in the past so the domain rejects it.
+func NewExpiredVerificationCode() *valobj.VerificationCode {
+	pastMs := time.Now().Add(-1 * time.Minute).UnixMilli()
+	vc, _ := valobj.RestoreVerificationCode(
+		"00000000-0000-0000-0000-000000000011",
+		FixtureEmail,
+		FixtureOTPHash,
+		valobj.OTPPurposeRegistration,
+		pastMs,
+	)
+	return vc
+}
+
+// NewOAuthState returns a valid OAuthState fixture for OAuth2 flow tests.
+func NewOAuthState() valobj.OAuthState {
+	futureUnix := time.Now().Add(10 * time.Minute).Unix()
+	state, _ := valobj.NewOAuthState(
+		FixtureCSRFToken,
+		FixtureCodeVerifier,
+		FixtureCodeChallenge,
+		futureUnix,
+	)
+	return state
 }
