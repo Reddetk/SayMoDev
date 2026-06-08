@@ -1,3 +1,4 @@
+// Package postgres stands for PGX
 package postgres
 
 import (
