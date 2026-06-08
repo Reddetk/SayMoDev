@@ -46,6 +46,7 @@ var (
 
 	ErrAccountRepository = errors.New("acc rep is failed")
 	ErrAccountNotFound   = errors.New("account not found")
+	ErrOutboxUnavailable = errors.New("outbox not unavaible")
 )
 
 // ---------------------------------------------------------------------------

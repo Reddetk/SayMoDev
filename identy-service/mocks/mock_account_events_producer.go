@@ -2,8 +2,8 @@ package mocks
 
 import (
 	"context"
-	"errors"
 
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 	"github.com/stretchr/testify/mock"
 )
@@ -225,4 +225,4 @@ var _ interface {
 } = (*MockAccountEventsProducer)(nil)
 
 // ErrOutboxUnavailable is re-exported so test files need not import corerr directly.
-var ErrOutboxUnavailable = errors.New("outbox not unavaible")
+var ErrOutboxUnavailable = corerr.ErrOutboxUnavailable
