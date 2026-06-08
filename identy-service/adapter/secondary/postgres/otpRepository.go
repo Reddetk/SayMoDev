@@ -5,8 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,11 +34,11 @@ import (
 //   Для PostgreSQL: time.UnixMilli(ms).UTC() <-> t.UnixMilli().
 type PostgresOtpRepository struct {
 	pool   *pgxpool.Pool
-	logger *slog.Logger
+	logger *zap.Logger
 }
 
 // NewPostgresOtpRepository создаёт репозиторий с указанным pgx-пулом.
-func NewPostgresOtpRepository(pool *pgxpool.Pool, logger *slog.Logger) *PostgresOtpRepository {
+func NewPostgresOtpRepository(pool *pgxpool.Pool, logger *zap.Logger) *PostgresOtpRepository {
 	return &PostgresOtpRepository{
 		pool:   pool,
 		logger: logger,
@@ -160,7 +161,7 @@ func (r *PostgresOtpRepository) CleanUp(ctx context.Context, verCode *valobj.Ver
 }
 
 // ---------------------------------------------------------------------------
-// Immulate
+// Immulate TODO
 // ---------------------------------------------------------------------------
 
 // Immulate удаляет все истекшие записи OTP-кодов.
@@ -173,16 +174,12 @@ func (r *PostgresOtpRepository) Immulate(ctx context.Context) error {
 
 	tag, err := r.pool.Exec(ctx, query)
 	if err != nil {
-		r.logger.ErrorContext(ctx, "otpRepository.Immulate: failed to delete expired codes",
-			slog.String("error", err.Error()),
-		)
+		r.logger.Error("otpRepository.Immulate: failed to delete expired codes")
 		return fmt.Errorf("otpRepository.Immulate: %w", err)
 	}
 
 	if tag.RowsAffected() > 0 {
-		r.logger.InfoContext(ctx, "otpRepository.Immulate: expired codes deleted",
-			slog.Int64("rows_deleted", tag.RowsAffected()),
-		)
+		r.logger.Info("otpRepository.Immulate: expired codes deleted rows_deleted :TODO")
 	}
 	return nil
 }
