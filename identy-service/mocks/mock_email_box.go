@@ -2,22 +2,15 @@ package mocks
 
 import (
 	"context"
-	"errors"
 
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 	"github.com/stretchr/testify/mock"
 )
 
-// ErrEmailServiceUnavailable is a placeholder sentinel for the email delivery error path.
-//
-// DESIGN GAP: not declared in core/coreErrors/businesErrors.go.
-// Note: ErrEmailDeliveryFailed exists but covers delivery failure after send;
-// ErrEmailServiceUnavailable covers infrastructure unavailability before send.
-// Decide whether to reuse ErrEmailDeliveryFailed or add a new sentinel.
-// If reusing:
-//
-//	ErrEmailServiceUnavailable = corerr.ErrEmailDeliveryFailed
-var ErrEmailServiceUnavailable = errors.New("email service is unavailable")
+// ErrEmailServiceUnavailable -- SMTP/SES infrastructure unreachable before send.
+// Distinct from ErrEmailDeliveryFailed (transport accepted but delivery failed).
+var ErrEmailServiceUnavailable = corerr.ErrEmailServiceUnavailable
 
 // MockEmailBox is a testify mock for out.EmailBox.
 type MockEmailBox struct {

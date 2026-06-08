@@ -2,24 +2,28 @@ package mocks
 
 import (
 	"context"
-	"errors"
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 	"github.com/stretchr/testify/mock"
 )
 
-// ErrOAuthStateMismatch is a placeholder sentinel for CSRF state mismatch.
-//
-// DESIGN GAP: not declared in core/coreErrors/businesErrors.go.
-// ErrOAuthStateCSRFMismatch exists and covers the same concept.
-// Replace this with:
-//
-//	ErrOAuthStateMismatch = corerr.ErrOAuthStateCSRFMismatch
-//
-// The name mismatch (StateMismatch vs StateCSRFMismatch) should be resolved
-// by aligning the mock name to the existing sentinel.
-var ErrOAuthStateMismatch = corerr.ErrOAuthStateCSRFMismatch
+// Re-exported OAuth sentinels for use in test files.
+var (
+	// ErrOAuthStateMismatch aliases corerr.ErrOAuthStateCSRFMismatch.
+	// Name aligned to mock API: ValidateState returns "mismatch" on CSRF failure.
+	ErrOAuthStateMismatch = corerr.ErrOAuthStateCSRFMismatch
+
+	// ErrOAuthStateExpired -- OAuthState TTL exceeded in callback.
+	// Same sentinel used by NewOAuthState for expiresAt <= 0 construction guard.
+	ErrOAuthStateExpired = corerr.ErrOAuthStateExpired
+
+	// ErrOAuthJWKSUnavailable -- Google JWKS endpoint unreachable (BuildAuthURL / ExchangeCode).
+	ErrOAuthJWKSUnavailable = corerr.ErrOAuthJWKSUnavailable
+
+	// ErrOAuthEmailNotVerified -- email_verified claim is false.
+	ErrOAuthEmailNotVerified = corerr.ErrOAuthEmailNotVerified
+)
 
 // MockGoogleOAuthProvider is a testify mock for out.GoogleOAuthProvider.
 //
@@ -91,10 +95,3 @@ var _ interface {
 	ExchangeCode(context.Context, string, valobj.OAuthState) (valobj.GoogleClaims, error)
 	ValidateState(context.Context, string, valobj.OAuthState) error
 } = (*MockGoogleOAuthProvider)(nil)
-
-// Re-exported OAuth sentinels.
-var (
-	ErrOAuthJWKSUnavailable  = corerr.ErrOAuthJWKSUnavailable
-	ErrOAuthEmailNotVerified = corerr.ErrOAuthEmailNotVerified
-	ErrOAuthStateExpired     = errors.New("oauth state has expired")
-)

@@ -2,31 +2,20 @@ package mocks
 
 import (
 	"context"
-	"errors"
 
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 	"github.com/stretchr/testify/mock"
 )
 
-// ErrOTPNotFound is a placeholder sentinel for the OTP not-found error path.
-//
-// DESIGN GAP: not declared in core/coreErrors/businesErrors.go.
-// Add:
-//
-//	ErrOTPNotFound = errors.New("verification code not found")
-//
-// Then replace this with: ErrOTPNotFound = corerr.ErrOTPNotFound
-var ErrOTPNotFound = errors.New("verification code not found")
+// Re-exported sentinels for use in test files without importing corerr directly.
+var (
+	// ErrOTPNotFound -- OTP record absent; Find returns nothing for this (email, purpose).
+	ErrOTPNotFound = corerr.ErrOTPNotFound
 
-// ErrDBUnavailable is a placeholder sentinel for DB infrastructure errors.
-//
-// DESIGN GAP: not declared in core/coreErrors/businesErrors.go.
-// Add:
-//
-//	ErrDBUnavailable = errors.New("database is unavailable")
-//
-// Then replace this with: ErrDBUnavailable = corerr.ErrDBUnavailable
-var ErrDBUnavailable = errors.New("database is unavailable")
+	// ErrDBUnavailable -- DB infrastructure unreachable (Upsert/CleanUp/Immulate).
+	ErrDBUnavailable = corerr.ErrDBUnavailable
+)
 
 // MockOtpRepository is a testify mock for out.OtpRepository.
 //
