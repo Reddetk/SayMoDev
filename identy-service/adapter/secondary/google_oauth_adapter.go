@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -20,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
@@ -52,8 +52,8 @@ type GoogleOAuthConfig struct {
 	// HTTPClient is optional; defaults to a 10-second timeout client.
 	HTTPClient *http.Client
 
-	// Logger is optional; defaults to slog.Default().
-	Logger *slog.Logger
+	// Logger is optional; defaults to zap.NewNop().
+	Logger *zap.Logger
 
 	// NowFunc is optional; defaults to time.Now. Used for TTL checks in tests.
 	NowFunc func() time.Time
@@ -92,7 +92,7 @@ type GoogleOAuthAdapter struct {
 	clientSecret string
 	redirectURI  string
 	httpClient   *http.Client
-	logger       *slog.Logger
+	logger       *zap.Logger
 	now          func() time.Time
 	jwks         jwksCache
 }
@@ -115,7 +115,7 @@ func NewGoogleOAuthAdapter(cfg GoogleOAuthConfig) (*GoogleOAuthAdapter, error) {
 	}
 	logger := cfg.Logger
 	if logger == nil {
-		logger = slog.Default()
+		logger = zap.NewNop()
 	}
 	nowFunc := cfg.NowFunc
 	if nowFunc == nil {
@@ -143,7 +143,7 @@ func (a *GoogleOAuthAdapter) BuildAuthURL(ctx context.Context) (string, valobj.O
 	// Generate code_verifier: 64 random bytes encoded as base64url = 86 chars.
 	verifierBytes := make([]byte, codeVerifierLen)
 	if _, err := rand.Read(verifierBytes); err != nil {
-		a.logger.ErrorContext(ctx, "google oauth: failed to generate code_verifier", slog.String("error", err.Error()))
+		a.logger.Error("google oauth: failed to generate code_verifier", zap.Error(err))
 		return "", valobj.OAuthState{}, fmt.Errorf("google oauth BuildAuthURL: %w", err)
 	}
 	codeVerifier := base64.RawURLEncoding.EncodeToString(verifierBytes)
@@ -158,7 +158,7 @@ func (a *GoogleOAuthAdapter) BuildAuthURL(ctx context.Context) (string, valobj.O
 	expiresAt := a.now().Add(oauthStateTTL).Unix()
 	state, err := valobj.NewOAuthState(csrfToken, codeVerifier, codeChallenge, expiresAt)
 	if err != nil {
-		a.logger.ErrorContext(ctx, "google oauth: failed to construct OAuthState", slog.String("error", err.Error()))
+		a.logger.Error("google oauth: failed to construct OAuthState", zap.Error(err))
 		return "", valobj.OAuthState{}, fmt.Errorf("google oauth BuildAuthURL: %w", err)
 	}
 
@@ -245,7 +245,7 @@ func (a *GoogleOAuthAdapter) fetchIDToken(ctx context.Context, code, codeVerifie
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		a.logger.ErrorContext(ctx, "google oauth: token exchange transport error", slog.String("error", err.Error()))
+		a.logger.Error("google oauth: token exchange transport error", zap.Error(err))
 		return "", corerr.ErrOAuthTokenExchangeFailed
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -253,25 +253,21 @@ func (a *GoogleOAuthAdapter) fetchIDToken(ctx context.Context, code, codeVerifie
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		a.logger.ErrorContext(ctx, "google oauth: token endpoint non-200",
-			slog.Int("status", resp.StatusCode),
-		)
+		a.logger.Error("google oauth: token endpoint non-200", zap.Int("status", resp.StatusCode))
 		return "", corerr.ErrOAuthTokenExchangeFailed
 	}
 
 	var tokenResp googleTokenResponse
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		a.logger.ErrorContext(ctx, "google oauth: failed to parse token response", slog.String("error", err.Error()))
+		a.logger.Error("google oauth: failed to parse token response", zap.Error(err))
 		return "", corerr.ErrOAuthTokenExchangeFailed
 	}
 	if tokenResp.Error != "" {
-		a.logger.ErrorContext(ctx, "google oauth: token response contains error",
-			slog.String("google_error", tokenResp.Error),
-		)
+		a.logger.Error("google oauth: token response contains error", zap.String("google_error", tokenResp.Error))
 		return "", corerr.ErrOAuthTokenExchangeFailed
 	}
 	if tokenResp.IDToken == "" {
-		a.logger.ErrorContext(ctx, "google oauth: id_token missing from token response")
+		a.logger.Error("google oauth: id_token missing from token response")
 		return "", corerr.ErrOAuthIDTokenInvalid
 	}
 
@@ -298,7 +294,7 @@ func (a *GoogleOAuthAdapter) verifyIDToken(ctx context.Context, idToken string) 
 		return nil, corerr.ErrOAuthIDTokenInvalid
 	}
 	if header.Alg != "RS256" {
-		a.logger.ErrorContext(ctx, "google oauth: unexpected token algorithm", slog.String("alg", header.Alg))
+		a.logger.Error("google oauth: unexpected token algorithm", zap.String("alg", header.Alg))
 		return nil, corerr.ErrOAuthIDTokenInvalid
 	}
 
@@ -316,7 +312,7 @@ func (a *GoogleOAuthAdapter) verifyIDToken(ctx context.Context, idToken string) 
 	}
 	digest := sha256.Sum256([]byte(signingInput))
 	if err := rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, digest[:], sigBytes); err != nil {
-		a.logger.ErrorContext(ctx, "google oauth: RS256 signature verification failed", slog.String("error", err.Error()))
+		a.logger.Error("google oauth: RS256 signature verification failed", zap.Error(err))
 		return nil, corerr.ErrOAuthIDTokenInvalid
 	}
 
@@ -333,15 +329,15 @@ func (a *GoogleOAuthAdapter) verifyIDToken(ctx context.Context, idToken string) 
 	// Validate claims.
 	now := a.now().Unix()
 	if claims.Exp < now {
-		a.logger.ErrorContext(ctx, "google oauth: id_token expired")
+		a.logger.Error("google oauth: id_token expired")
 		return nil, corerr.ErrOAuthIDTokenInvalid
 	}
 	if claims.Iss != googleIssuer1 && claims.Iss != googleIssuer2 {
-		a.logger.ErrorContext(ctx, "google oauth: invalid iss", slog.String("iss", claims.Iss))
+		a.logger.Error("google oauth: invalid iss", zap.String("iss", claims.Iss))
 		return nil, corerr.ErrOAuthIDTokenInvalid
 	}
 	if claims.Aud != a.clientID {
-		a.logger.ErrorContext(ctx, "google oauth: invalid aud")
+		a.logger.Error("google oauth: invalid aud")
 		return nil, corerr.ErrOAuthIDTokenInvalid
 	}
 	if !claims.EmailVerified {
@@ -388,26 +384,26 @@ func (a *GoogleOAuthAdapter) refreshJWKS(ctx context.Context, kid string) (*rsa.
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, googleJWKSEndpoint, nil)
 	if err != nil {
-		a.logger.ErrorContext(ctx, "google oauth: build JWKS request failed", slog.String("error", err.Error()))
+		a.logger.Error("google oauth: build JWKS request failed", zap.Error(err))
 		return nil, corerr.ErrOAuthJWKSUnavailable
 	}
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		a.logger.ErrorContext(ctx, "google oauth: JWKS fetch transport error", slog.String("error", err.Error()))
+		a.logger.Error("google oauth: JWKS fetch transport error", zap.Error(err))
 		return nil, corerr.ErrOAuthJWKSUnavailable
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		a.logger.ErrorContext(ctx, "google oauth: JWKS endpoint non-200", slog.Int("status", resp.StatusCode))
+		a.logger.Error("google oauth: JWKS endpoint non-200", zap.Int("status", resp.StatusCode))
 		return nil, corerr.ErrOAuthJWKSUnavailable
 	}
 
 	body, _ := io.ReadAll(resp.Body)
 	var jwksResp jwksResponse
 	if err := json.Unmarshal(body, &jwksResp); err != nil {
-		a.logger.ErrorContext(ctx, "google oauth: JWKS parse failed", slog.String("error", err.Error()))
+		a.logger.Error("google oauth: JWKS parse failed", zap.Error(err))
 		return nil, corerr.ErrOAuthJWKSUnavailable
 	}
 
@@ -421,9 +417,9 @@ func (a *GoogleOAuthAdapter) refreshJWKS(ctx context.Context, kid string) (*rsa.
 		}
 		pub, err := jwkToRSAPublicKey(k)
 		if err != nil {
-			a.logger.WarnContext(ctx, "google oauth: skip malformed JWK",
-				slog.String("kid", k.Kid),
-				slog.String("error", err.Error()),
+			a.logger.Warn("google oauth: skip malformed JWK",
+				zap.String("kid", k.Kid),
+				zap.Error(err),
 			)
 			continue
 		}
@@ -431,7 +427,7 @@ func (a *GoogleOAuthAdapter) refreshJWKS(ctx context.Context, kid string) (*rsa.
 	}
 
 	if len(newKeys) == 0 {
-		a.logger.ErrorContext(ctx, "google oauth: JWKS contains no usable RSA keys")
+		a.logger.Error("google oauth: JWKS contains no usable RSA keys")
 		return nil, corerr.ErrOAuthJWKSUnavailable
 	}
 
@@ -440,7 +436,7 @@ func (a *GoogleOAuthAdapter) refreshJWKS(ctx context.Context, kid string) (*rsa.
 
 	key, ok := newKeys[kid]
 	if !ok {
-		a.logger.ErrorContext(ctx, "google oauth: kid not found in JWKS after refresh", slog.String("kid", kid))
+		a.logger.Error("google oauth: kid not found in JWKS after refresh", zap.String("kid", kid))
 		return nil, corerr.ErrOAuthIDTokenInvalid
 	}
 	return key, nil
