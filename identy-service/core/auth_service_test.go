@@ -4,46 +4,18 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
 	"github.com/Reddetk/SayMoDev/identy-service/core"
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
-	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 	"github.com/Reddetk/SayMoDev/identy-service/mocks"
+	"github.com/Reddetk/SayMoDev/identy-service/testdata"
 )
 
 // --- helpers ----------------------------------------------------------------
-
-const (
-	testEmail       = "patient@saymo.ru"
-	testFingerprint = "fp-abc123"
-	testClientIP    = "1.2.3.4"
-	testAccountID   = "00000000-0000-0000-0000-000000000001"
-	testSessionID   = "00000000-0000-0000-0000-000000000002"
-	testAccessToken = "eyJ.test.token"
-	testJTI         = "00000000-0000-0000-0000-000000000003"
-)
-
-// buildActiveAccount строит entity.Account с предвычисленным bcrypt-хешем пароля "Password1!".
-// Хеш соответствует паролю "Password1!" с cost=10.
-func buildActiveAccount(t *testing.T) *entity.Account {
-	t.Helper()
-	const bcryptHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
-	acc, err := entity.NewAccount(
-		testEmail,
-		"Test Patient",
-		valobj.RolePatient,
-		&bcryptHash,
-	)
-	if err != nil {
-		t.Fatalf("buildActiveAccount: %v", err)
-	}
-	return acc
-}
 
 func buildAuthService(
 	repo *mocks.MockAccountRepository,
@@ -66,10 +38,10 @@ func TestLogin_HappyPath(t *testing.T) {
 	events := &mocks.MockAccountEventsProducer{}
 	oauth := &mocks.MockGoogleOAuthProvider{}
 
-	acc := buildActiveAccount(t)
+	acc := testdata.NewActiveAccount()
 
-	rl.On("CheckIP", mock.Anything, testClientIP).Return(nil)
-	repo.On("FindByEmail", mock.Anything, testEmail).Return(acc, nil)
+	rl.On("CheckIP", mock.Anything, testdata.FixtureClientIP).Return(nil)
+	repo.On("FindByEmail", mock.Anything, testdata.FixtureEmail).Return(acc, nil)
 	rl.On("CheckAccount", mock.Anything, acc.UUID()).Return(nil)
 	repo.On("SaveSessionWithTx", mock.Anything, acc).Return(nil)
 	issuer.On("Issue",
@@ -78,20 +50,26 @@ func TestLogin_HappyPath(t *testing.T) {
 		mock.AnythingOfType("string"),
 		mock.AnythingOfType("string"),
 		acc.Revision(),
-	).Return(testAccessToken, testJTI, nil)
+	).Return("eyJ.test.token", testdata.FixtureJTI, nil)
 	events.On("SessionCreated",
 		mock.Anything,
 		acc.UUID(),
 		mock.AnythingOfType("string"),
-		testFingerprint,
+		testdata.FixtureFingerprint,
 		mock.AnythingOfType("int64"),
 	).Return(nil)
 
 	svc := buildAuthService(repo, issuer, blacklist, rl, events, oauth)
-	result, err := svc.Login(context.Background(), testEmail, "Password1!", testFingerprint, testClientIP)
+	result, err := svc.Login(
+		context.Background(),
+		testdata.FixtureEmail,
+		"Password1!",
+		testdata.FixtureFingerprint,
+		testdata.FixtureClientIP,
+	)
 
 	assert.NoError(t, err)
-	assert.Equal(t, testAccessToken, result.AccessToken)
+	assert.Equal(t, "eyJ.test.token", result.AccessToken)
 	assert.Equal(t, acc.UUID(), result.AccountID)
 	assert.Equal(t, valobj.RolePatient.String(), result.Role)
 	assert.NotEmpty(t, result.SessionID)
@@ -102,7 +80,7 @@ func TestLogin_HappyPath(t *testing.T) {
 	events.AssertExpectations(t)
 }
 
-func TestLogin_RateLimitIP_Returns429Error(t *testing.T) {
+func TestLogin_RateLimitIP_StopsBeforeFindByEmail(t *testing.T) {
 	repo := &mocks.MockAccountRepository{}
 	issuer := &mocks.MockTokenIssuer{}
 	blacklist := &mocks.MockTokenBlacklist{}
@@ -110,15 +88,19 @@ func TestLogin_RateLimitIP_Returns429Error(t *testing.T) {
 	events := &mocks.MockAccountEventsProducer{}
 	oauth := &mocks.MockGoogleOAuthProvider{}
 
-	rl.On("CheckIP", mock.Anything, testClientIP).Return(corerr.ErrRateLimitIP)
+	rl.On("CheckIP", mock.Anything, testdata.FixtureClientIP).Return(corerr.ErrRateLimitIP)
 
 	svc := buildAuthService(repo, issuer, blacklist, rl, events, oauth)
-	_, err := svc.Login(context.Background(), testEmail, "Password1!", testFingerprint, testClientIP)
+	_, err := svc.Login(
+		context.Background(),
+		testdata.FixtureEmail,
+		"Password1!",
+		testdata.FixtureFingerprint,
+		testdata.FixtureClientIP,
+	)
 
 	assert.ErrorIs(t, err, corerr.ErrRateLimitIP)
-	// FindByEmail не должен вызываться до IP-чека
 	repo.AssertNotCalled(t, "FindByEmail", mock.Anything, mock.Anything)
-	rl.AssertExpectations(t)
 }
 
 func TestLogin_AccountNotFound_ReturnsErrInvalidCredentials(t *testing.T) {
@@ -129,19 +111,26 @@ func TestLogin_AccountNotFound_ReturnsErrInvalidCredentials(t *testing.T) {
 	events := &mocks.MockAccountEventsProducer{}
 	oauth := &mocks.MockGoogleOAuthProvider{}
 
-	rl.On("CheckIP", mock.Anything, testClientIP).Return(nil)
+	rl.On("CheckIP", mock.Anything, testdata.FixtureClientIP).Return(nil)
 	repo.On("FindByEmail", mock.Anything, "unknown@saymo.ru").
-		Return((*entity.Account)(nil), errors.New("not found"))
+		Return(nil, errors.New("not found"))
 
 	svc := buildAuthService(repo, issuer, blacklist, rl, events, oauth)
-	_, err := svc.Login(context.Background(), "unknown@saymo.ru", "Password1!", testFingerprint, testClientIP)
+	_, err := svc.Login(
+		context.Background(),
+		"unknown@saymo.ru",
+		"Password1!",
+		testdata.FixtureFingerprint,
+		testdata.FixtureClientIP,
+	)
 
-	// Инвариант: ErrInvalidCredentials даже если аккаунт не найден (no credential oracle)
+	// Инвариант: ErrInvalidCredentials даже если аккаунт не найден (no credential oracle).
+	// bcrypt.CompareHashAndPassword выполняется против DummyPasswordHash для timing safety.
 	assert.ErrorIs(t, err, corerr.ErrInvalidCredentials)
 	issuer.AssertNotCalled(t, "Issue", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
-func TestLogin_WrongPassword_ReturnsErrInvalidCredentials(t *testing.T) {
+func TestLogin_WrongPassword_RecordsFailureAndReturnsErrInvalidCredentials(t *testing.T) {
 	repo := &mocks.MockAccountRepository{}
 	issuer := &mocks.MockTokenIssuer{}
 	blacklist := &mocks.MockTokenBlacklist{}
@@ -149,23 +138,29 @@ func TestLogin_WrongPassword_ReturnsErrInvalidCredentials(t *testing.T) {
 	events := &mocks.MockAccountEventsProducer{}
 	oauth := &mocks.MockGoogleOAuthProvider{}
 
-	acc := buildActiveAccount(t)
+	acc := testdata.NewActiveAccount()
 
-	rl.On("CheckIP", mock.Anything, testClientIP).Return(nil)
-	repo.On("FindByEmail", mock.Anything, testEmail).Return(acc, nil)
+	rl.On("CheckIP", mock.Anything, testdata.FixtureClientIP).Return(nil)
+	repo.On("FindByEmail", mock.Anything, testdata.FixtureEmail).Return(acc, nil)
 	rl.On("CheckAccount", mock.Anything, acc.UUID()).Return(nil)
-	// RecordFailure вызывается при провале bcrypt
-	rl.On("RecordFailure", mock.Anything, testClientIP, acc.UUID()).Return(nil)
+	// RecordFailure вызывается при провале bcrypt.Compare
+	rl.On("RecordFailure", mock.Anything, testdata.FixtureClientIP, acc.UUID()).Return(nil)
 
 	svc := buildAuthService(repo, issuer, blacklist, rl, events, oauth)
-	_, err := svc.Login(context.Background(), testEmail, "WrongPassword!", testFingerprint, testClientIP)
+	_, err := svc.Login(
+		context.Background(),
+		testdata.FixtureEmail,
+		"WrongPassword!",
+		testdata.FixtureFingerprint,
+		testdata.FixtureClientIP,
+	)
 
 	assert.ErrorIs(t, err, corerr.ErrInvalidCredentials)
-	rl.AssertCalled(t, "RecordFailure", mock.Anything, testClientIP, acc.UUID())
+	rl.AssertCalled(t, "RecordFailure", mock.Anything, testdata.FixtureClientIP, acc.UUID())
 	issuer.AssertNotCalled(t, "Issue", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
-func TestLogin_AccountLocked_ReturnsErrInvalidCredentials(t *testing.T) {
+func TestLogin_AccountLocked_StopsAfterFindByEmail(t *testing.T) {
 	repo := &mocks.MockAccountRepository{}
 	issuer := &mocks.MockTokenIssuer{}
 	blacklist := &mocks.MockTokenBlacklist{}
@@ -173,22 +168,32 @@ func TestLogin_AccountLocked_ReturnsErrInvalidCredentials(t *testing.T) {
 	events := &mocks.MockAccountEventsProducer{}
 	oauth := &mocks.MockGoogleOAuthProvider{}
 
-	acc := buildActiveAccount(t)
-	acc.Lock()
+	// Используем NewActiveAccount и вызываем Lock(nil) -- бессрочная блокировка
+	acc := testdata.NewActiveAccount()
+	_, lockErr := acc.Lock(nil)
+	if lockErr != nil {
+		t.Fatalf("unexpected Lock error: %v", lockErr)
+	}
 
-	rl.On("CheckIP", mock.Anything, testClientIP).Return(nil)
-	repo.On("FindByEmail", mock.Anything, testEmail).Return(acc, nil)
+	rl.On("CheckIP", mock.Anything, testdata.FixtureClientIP).Return(nil)
+	repo.On("FindByEmail", mock.Anything, testdata.FixtureEmail).Return(acc, nil)
 
 	svc := buildAuthService(repo, issuer, blacklist, rl, events, oauth)
-	_, err := svc.Login(context.Background(), testEmail, "Password1!", testFingerprint, testClientIP)
+	_, err := svc.Login(
+		context.Background(),
+		testdata.FixtureEmail,
+		"Password1!",
+		testdata.FixtureFingerprint,
+		testdata.FixtureClientIP,
+	)
 
-	// Заблокированный аккаунт: инвариант -- ErrInvalidCredentials (не ErrAccountLocked)
+	// Инвариант: заблокированный аккаунт возвращает ErrInvalidCredentials, не ErrAccountLocked
 	assert.ErrorIs(t, err, corerr.ErrInvalidCredentials)
-	// CheckAccount не вызывается для заблокированного аккаунта
+	// CheckAccount не вызывается -- остановились до него
 	rl.AssertNotCalled(t, "CheckAccount", mock.Anything, mock.Anything)
 }
 
-func TestLogin_RateLimitAccount_ReturnsErrRateLimitAccount(t *testing.T) {
+func TestLogin_RateLimitAccount_StopsBeforeBcrypt(t *testing.T) {
 	repo := &mocks.MockAccountRepository{}
 	issuer := &mocks.MockTokenIssuer{}
 	blacklist := &mocks.MockTokenBlacklist{}
@@ -196,17 +201,23 @@ func TestLogin_RateLimitAccount_ReturnsErrRateLimitAccount(t *testing.T) {
 	events := &mocks.MockAccountEventsProducer{}
 	oauth := &mocks.MockGoogleOAuthProvider{}
 
-	acc := buildActiveAccount(t)
+	acc := testdata.NewActiveAccount()
 
-	rl.On("CheckIP", mock.Anything, testClientIP).Return(nil)
-	repo.On("FindByEmail", mock.Anything, testEmail).Return(acc, nil)
+	rl.On("CheckIP", mock.Anything, testdata.FixtureClientIP).Return(nil)
+	repo.On("FindByEmail", mock.Anything, testdata.FixtureEmail).Return(acc, nil)
 	rl.On("CheckAccount", mock.Anything, acc.UUID()).Return(corerr.ErrRateLimitAccount)
 
 	svc := buildAuthService(repo, issuer, blacklist, rl, events, oauth)
-	_, err := svc.Login(context.Background(), testEmail, "Password1!", testFingerprint, testClientIP)
+	_, err := svc.Login(
+		context.Background(),
+		testdata.FixtureEmail,
+		"Password1!",
+		testdata.FixtureFingerprint,
+		testdata.FixtureClientIP,
+	)
 
 	assert.ErrorIs(t, err, corerr.ErrRateLimitAccount)
-	// bcrypt.Compare не вызывается -- rate limit останавливает до него
+	// TokenIssuer не вызывается -- rate limit останавливает до bcrypt
 	issuer.AssertNotCalled(t, "Issue", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
@@ -218,20 +229,25 @@ func TestLogin_TokenIssuerFails_ReturnsError(t *testing.T) {
 	events := &mocks.MockAccountEventsProducer{}
 	oauth := &mocks.MockGoogleOAuthProvider{}
 
-	acc := buildActiveAccount(t)
-	issueErr := errors.New("signing key unavailable")
+	acc := testdata.NewActiveAccount()
 
-	rl.On("CheckIP", mock.Anything, testClientIP).Return(nil)
-	repo.On("FindByEmail", mock.Anything, testEmail).Return(acc, nil)
+	rl.On("CheckIP", mock.Anything, testdata.FixtureClientIP).Return(nil)
+	repo.On("FindByEmail", mock.Anything, testdata.FixtureEmail).Return(acc, nil)
 	rl.On("CheckAccount", mock.Anything, acc.UUID()).Return(nil)
 	repo.On("SaveSessionWithTx", mock.Anything, acc).Return(nil)
 	issuer.On("Issue",
 		mock.Anything, acc.UUID(), mock.AnythingOfType("string"),
 		mock.AnythingOfType("string"), acc.Revision(),
-	).Return("", "", issueErr)
+	).Return("", "", errors.New("signing key unavailable"))
 
 	svc := buildAuthService(repo, issuer, blacklist, rl, events, oauth)
-	_, err := svc.Login(context.Background(), testEmail, "Password1!", testFingerprint, testClientIP)
+	_, err := svc.Login(
+		context.Background(),
+		testdata.FixtureEmail,
+		"Password1!",
+		testdata.FixtureFingerprint,
+		testdata.FixtureClientIP,
+	)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "signing key unavailable")
@@ -245,28 +261,34 @@ func TestLogin_EventsProducerFails_StillReturnsToken(t *testing.T) {
 	events := &mocks.MockAccountEventsProducer{}
 	oauth := &mocks.MockGoogleOAuthProvider{}
 
-	acc := buildActiveAccount(t)
+	acc := testdata.NewActiveAccount()
 
-	rl.On("CheckIP", mock.Anything, testClientIP).Return(nil)
-	repo.On("FindByEmail", mock.Anything, testEmail).Return(acc, nil)
+	rl.On("CheckIP", mock.Anything, testdata.FixtureClientIP).Return(nil)
+	repo.On("FindByEmail", mock.Anything, testdata.FixtureEmail).Return(acc, nil)
 	rl.On("CheckAccount", mock.Anything, acc.UUID()).Return(nil)
 	repo.On("SaveSessionWithTx", mock.Anything, acc).Return(nil)
 	issuer.On("Issue",
 		mock.Anything, acc.UUID(), mock.AnythingOfType("string"),
 		mock.AnythingOfType("string"), acc.Revision(),
-	).Return(testAccessToken, testJTI, nil)
-	// fire-and-forget: ошибка события не блокирует ответ
+	).Return("eyJ.test.token", testdata.FixtureJTI, nil)
+	// fire-and-forget: ошибка события не блокирует ответ клиенту
 	events.On("SessionCreated",
 		mock.Anything, acc.UUID(),
-		mock.AnythingOfType("string"), testFingerprint,
+		mock.AnythingOfType("string"), testdata.FixtureFingerprint,
 		mock.AnythingOfType("int64"),
 	).Return(errors.New("kafka unavailable"))
 
 	svc := buildAuthService(repo, issuer, blacklist, rl, events, oauth)
-	result, err := svc.Login(context.Background(), testEmail, "Password1!", testFingerprint, testClientIP)
+	result, err := svc.Login(
+		context.Background(),
+		testdata.FixtureEmail,
+		"Password1!",
+		testdata.FixtureFingerprint,
+		testdata.FixtureClientIP,
+	)
 
 	assert.NoError(t, err)
-	assert.Equal(t, testAccessToken, result.AccessToken)
+	assert.Equal(t, "eyJ.test.token", result.AccessToken)
 }
 
 // --- AuthService.InitiateGoogleOAuth ----------------------------------------
@@ -279,14 +301,14 @@ func TestInitiateGoogleOAuth_HappyPath(t *testing.T) {
 	events := &mocks.MockAccountEventsProducer{}
 	oauth := &mocks.MockGoogleOAuthProvider{}
 
-	expectedURL := "https://accounts.google.com/o/oauth2/auth?..."
-	expectedState := valobj.OAuthState{State: "csrf-token-123", ExpiresAt: time.Now().Add(5 * time.Minute)}
+	expectedURL := "https://accounts.google.com/o/oauth2/auth?state=csrf-token-fixture-001"
+	expectedState := testdata.NewOAuthState()
 
-	rl.On("CheckIP", mock.Anything, testClientIP).Return(nil)
+	rl.On("CheckIP", mock.Anything, testdata.FixtureClientIP).Return(nil)
 	oauth.On("BuildAuthURL", mock.Anything).Return(expectedURL, expectedState, nil)
 
 	svc := buildAuthService(repo, issuer, blacklist, rl, events, oauth)
-	url, state, err := svc.InitiateGoogleOAuth(context.Background(), testClientIP)
+	url, state, err := svc.InitiateGoogleOAuth(context.Background(), testdata.FixtureClientIP)
 
 	assert.NoError(t, err)
 	assert.Equal(t, expectedURL, url)
@@ -303,20 +325,20 @@ func TestInitiateGoogleOAuth_RateLimitIP_StopsBeforeBuildAuthURL(t *testing.T) {
 	events := &mocks.MockAccountEventsProducer{}
 	oauth := &mocks.MockGoogleOAuthProvider{}
 
-	rl.On("CheckIP", mock.Anything, testClientIP).Return(corerr.ErrRateLimitIP)
+	rl.On("CheckIP", mock.Anything, testdata.FixtureClientIP).Return(corerr.ErrRateLimitIP)
 
 	svc := buildAuthService(repo, issuer, blacklist, rl, events, oauth)
-	_, _, err := svc.InitiateGoogleOAuth(context.Background(), testClientIP)
+	_, _, err := svc.InitiateGoogleOAuth(context.Background(), testdata.FixtureClientIP)
 
 	assert.ErrorIs(t, err, corerr.ErrRateLimitIP)
 	oauth.AssertNotCalled(t, "BuildAuthURL", mock.Anything)
 }
 
-// --- openSessionAndIssueToken: evictedJTI path ------------------------------
+// --- G9 Write Order: evictedJTI path ----------------------------------------
 
-func TestLogin_EvictedJTI_AddedToBlacklist(t *testing.T) {
-	// G9 Write Order: если OpenSession возвращает evictedJTI (5-я сессия вытеснила первую),
-	// TokenBlacklist.Add вызывается после SaveSessionWithTx.
+func TestLogin_EvictedJTI_AddedToBlacklistAfterSaveSession(t *testing.T) {
+	// G9 Write Order: если OpenSession возвращает evictedJTI (6-я сессия вытесняет первую),
+	// TokenBlacklist.Add должен быть вызван после SaveSessionWithTx.
 	repo := &mocks.MockAccountRepository{}
 	issuer := &mocks.MockTokenIssuer{}
 	blacklist := &mocks.MockTokenBlacklist{}
@@ -324,36 +346,44 @@ func TestLogin_EvictedJTI_AddedToBlacklist(t *testing.T) {
 	events := &mocks.MockAccountEventsProducer{}
 	oauth := &mocks.MockGoogleOAuthProvider{}
 
-	acc := buildActiveAccount(t)
-	// Заполняем 5 сессий -- следующая OpenSession вытеснит первую
-	for i := 0; i < 5; i++ {
+	// NewActiveAccount уже содержит 1 сессию (FixtureSessionID).
+	// Добавляем ещё 4 через OpenSession -- итого 5 (лимит).
+	// Следующий Login вызовет OpenSession шестой раз и вытеснит первую.
+	acc := testdata.NewActiveAccount()
+	for i := 0; i < 4; i++ {
 		_, _, _ = acc.OpenSession(
-			"session-"+string(rune('A'+i)),
-			"jti-"+string(rune('A'+i)),
-			"fp-"+string(rune('A'+i)),
+			"extra-session-"+string(rune('A'+i)),
+			"extra-jti-"+string(rune('A'+i)),
+			"extra-fp-"+string(rune('A'+i)),
 		)
 	}
 
-	rl.On("CheckIP", mock.Anything, testClientIP).Return(nil)
-	repo.On("FindByEmail", mock.Anything, testEmail).Return(acc, nil)
+	rl.On("CheckIP", mock.Anything, testdata.FixtureClientIP).Return(nil)
+	repo.On("FindByEmail", mock.Anything, testdata.FixtureEmail).Return(acc, nil)
 	rl.On("CheckAccount", mock.Anything, acc.UUID()).Return(nil)
 	repo.On("SaveSessionWithTx", mock.Anything, acc).Return(nil)
 	issuer.On("Issue",
 		mock.Anything, acc.UUID(), mock.AnythingOfType("string"),
 		mock.AnythingOfType("string"), acc.Revision(),
-	).Return(testAccessToken, testJTI, nil)
+	).Return("eyJ.test.token", testdata.FixtureJTI, nil)
 	events.On("SessionCreated",
 		mock.Anything, acc.UUID(),
-		mock.AnythingOfType("string"), testFingerprint,
+		mock.AnythingOfType("string"), testdata.FixtureFingerprint,
 		mock.AnythingOfType("int64"),
 	).Return(nil)
 	// evictedJTI должен попасть в blacklist
 	blacklist.On("Add", mock.Anything, mock.AnythingOfType("string"), mock.Anything).Return(nil)
 
 	svc := buildAuthService(repo, issuer, blacklist, rl, events, oauth)
-	result, err := svc.Login(context.Background(), testEmail, "Password1!", testFingerprint, testClientIP)
+	result, err := svc.Login(
+		context.Background(),
+		testdata.FixtureEmail,
+		"Password1!",
+		testdata.FixtureFingerprint,
+		testdata.FixtureClientIP,
+	)
 
 	assert.NoError(t, err)
-	assert.Equal(t, testAccessToken, result.AccessToken)
+	assert.Equal(t, "eyJ.test.token", result.AccessToken)
 	blacklist.AssertCalled(t, "Add", mock.Anything, mock.AnythingOfType("string"), mock.Anything)
 }
