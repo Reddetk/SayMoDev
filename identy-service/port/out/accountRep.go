@@ -26,13 +26,17 @@ type AccountRepository interface {
 	// - удаляет все активные сессии аккаунта (уже очищены entity-методом)
 	// - записывает все jti сессий в blacklist (outbox L3)
 	// - обновляет metadata (updated_at)
+	// - при status=deleted вставляет outbox account.deleted с actorID
 	//
 	// Используется исключительно операциями изменения статуса: LockAccount, UnlockAccount, SoftDelete.
-	// Не затрагивает passwordHash и password_history — в отличие от ResetPassword.
+	// Не затрагивает passwordHash и password_history -- в отличие от ResetPassword.
 	//
 	// revokedJTIs передаются отдельно, так как к моменту вызова entity уже очистила sessions;
 	// адаптер обязан записать их в blacklist в рамках одной транзакции.
-	UpdateAccountStatusTx(ctx context.Context, account *entity.Account, revokedJTIs []string) error
+	//
+	// actorID -- UUID инициатора операции (adminID или accountID самого пользователя).
+	// Обязателен для payload account.deleted (compliance). Для lock/unlock допустима пустая строка.
+	UpdateAccountStatusTx(ctx context.Context, account *entity.Account, revokedJTIs []string, actorID string) error
 
 	// EmailExist проверяет существование email без загрузки агрегата
 	// Используется в Registration flow перед созданием аккаунта
@@ -41,7 +45,7 @@ type AccountRepository interface {
 	// FindByEmail загружает Account aggregate по email
 	// Включает все активные сессии и passwordHistory (последние 5)
 	// Возвращает ErrAccountNotFound если email не существует
-	// FindByEmail — ТОЛЬКО для unauthenticated flows:
+	// FindByEmail -- ТОЛЬКО для unauthenticated flows:
 	// Login, ConfrimPasswordReset, Register (anti-enumeration check).
 	// Для всех аутентифицированных операций использовать FindByAccountID.
 	FindByEmail(ctx context.Context, email string) (*entity.Account, error)
@@ -57,14 +61,14 @@ type AccountRepository interface {
 	// SaveSessionWithTx сохраняет состояние Account после account.OpenSession()
 	// ACID транзакция:
 	// - upsert активных сессий аккаунта
-	// - если evictedJTI != "" -- записывает его в blacklist (outbox L3)
+	// - если account.EvictedJTI() != "" -- записывает его в blacklist (outbox L3) и вызывает ClearEvictedJTI()
 	// - обновляет metadata аккаунта (updated_at)
 	// Полный агрегат передаётся для консистентности; адаптер извлекает нужные поля
 	SaveSessionWithTx(ctx context.Context, account *entity.Account) error
 
 	// DeleteSessionWithTx удаляет сессию из агрегата и персистирует результат.
 	// ACID транзакция:
-	// - DELETE sessions WHERE session_id=? AND account_id=?
+	// - DELETE sessions WHERE jti=? AND account_id=?
 	// - INSERT blacklist (jti, ttl) через outbox (L3)
 	// - обновляет metadata аккаунта (updated_at)
 	// Полный агрегат передаётся после account.RevokeSession(); адаптер берёт нужные поля.
@@ -74,7 +78,7 @@ type AccountRepository interface {
 
 	// FindByGoogleUID загружает Account по google_uid (claim sub из Google ID token).
 	// Возвращает ErrAccountNotFound если google_uid не существует.
-	// Приоритетный lookup для OAuth flow — google_uid стабилен при смене email в Google.
+	// Приоритетный lookup для OAuth flow -- google_uid стабилен при смене email в Google.
 	FindByGoogleUID(ctx context.Context, googleUID string) (*entity.Account, error)
 
 	// LinkGoogleUID привязывает google_uid к существующему аккаунту.
@@ -85,7 +89,7 @@ type AccountRepository interface {
 	// CreateOAuthAccountWithTx создаёт аккаунт через OAuth в ACID-транзакции:
 	//   - INSERT account (password_hash=NULL, google_uid, email, role, status=active)
 	//   - INSERT outbox: AccountRegistered {registrationMethod: "oauth2", classifier}
-	// Если classifier=nil и role=patient — логика согласно missing spec / design gap выше.
+	// Если classifier=nil и role=patient -- логика согласно missing spec / design gap выше.
 	CreateOAuthAccountWithTx(ctx context.Context, params *entity.Account) (*entity.Account, error)
 
 	// ChangeAccountData stands for UNSAFE admin changing of general account data
