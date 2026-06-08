@@ -43,6 +43,9 @@ const (
 
 	// FixtureCodeChallenge is the BASE64URL(SHA256(FixtureCodeVerifier)) value.
 	FixtureCodeChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+
+	// FixtureClientIP is the stable client IP address used in service-level tests.
+	FixtureClientIP = "127.0.0.1"
 )
 
 // NewActiveAccount returns a restored active patient Account with a password hash
@@ -56,6 +59,7 @@ func NewActiveAccount() *entity.Account {
 		FixtureJTI,
 		FixtureFingerprint,
 		now,
+		meta,
 	)
 
 	hash := FixturePasswordHash
