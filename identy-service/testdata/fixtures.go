@@ -43,6 +43,7 @@ const (
 
 	// FixtureCodeChallenge is the BASE64URL(SHA256(FixtureCodeVerifier)) value.
 	FixtureCodeChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+	FixtureClientIP      = "255.255.255.255"
 
 	// FixtureClientIP is the stable client IP address used in service-level tests.
 	FixtureClientIP = "127.0.0.1"
