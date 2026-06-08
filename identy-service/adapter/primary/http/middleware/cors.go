@@ -6,37 +6,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-)
-
-// Observability.md Metrics Security Counter:
-//   cors_requests_total           {origin, method}
-//   cors_rejected_total           {origin}   -- alert if rate > threshold
-//   cors_preflight_requests_total {origin}
-
-var (
-	corsRequestsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "cors_requests_total",
-			Help: "Total CORS requests by origin and method.",
-		},
-		[]string{"origin", "method"},
-	)
-	corsRejectedTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "cors_rejected_total",
-			Help: "CORS requests rejected: origin not in whitelist.",
-		},
-		[]string{"origin"},
-	)
-	corsPreflightTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "cors_preflight_requests_total",
-			Help: "Total CORS preflight (OPTIONS) requests by origin.",
-		},
-		[]string{"origin"},
-	)
 )
 
 // CORSConfig -- CORS policy parameters for the primary adapter.
@@ -54,6 +23,11 @@ var (
 // MaxAge: preflight response cache time in seconds.
 //   0 -- browser does not cache (each request sends OPTIONS).
 //   Recommended: 600 (10 min).
+//
+// Metrics: cors_requests_total, cors_rejected_total, cors_preflight_requests_total
+// записываются в ObservabilityMiddleware.handle (до c.Next()).
+// NewCORSMiddleware не регистрирует счётчики -- это зона ответственности
+// ObservabilityMiddleware, чтобы избежать duplicate registration паники.
 type CORSConfig struct {
 	AllowedOrigins   []string
 	AllowedMethods   []string
@@ -66,11 +40,8 @@ type CORSConfig struct {
 // NewCORSMiddleware builds gin.HandlerFunc implementing the CORS policy
 // from the provided CORSConfig.
 //
-// Order in router.go: first, before gin.Recovery() and JWTMiddleware.
+// Order in router.go: first, before ObservabilityMiddleware and JWTMiddleware.
 // Reason: preflight OPTIONS must not pass through JWT validation.
-//
-// Metrics: cors_requests_total, cors_rejected_total, cors_preflight_requests_total
-// per Observability.md BC#1. No spans created -- pure in-memory filter, no measurable IO latency.
 func NewCORSMiddleware(cfg CORSConfig) gin.HandlerFunc {
 	allowedOriginSet := make(map[string]struct{}, len(cfg.AllowedOrigins))
 	for _, o := range cfg.AllowedOrigins {
@@ -94,20 +65,16 @@ func NewCORSMiddleware(cfg CORSConfig) gin.HandlerFunc {
 		_, allowed := allowedOriginSet[origin]
 		if !allowed {
 			// Origin not in whitelist.
-			corsRejectedTotal.WithLabelValues(origin).Inc()
+			// Metrics: corsRejectedTotal инкрементируется в ObservabilityMiddleware.
 			if c.Request.Method == http.MethodOptions {
-				corsPreflightTotal.WithLabelValues(origin).Inc()
 				c.AbortWithStatus(http.StatusForbidden)
 				return
 			}
-			corsRequestsTotal.WithLabelValues(origin, c.Request.Method).Inc()
 			c.Next()
 			return
 		}
 
 		// Origin allowed -- set CORS headers.
-		corsRequestsTotal.WithLabelValues(origin, c.Request.Method).Inc()
-
 		c.Header("Access-Control-Allow-Origin", origin)
 		c.Header("Vary", "Origin")
 
@@ -120,7 +87,6 @@ func NewCORSMiddleware(cfg CORSConfig) gin.HandlerFunc {
 
 		// Preflight OPTIONS -- respond and abort chain.
 		if c.Request.Method == http.MethodOptions {
-			corsPreflightTotal.WithLabelValues(origin).Inc()
 			if allowMethods != "" {
 				c.Header("Access-Control-Allow-Methods", allowMethods)
 			}
