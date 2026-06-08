@@ -302,6 +302,7 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 		if err := passOp.PasswordChange(
 			c.Request.Context(),
 			accountID,
+			req.NewPassword,
 			newPasswordHash,
 		); err != nil {
 			switch {
