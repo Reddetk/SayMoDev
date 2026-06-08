@@ -1,0 +1,199 @@
+// Package secondary contains outbound adapter implementations.
+package secondary
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"time"
+
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+)
+
+// postboxEndpoint -- AWS SESv2-compatible endpoint Yandex Cloud Postbox.
+const postboxEndpoint = "https://postbox.cloud.yandex.net/v2/email/outbound-emails"
+
+// subjectByPurpose maps OTPPurpose to a human-readable email subject.
+// Subject does not contain the code (OTP Security Invariant SS7).
+var subjectByPurpose = map[valobj.OTPPurpose]string{
+	valobj.OTPPurposeRegistration:  "SayMo: код подтверждения регистрации",
+	valobj.OTPPurposePasswordReset: "SayMo: код сброса пароля",
+	valobj.OTPPurposeEmailChange:   "SayMo: код подтверждения смены почты",
+}
+
+// sesv2SimpleTextContent mirrors the SESv2 SimpleEmailContent / Content schema.
+// Only Text is populated -- HTML is intentionally omitted (no links, no markup).
+type sesv2SimpleTextContent struct {
+	Data    string `json:"Data"`
+	Charset string `json:"Charset"`
+}
+
+type sesv2Content struct {
+	Simple struct {
+		Subject sesv2SimpleTextContent `json:"Subject"`
+		Body    struct {
+			Text sesv2SimpleTextContent `json:"Text"`
+		} `json:"Body"`
+	} `json:"Simple"`
+}
+
+type sesv2SendRequest struct {
+	FromEmailAddress string `json:"FromEmailAddress"`
+	Destination      struct {
+		ToAddresses []string `json:"ToAddresses"`
+	} `json:"Destination"`
+	Content sesv2Content `json:"Content"`
+}
+
+// PostboxEmailAdapter implements port/out.EmailBox via Yandex Cloud Postbox
+// (AWS SESv2-compatible REST API).
+//
+// Auth: X-YaCloud-SubjectToken header (IAM token).
+// The adapter is stateless: IAM token rotation is the caller's responsibility
+// (inject a fresh token per request or use a token-refreshing wrapper).
+type PostboxEmailAdapter struct {
+	httpClient  *http.Client
+	iamToken    string // rotated externally; see Config.IAMToken
+	fromAddress string // verified sender address in Postbox
+	logger      *slog.Logger
+}
+
+// PostboxConfig holds constructor parameters.
+type PostboxConfig struct {
+	// IAMToken is the Yandex Cloud IAM subject token used in X-YaCloud-SubjectToken.
+	// Obtain via metadata service or service-account key; refresh before expiry (1h TTL).
+	IAMToken string
+
+	// FromAddress must be a verified sender address registered in Yandex Postbox.
+	FromAddress string
+
+	// HTTPClient is optional; defaults to a client with a 10-second timeout.
+	HTTPClient *http.Client
+
+	// Logger is optional; defaults to slog.Default().
+	Logger *slog.Logger
+}
+
+// NewPostboxEmailAdapter constructs the adapter and validates required config.
+func NewPostboxEmailAdapter(cfg PostboxConfig) (*PostboxEmailAdapter, error) {
+	if cfg.IAMToken == "" {
+		return nil, fmt.Errorf("postbox adapter: IAMToken is required")
+	}
+	if cfg.FromAddress == "" {
+		return nil, fmt.Errorf("postbox adapter: FromAddress is required")
+	}
+
+	client := cfg.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	return &PostboxEmailAdapter{
+		httpClient:  client,
+		iamToken:    cfg.IAMToken,
+		fromAddress: cfg.FromAddress,
+		logger:      logger,
+	}, nil
+}
+
+// SendOTP implements port/out.EmailBox.
+//
+// Security invariants:
+//   - OTP Security Invariant SS7: `code` is NEVER written to logs.
+//   - Body is plaintext-only; no HTML, no links.
+//   - Called after DB commit, outside any transaction.
+//
+// Error contract:
+//   - Postbox unreachable (network, DNS, timeout) -> ErrEmailServiceUnavailable.
+//   - Postbox reachable but returns non-2xx -> ErrEmailDeliveryFailed.
+//   - OTP record in DB is NOT rolled back; the caller may surface a retry prompt.
+func (a *PostboxEmailAdapter) SendOTP(
+	ctx context.Context,
+	toEmail string,
+	otpPur valobj.OTPPurpose,
+	code string,
+) error {
+	subject, ok := subjectByPurpose[otpPur]
+	if !ok {
+		// Missing entry is a programmer error, not a runtime condition.
+		// Return delivery failed so the OTP flow degrades gracefully.
+		a.logger.ErrorContext(ctx, "postbox: unknown OTPPurpose",
+			slog.String("purpose", otpPur.String()),
+		)
+		return corerr.ErrEmailDeliveryFailed
+	}
+
+	// Build plaintext body. code is intentionally NOT logged anywhere in this file.
+	body := fmt.Sprintf("Ваш код подтверждения: %s\n\nКод действителен 10 минут.", code)
+
+	payload := sesv2SendRequest{
+		FromEmailAddress: a.fromAddress,
+	}
+	payload.Destination.ToAddresses = []string{toEmail}
+	payload.Content.Simple.Subject = sesv2SimpleTextContent{Data: subject, Charset: "UTF-8"}
+	payload.Content.Simple.Body.Text = sesv2SimpleTextContent{Data: body, Charset: "UTF-8"}
+
+	rawJSON, err := json.Marshal(payload)
+	if err != nil {
+		// json.Marshal on a static struct should never fail.
+		a.logger.ErrorContext(ctx, "postbox: failed to marshal request",
+			slog.String("to", toEmail),
+			slog.String("purpose", otpPur.String()),
+			slog.String("error", err.Error()),
+		)
+		return corerr.ErrEmailDeliveryFailed
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, postboxEndpoint, bytes.NewReader(rawJSON))
+	if err != nil {
+		a.logger.ErrorContext(ctx, "postbox: failed to build HTTP request",
+			slog.String("to", toEmail),
+			slog.String("error", err.Error()),
+		)
+		return corerr.ErrEmailServiceUnavailable
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-YaCloud-SubjectToken", a.iamToken)
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		// Network-level failure: DNS, TLS, timeout, context cancellation.
+		a.logger.ErrorContext(ctx, "postbox: HTTP transport error",
+			slog.String("to", toEmail),
+			slog.String("purpose", otpPur.String()),
+			slog.String("error", err.Error()),
+		)
+		return corerr.ErrEmailServiceUnavailable
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Drain body to allow connection reuse.
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		a.logger.ErrorContext(ctx, "postbox: non-2xx response",
+			slog.String("to", toEmail),
+			slog.String("purpose", otpPur.String()),
+			slog.Int("status", resp.StatusCode),
+		)
+		return corerr.ErrEmailDeliveryFailed
+	}
+
+	a.logger.InfoContext(ctx, "postbox: OTP email sent",
+		slog.String("to", toEmail),
+		slog.String("purpose", otpPur.String()),
+		// code намеренно отсутствует -- OTP Security Invariant SS7
+	)
+	return nil
+}
