@@ -41,12 +41,6 @@ type Account struct {
 	metadata        valobj.Metadata
 	sessions        []Session
 	passwordHistory []valobj.PasswordEntry
-
-	// evictedJTI holds the JTI of the session evicted by G5 LRU policy during
-	// OpenSession. Read-once by the repository adapter (SaveSessionWithTx) via
-	// EvictedJTI(), then cleared via ClearEvictedJTI().
-	// Not persisted; infrastructure-only field.
-	evictedJTI string
 }
 
 func validateAccountArgs(email, personalInfo string, role valobj.Role, googleUID, passwordHash *string) error {
@@ -190,7 +184,6 @@ func (a *Account) OpenSession(sessionID, jti, fingerprint string) (session *Sess
 	}
 	if len(a.sessions) >= consts.MaxSessionsPerAccount {
 		evictedJTI = a.sessions[a.oldestSessionIndex()].jti
-		a.evictedJTI = evictedJTI
 		a.sessions = append(a.sessions[:a.oldestSessionIndex()], a.sessions[a.oldestSessionIndex()+1:]...)
 	}
 	s, err := newSession(sessionID, jti, fingerprint)
@@ -200,19 +193,6 @@ func (a *Account) OpenSession(sessionID, jti, fingerprint string) (session *Sess
 	a.sessions = append(a.sessions, *s)
 	a.metadata = a.metadata.Touch()
 	return s, evictedJTI, nil
-}
-
-// EvictedJTI returns the JTI evicted during the last OpenSession call.
-// Empty string means no eviction occurred.
-// Intended for read by SaveSessionWithTx adapter only (infrastructure concern).
-func (a *Account) EvictedJTI() string {
-	return a.evictedJTI
-}
-
-// ClearEvictedJTI resets the evictedJTI field after the adapter has consumed it.
-// Called by SaveSessionWithTx after writing the outbox row.
-func (a *Account) ClearEvictedJTI() {
-	a.evictedJTI = ""
 }
 
 func (a *Account) MapToDTO() *in.AccountDTO {

@@ -28,6 +28,7 @@ type AccountOperator interface {
 	UnlockAccount(
 		ctx context.Context,
 		accountID string,
+		actorID string,
 	) error
 
 	// SoftDelete — DELETE //admin/accounts/:id

@@ -421,7 +421,7 @@ func (a *AccountService) LockAccount(
 	}
 
 	// ACID: persist status + lockedUntil + rev + blacklist entries for all revoked JTIs
-	if err := a.accRep.UpdateAccountStatusTx(ctx, account, revokedJTIs); err != nil {
+	if err := a.accRep.UpdateAccountStatusTx(ctx, account, revokedJTIs, actorID); err != nil {
 		span.RecordError(err)
 		return err
 	}
@@ -453,6 +453,7 @@ func (a *AccountService) LockAccount(
 func (a *AccountService) UnlockAccount(
 	ctx context.Context,
 	accountID string,
+	actorID string,
 ) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.UnlockAccount")
 	defer span.End()
@@ -471,7 +472,7 @@ func (a *AccountService) UnlockAccount(
 
 	// ACID: persist status + cleared lockedUntil + incremented metadata
 	// revokedJTIs is empty -- Unlock does not perform T4 mass-revoke
-	if err := a.accRep.UpdateAccountStatusTx(ctx, account, nil); err != nil {
+	if err := a.accRep.UpdateAccountStatusTx(ctx, account, nil, actorID); err != nil {
 		span.RecordError(err)
 		return err
 	}
@@ -514,7 +515,7 @@ func (a *AccountService) SoftDelete(
 	}
 
 	// ACID: persist status + rev + blacklist entries for all revoked JTIs
-	if err := a.accRep.UpdateAccountStatusTx(ctx, account, revokedJTIs); err != nil {
+	if err := a.accRep.UpdateAccountStatusTx(ctx, account, revokedJTIs, actorID); err != nil {
 		span.RecordError(err)
 		return err
 	}

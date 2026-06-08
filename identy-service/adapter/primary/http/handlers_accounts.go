@@ -367,9 +367,10 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 
 func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ac := middleware.MustGetAuthContext(c)
 		accountID := c.Param("accountId")
 
-		if err := accOp.UnlockAccount(c.Request.Context(), accountID); err != nil {
+		if err := accOp.UnlockAccount(c.Request.Context(), accountID, ac.AccountID); err != nil {
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})

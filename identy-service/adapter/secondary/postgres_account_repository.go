@@ -20,8 +20,8 @@ import (
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
-	out "github.com/Reddetk/SayMoDev/identy-service/port/out"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	out "github.com/Reddetk/SayMoDev/identy-service/port/out"
 )
 
 // ---------------------------------------------------------------------------
@@ -29,18 +29,18 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	repoTracerName     = "identy-service/adapter/postgres-account-repo"
-	pgUniqueViolation  = "23505"
+	repoTracerName    = "identy-service/adapter/postgres-account-repo"
+	pgUniqueViolation = "23505"
 )
 
 // outbox event_type constants -- kept local; OutboxEventsProducer owns the
 // canonical list. Duplicated here because the repository writes directly into
 // the outbox table inside its own transactions (no interface indirection).
 const (
-	repoEvtAccountRegistered    = "account.registered"
-	repoEvtEmailVerified        = "account.email_verified"
-	repoEvtTokenRevoked         = "token.revoked"
-	repoEvtAccountDeleted       = "account.deleted"
+	repoEvtAccountRegistered = "account.registered"
+	repoEvtEmailVerified     = "account.email_verified"
+	repoEvtTokenRevoked      = "token.revoked"
+	repoEvtAccountDeleted    = "account.deleted"
 )
 
 // ---------------------------------------------------------------------------
@@ -161,7 +161,10 @@ func (r *PostgresAccountRepository) scanAccount(row pgx.Row) (*entity.Account, e
 	if err != nil {
 		return nil, fmt.Errorf("scanAccount: invalid status %q: %w", statusStr, err)
 	}
-	meta := valobj.RestoreMetadata(createdAt, updatedAt)
+	meta, err := valobj.NewMetadata(createdAt.Unix(), updatedAt.Unix())
+	if err != nil {
+		return nil, err
+	}
 
 	return entity.RestoreAccount(
 		id, email, personalInfo, role, status,
@@ -202,7 +205,10 @@ func (r *PostgresAccountRepository) loadSessions(
 		if err := rows.Scan(&sessionID, &jti, &fingerprint, &lastActivity, &createdAt); err != nil {
 			return nil, fmt.Errorf("loadSessions scan: %w", err)
 		}
-		meta := valobj.RestoreMetadata(createdAt, createdAt)
+		meta, err := valobj.NewMetadata(createdAt.Unix(), createdAt.Unix())
+		if err != nil {
+			return nil, err
+		}
 		s, err := entity.RestoreSession(sessionID, jti, fingerprint, lastActivity, meta)
 		if err != nil {
 			return nil, fmt.Errorf("loadSessions RestoreSession: %w", err)
@@ -239,7 +245,11 @@ func (r *PostgresAccountRepository) loadPasswordHistory(
 		if err := rows.Scan(&hash, &createdAt); err != nil {
 			return nil, fmt.Errorf("loadPasswordHistory scan: %w", err)
 		}
-		history = append(history, valobj.NewPasswordEntry(hash, createdAt))
+		pasEntr, err := valobj.NewPasswordEntry(hash, valobj.NewMetadataNow().Touch())
+		if err != nil {
+			return nil, err
+		}
+		history = append(history, pasEntr)
 	}
 	return history, rows.Err()
 }
