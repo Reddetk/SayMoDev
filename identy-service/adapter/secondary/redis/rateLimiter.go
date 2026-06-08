@@ -9,7 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 )
 
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ const (
 	rlAccountKeyFmt = "rl:account:%s:day"
 
 	// TTL Redis-счётчиков
-	rlIPTTL      = 3600 * time.Second // 1 час
+	rlIPTTL      = 3600 * time.Second  // 1 час
 	rlAccountTTL = 86400 * time.Second // 1 сутки
 
 	// Пороги (Redis недоступен). Консервативные: 10 % от Redis-лимитов.
@@ -102,12 +102,12 @@ func (a *RateLimiterAdapter) CheckIP(ctx context.Context, clientIP string) error
 		// fail-closed: используем in-process счётчик
 		count = a.getFallbackIP(clientIP)
 		if count >= rlFallbackIPLimit {
-			return coreErrors.ErrRateLimitIP
+			return corerr.ErrRateLimitIP
 		}
 		return nil
 	}
 	if count >= maxLoginAttemptsPerIPPerHour {
-		return coreErrors.ErrRateLimitIP
+		return corerr.ErrRateLimitIP
 	}
 	return nil
 }
@@ -126,12 +126,12 @@ func (a *RateLimiterAdapter) CheckAccount(ctx context.Context, accountID string)
 	if err != nil {
 		count = a.getFallbackAccount(accountID)
 		if count >= rlFallbackAccountLimit {
-			return coreErrors.ErrRateLimitAccount
+			return corerr.ErrRateLimitAccount
 		}
 		return nil
 	}
 	if count >= maxFailedLoginAttemptsPerDay {
-		return coreErrors.ErrRateLimitAccount
+		return corerr.ErrRateLimitAccount
 	}
 	return nil
 }
@@ -244,8 +244,8 @@ func (a *RateLimiterAdapter) incrementFallbackAccount(accountID string) int64 {
 // TODO: перенести в identy-service/core/consts после создания пакета.
 // Здесь временные пока consts-пакет не существует.
 const (
-	maxLoginAttemptsPerIPPerHour   int64 = 100
-	maxFailedLoginAttemptsPerDay   int64 = 50
+	maxLoginAttemptsPerIPPerHour int64 = 100
+	maxFailedLoginAttemptsPerDay int64 = 50
 )
 
 // ---------------------------------------------------------------------------
