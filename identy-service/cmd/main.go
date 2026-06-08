@@ -1,7 +1,7 @@
 // Package main -- точка запуска identity-service (BC#1).
 //
 // Порядок инициализации:
-//  1. Logger (slog, JSON)
+//  1. Logger (zap, JSON)
 //  2. PostgreSQL pool (pgxpool)
 //  3. Redis client
 //  4. OTel tracing
@@ -15,7 +15,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -44,13 +43,15 @@ const (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	slog.SetDefault(logger)
+	logger, err := zap.NewProduction()
+	if err != nil {
+		// zap.NewProduction не должен падать в нормальных условиях.
+		panic(fmt.Sprintf("failed to init logger: %v", err))
+	}
+	defer func() { _ = logger.Sync() }()
 
 	if err := run(logger); err != nil {
-		logger.Error("identity-service: fatal startup error", slog.String("error", err.Error()))
+		logger.Error("identity-service: fatal startup error", zap.Error(err))
 		os.Exit(1)
 	}
 }
@@ -64,14 +65,13 @@ func run(logger *zap.Logger) error {
 	shutdownTracer, err := initTracer(ctx)
 	if err != nil {
 		// Non-fatal: observability не должна блокировать запуск сервиса.
-		logger.Warn("otel tracer init failed, continuing without tracing",
-			slog.String("error", err.Error()))
+		logger.Warn("otel tracer init failed, continuing without tracing", zap.Error(err))
 	} else {
 		defer func() {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := shutdownTracer(shutdownCtx); err != nil {
-				logger.Warn("otel tracer shutdown error", slog.String("error", err.Error()))
+				logger.Warn("otel tracer shutdown error", zap.Error(err))
 			}
 		}()
 	}
@@ -101,7 +101,7 @@ func run(logger *zap.Logger) error {
 	redisClient := redis.NewClient(redisOpt)
 	defer func() {
 		if err := redisClient.Close(); err != nil {
-			logger.Warn("redis close error", slog.String("error", err.Error()))
+			logger.Warn("redis close error", zap.Error(err))
 		}
 	}()
 
@@ -183,7 +183,7 @@ func run(logger *zap.Logger) error {
 	// --- 7. Graceful shutdown --------------------------------------------------
 	serverErr := make(chan error, 1)
 	go func() {
-		logger.Info("identity-service starting", slog.String("addr", addr))
+		logger.Info("identity-service starting", zap.String("addr", addr))
 		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 		}
