@@ -9,6 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	consts "github.com/Reddetk/SayMoDev/identy-service/core/consts"
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 )
 
@@ -93,7 +94,7 @@ func NewRateLimiterAdapter(client redis.Cmdable) *RateLimiterAdapter {
 
 // CheckIP проверяет количество попыток с данного IP за последний час.
 //
-// Redis HIT: если счётчик >= MaxLoginAttemptsPerIPPerHour (100) -- ErrRateLimitIP.
+// Redis HIT: если счётчик >= consts.MaxLoginAttemptsPerIPPerHour (100) -- ErrRateLimitIP.
 // Redis недоступен: fail-closed через in-process счётчик (conserve порог = 10).
 func (a *RateLimiterAdapter) CheckIP(ctx context.Context, clientIP string) error {
 	key := fmt.Sprintf(rlIPKeyFmt, clientIP)
@@ -106,7 +107,7 @@ func (a *RateLimiterAdapter) CheckIP(ctx context.Context, clientIP string) error
 		}
 		return nil
 	}
-	if count >= maxLoginAttemptsPerIPPerHour {
+	if count >= consts.MaxLoginAttemptsPerIPPerHour {
 		return corerr.ErrRateLimitIP
 	}
 	return nil
@@ -130,7 +131,7 @@ func (a *RateLimiterAdapter) CheckAccount(ctx context.Context, accountID string)
 		}
 		return nil
 	}
-	if count >= maxFailedLoginAttemptsPerDay {
+	if count >= consts.MaxFailedLoginAttemptsPerDay {
 		return corerr.ErrRateLimitAccount
 	}
 	return nil
@@ -236,17 +237,6 @@ func (a *RateLimiterAdapter) incrementFallbackAccount(accountID string) int64 {
 	v, _ := a.accountCounters.LoadOrStore(accountID, &fallbackCounter{})
 	return v.(*fallbackCounter).increment(rlAccountTTL)
 }
-
-// ---------------------------------------------------------------------------
-// Константы лимитов -- вынесены в пакет consts
-// ---------------------------------------------------------------------------
-
-// TODO: перенести в identy-service/core/consts после создания пакета.
-// Здесь временные пока consts-пакет не существует.
-const (
-	maxLoginAttemptsPerIPPerHour int64 = 100
-	maxFailedLoginAttemptsPerDay int64 = 50
-)
 
 // ---------------------------------------------------------------------------
 // Compile-time interface assertion
