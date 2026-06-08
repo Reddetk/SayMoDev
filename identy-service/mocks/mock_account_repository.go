@@ -14,8 +14,8 @@ package mocks
 import (
 	"context"
 
-	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
 	"github.com/stretchr/testify/mock"
 )
 
