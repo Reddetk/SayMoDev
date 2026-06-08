@@ -1,11 +1,13 @@
 package valobj
 
 import (
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/Reddetk/SayMoDev/identy-service/core/consts"
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 )
 
-// PasswordEntry represents a bcrypt hash in password history
+// PasswordEntry represents a bcrypt hash in password history.
 type PasswordEntry struct {
 	hash     string
 	metadata Metadata
@@ -39,4 +41,13 @@ func (p PasswordEntry) Metadata() Metadata { return p.metadata }
 
 func (p PasswordEntry) Equals(other PasswordEntry) bool {
 	return p.hash == other.hash && p.metadata == other.metadata
+}
+
+// MatchesPlaintext reports whether plain matches the stored bcrypt hash.
+//
+// Used by AccountService.checkPasswordReuse to enforce §2 (password history reuse policy).
+// bcrypt.CompareHashAndPassword is the only correct comparison -- byte equality is always
+// false for valid passwords because each bcrypt hash embeds a unique random salt.
+func (p PasswordEntry) MatchesPlaintext(plain string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(p.hash), []byte(plain)) == nil
 }

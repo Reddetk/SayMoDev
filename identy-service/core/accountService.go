@@ -1,33 +1,34 @@
 // Package core implement core service logic for
 package core
 
-// TODO v1+: optimistic concurrency — адаптер должен проверять rowsAffected и возвращать ErrConflict при rev mismatch
+// TODO v1+: optimistic concurrency -- адаптер должен проверять rowsAffected и возвращать ErrConflict при rev mismatch
 
 // AccountService covers:
-// POST //auth/register/verify          — IssueRegistrationOTP (delegated to OTPService)
-// POST //auth/register                 — Register: OTP verify -> createAccount (ACID) + events via outbox
-// POST //auth/password-reset           — ConfrimPasswordReset: OTP verify -> T4 mass-revoke -> update
-// POST //auth/password-change          — PasswordChange: history check -> T4 mass-revoke -> update
-// POST //admin/accounts/:id/lock       — LockAccount: T4 mass-revoke -> lock
-// POST //admin/accounts/:id/unlock     — UnlockAccount: restore active status
-// DELETE //admin/accounts/:id          — SoftDelete: T4 mass-revoke -> mark deleted
+// POST //auth/register/verify          -- IssueRegistrationOTP (delegated to OTPService)
+// POST //auth/register                 -- Register: OTP verify -> createAccount (ACID) + events via outbox
+// POST //auth/password-reset           -- ConfrimPasswordReset: OTP verify -> reuse check -> T4 mass-revoke -> update
+// POST //auth/password-change          -- PasswordChange: reuse check -> T4 mass-revoke -> update
+// POST //admin/accounts/:id/lock       -- LockAccount: T4 mass-revoke -> lock
+// POST //admin/accounts/:id/unlock     -- UnlockAccount: restore active status
+// DELETE //admin/accounts/:id          -- SoftDelete: T4 mass-revoke -> mark deleted
 //
 // Invariants enforced here (see spec §):
 //   §1  Anti-enumeration: Register and ConfrimPasswordReset return identical response shape regardless of email existence
-//   §2  Password policy: bcrypt hash length/format validated in entity; history reuse checked via ResetPassword port
+//   §2  Password policy: bcrypt hash length/format validated in entity;
+//       history reuse checked here via PasswordEntry.MatchesPlaintext (O(5) bcrypt.Compare)
 //   §3  Token lifecycle: rev++ is performed by entity.ChangePassword/Lock/SoftDelete; revokedJTIs passed to port
 //   §6  Lock semantics: both LockAccount and ConfrimPasswordReset perform T4 mass-revoke (rev++ + sessions cleared)
 //   §7  OTP security: constant-time comparison in checkOTP; generic error on mismatch; OTP plaintext never logged
 //   §G9 Revocation write order: after each *Tx commit, SetAccountRev writes new rev to Redis L2 (non-fatal on error)
 //
 // Event publishing:
-//   AccountRegistered, AccountEmailVerified     — via outbox inside CreateAccountWithTx (repository layer)
-//   AccountConfrimPasswordResetCompleted               — published after successful ResetPassword TX
-//   AccountPasswordChanged                      — published after successful ChangePassword TX
-//   AccountLockedByAdmin                        — published after successful LockAccount TX
-//   AccountUnlocked                             — published after successful UnlockAccount TX
-//   AccountDeleted                              — published after successful SoftDelete TX
-//   AccessTokenRevoked                          — published for every T4 mass-revoke operation
+//   AccountRegistered, AccountEmailVerified     -- via outbox inside CreateAccountWithTx (repository layer)
+//   AccountConfrimPasswordResetCompleted               -- published after successful ResetPassword TX
+//   AccountPasswordChanged                      -- published after successful ChangePassword TX
+//   AccountLockedByAdmin                        -- published after successful LockAccount TX
+//   AccountUnlocked                             -- published after successful UnlockAccount TX
+//   AccountDeleted                              -- published after successful SoftDelete TX
+//   AccessTokenRevoked                          -- published for every T4 mass-revoke operation
 
 import (
 	"context"
@@ -99,15 +100,15 @@ func (a *AccountService) AdminChangeAccountData(ctx context.Context, accountDTO 
 	return nil
 }
 
-// Register — Step 2: POST //auth/register
+// Register -- Step 2: POST //auth/register
 //
 // Flow:
-//  1. Anti-enumeration: if email already registered — simulate OTP latency, return nil (identical response shape)
+//  1. Anti-enumeration: if email already registered -- simulate OTP latency, return nil (identical response shape)
 //  2. Validate OTP via constant-time comparison (§7)
 //  3. ACID transaction in repository: create account + password_history + outbox rows (AccountRegistered, AccountEmailVerified) + OTP cleanup
 //
 // Events AccountRegistered and AccountEmailVerified are published via outbox inside CreateAccountWithTx.
-// They are NOT published here to preserve atomicity — outbox guarantees at-least-once delivery.
+// They are NOT published here to preserve atomicity -- outbox guarantees at-least-once delivery.
 func (a *AccountService) Register(
 	ctx context.Context,
 	email, usrVerifyCode, personalInfo, passwordHash string,
@@ -156,7 +157,7 @@ func (a *AccountService) Register(
 }
 
 // checkOTP loads the stored verification record and performs constant-time hash comparison.
-// §7: generic error on any mismatch — never distinguish wrong code / expired / not found.
+// §7: generic error on any mismatch -- never distinguish wrong code / expired / not found.
 // §7: OTP plaintext is never written to logs or spans.
 func (a *AccountService) checkOTP(ctx context.Context, email string, otp valobj.OTP, purpose valobj.OTPPurpose) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.checkOTP")
@@ -177,6 +178,21 @@ func (a *AccountService) checkOTP(ctx context.Context, email string, otp valobj.
 		return corerr.ErrUserOTPisNotCorrect
 	}
 
+	return nil
+}
+
+// checkPasswordReuse returns ErrPasswordReused if plainNewPassword matches any of the
+// last N entries in the account's password history.
+//
+// §2: reuse check uses PasswordEntry.MatchesPlaintext (bcrypt.CompareHashAndPassword).
+// Byte equality is always false for valid bcrypt hashes because each hash embeds a unique random salt.
+// plainNewPassword is the raw password from the HTTP request; it is never stored or logged.
+func (a *AccountService) checkPasswordReuse(history []valobj.PasswordEntry, plainNewPassword string) error {
+	for _, entry := range history {
+		if entry.MatchesPlaintext(plainNewPassword) {
+			return corerr.ErrPasswordReused
+		}
+	}
 	return nil
 }
 
@@ -229,22 +245,24 @@ func (a *AccountService) createAccount(
 	return nil
 }
 
-// ConfrimPasswordReset — POST //auth/password-reset (unauthenticated, OTP-gated)
+// ConfrimPasswordReset -- POST //auth/password-reset (unauthenticated, OTP-gated)
 //
 // Flow:
 //  1. Constant-time OTP verification (§7)
-//  2. entity.ChangePassword performs T4 mass-revoke: rev++, all sessions cleared, returns revokedJTIs (ADR)
-//  3. ACID transaction: password update + rev + cleared sessions persisted via ResetPassword port
-//  4. SetAccountRev writes new rev to Redis L2 (§G9; non-fatal on error)
-//  5. Publish AccessTokenRevoked for every revoked jti (outbox — async durable)
-//  6. Publish AccountPasswordResetCompleted (audit)
+//  2. §2 Password history reuse check via PasswordEntry.MatchesPlaintext (O(5) bcrypt.Compare)
+//  3. entity.ChangePassword performs T4 mass-revoke: rev++, all sessions cleared, returns revokedJTIs (ADR)
+//  4. ACID transaction: password update + rev + cleared sessions persisted via ResetPassword port
+//  5. SetAccountRev writes new rev to Redis L2 (§G9; non-fatal on error)
+//  6. Publish AccessTokenRevoked for every revoked jti (outbox -- async durable)
+//  7. Publish AccountPasswordResetCompleted (audit)
 //
-// §6: mass-revoke is mandatory — a locked/reset account must not leave valid 30-day tokens outstanding.
+// §6: mass-revoke is mandatory -- a locked/reset account must not leave valid 30-day tokens outstanding.
 // §3: rev++ performed by entity; revokedJTIs returned and passed to events producer.
 func (a *AccountService) ConfrimPasswordReset(
 	ctx context.Context,
 	email string,
 	otp string,
+	plainNewPassword string,
 	newPasswordHash string,
 ) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.ConfrimPasswordReset")
@@ -263,6 +281,12 @@ func (a *AccountService) ConfrimPasswordReset(
 	}
 
 	if err := a.checkOTP(ctx, email, otpVO, valobj.OTPPurposePasswordReset); err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	// §2: reuse check before T4 mass-revoke to avoid unnecessary session invalidation
+	if err := a.checkPasswordReuse(account.PasswordHistory(), plainNewPassword); err != nil {
 		span.RecordError(err)
 		return err
 	}
@@ -299,21 +323,22 @@ func (a *AccountService) ConfrimPasswordReset(
 	return nil
 }
 
-// PasswordChange — POST //auth/password-change (authenticated)
+// PasswordChange -- POST //auth/password-change (authenticated)
 //
 // Flow:
-//  1. entity.ChangePassword performs T4 mass-revoke: rev++, all sessions cleared, returns revokedJTIs
-//  2. ACID transaction: new hash + rev + cleared sessions persisted via ResetPassword port
-//     History reuse check (O(5) bcrypt.Compare, not byte equality) is enforced inside the repository TX
-//  3. SetAccountRev writes new rev to Redis L2 (§G9; non-fatal on error)
-//  4. Publish AccessTokenRevoked for every revoked jti
-//  5. Publish AccountPasswordChanged (audit)
+//  1. §2 Password history reuse check via PasswordEntry.MatchesPlaintext (O(5) bcrypt.Compare)
+//  2. entity.ChangePassword performs T4 mass-revoke: rev++, all sessions cleared, returns revokedJTIs
+//  3. ACID transaction: new hash + rev + cleared sessions persisted via ResetPassword port
+//  4. SetAccountRev writes new rev to Redis L2 (§G9; non-fatal on error)
+//  5. Publish AccessTokenRevoked for every revoked jti
+//  6. Publish AccountPasswordChanged (audit)
 //
-// §2: history reuse check uses bcrypt.Compare — random salt means byte equality is always false for valid passwords.
-// Caller (HTTP handler / application layer) is responsible for verifying the current password before calling this method.
+// §2: history reuse check uses PasswordEntry.MatchesPlaintext (bcrypt.Compare) -- not byte equality.
+// Caller (HTTP handler) is responsible for verifying the current password before calling this method.
 func (a *AccountService) PasswordChange(
 	ctx context.Context,
 	accountID string,
+	plainNewPassword string,
 	newPasswordHash string,
 ) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.PasswordChange")
@@ -325,6 +350,12 @@ func (a *AccountService) PasswordChange(
 		return err
 	}
 
+	// §2: reuse check before T4 mass-revoke to avoid unnecessary session invalidation
+	if err := a.checkPasswordReuse(account.PasswordHistory(), plainNewPassword); err != nil {
+		span.RecordError(err)
+		return err
+	}
+
 	// T4 Mass-Revoke
 	revokedJTIs, err := account.ChangePassword(newPasswordHash)
 	if err != nil {
@@ -332,7 +363,7 @@ func (a *AccountService) PasswordChange(
 		return err
 	}
 
-	// ACID: new hash + rev++ + sessions cleared; repository enforces password history check (O(5) bcrypt)
+	// ACID: new hash + rev++ + sessions cleared
 	if err := a.accRep.ResetPassword(ctx, account, newPasswordHash); err != nil {
 		span.RecordError(err)
 		return err
@@ -361,7 +392,7 @@ func (a *AccountService) PasswordChange(
 	return nil
 }
 
-// LockAccount — POST //admin/accounts/:id/lock
+// LockAccount -- POST //admin/accounts/:id/lock
 //
 // §6 Lock Semantics: rev++ + all jti blacklisted + sessions deleted atomically.
 // Both brute-force auto-lock and admin-lock must follow the same T4 mass-revoke procedure.
@@ -414,10 +445,10 @@ func (a *AccountService) LockAccount(
 	return nil
 }
 
-// UnlockAccount — POST //admin/accounts/:id/unlock
+// UnlockAccount -- POST //admin/accounts/:id/unlock
 //
 // Restores status=active, clears lockedUntil.
-// Does NOT issue a new token — actor must re-authenticate.
+// Does NOT issue a new token -- actor must re-authenticate.
 // RBAC and actorID sourcing follow the same rules as LockAccount.
 func (a *AccountService) UnlockAccount(
 	ctx context.Context,
@@ -439,7 +470,7 @@ func (a *AccountService) UnlockAccount(
 	}
 
 	// ACID: persist status + cleared lockedUntil + incremented metadata
-	// revokedJTIs is empty — Unlock does not perform T4 mass-revoke
+	// revokedJTIs is empty -- Unlock does not perform T4 mass-revoke
 	if err := a.accRep.UpdateAccountStatusTx(ctx, account, nil); err != nil {
 		span.RecordError(err)
 		return err
@@ -456,7 +487,7 @@ func (a *AccountService) UnlockAccount(
 	return nil
 }
 
-// SoftDelete — DELETE //admin/accounts/:id
+// SoftDelete -- DELETE //admin/accounts/:id
 //
 // T4 Mass-Revoke: status=deleted, rev++, all sessions cleared.
 // Downstream cascade (BC#2 billing archive, BC#4 PII anonymisation) is driven by AccountDeleted event.
@@ -511,7 +542,7 @@ func (a *AccountService) SoftDelete(
 //
 // G9 Revocation Write Order: Redis L2 blacklist write is performed by the infrastructure adapter
 // behind the AccountEventsProducer (outbox pattern). Errors are logged as spans but do not
-// propagate to the caller — the outbox guarantees eventual delivery to L3 PostgreSQL.
+// propagate to the caller -- the outbox guarantees eventual delivery to L3 PostgreSQL.
 //
 // §6: every T4 mass-revoke operation (Lock, ChangePassword, SoftDelete) calls this helper.
 func (a *AccountService) publishRevokedJTIs(
