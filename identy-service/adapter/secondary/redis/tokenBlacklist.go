@@ -4,11 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ---------------------------------------------------------------------------
@@ -35,6 +40,8 @@ const (
 	// l1Capacity -- максимальное количество записей в L1.
 	// При превышении выполняется eviction старейших записей (FIFO по expiresAt).
 	l1Capacity = 10_000
+
+	blacklistTracerName = "identy-service/adapter/redis-token-blacklist"
 )
 
 // ---------------------------------------------------------------------------
@@ -64,6 +71,8 @@ type l1Entry struct {
 // вызывающему; TokenService интерпретирует её как ErrTokenRevoked (HTTP 401).
 type TokenBlacklistAdapter struct {
 	client redis.Cmdable
+	logger *slog.Logger
+	tracer trace.Tracer
 
 	l1mu  sync.RWMutex
 	l1    map[string]l1Entry // ключ: jti, значение всегда blacklisted=true
@@ -72,9 +81,15 @@ type TokenBlacklistAdapter struct {
 
 // NewTokenBlacklistAdapter создаёт адаптер с указанным Redis-клиентом.
 // client принимает redis.Cmdable для совместимости с *redis.Client и *redis.ClusterClient.
-func NewTokenBlacklistAdapter(client redis.Cmdable) *TokenBlacklistAdapter {
+// logger nil -- используется slog.Default().
+func NewTokenBlacklistAdapter(client redis.Cmdable, logger *slog.Logger) *TokenBlacklistAdapter {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &TokenBlacklistAdapter{
 		client: client,
+		logger: logger,
+		tracer: otel.Tracer(blacklistTracerName),
 		l1:     make(map[string]l1Entry, l1Capacity),
 	}
 }
@@ -88,13 +103,24 @@ func NewTokenBlacklistAdapter(client redis.Cmdable) *TokenBlacklistAdapter {
 // TTL = expiresAtUnix - now; если TTL <= 0 -- no-op (токен уже истёк).
 // Redis недоступен -- возвращает обёрнутую ошибку (не проглатывает).
 func (a *TokenBlacklistAdapter) Add(ctx context.Context, jti string, expiresAtUnix int64) error {
+	ctx, span := a.tracer.Start(ctx, "tokenBlacklist.Add",
+		trace.WithAttributes(attribute.String("jti.prefix", safePrefix(jti))),
+	)
+	defer span.End()
+
 	ttl := time.Duration(expiresAtUnix-time.Now().Unix()) * time.Second
 	if ttl <= 0 {
 		// Токен уже истёк -- добавлять в blacklist нецелесообразно
+		span.SetStatus(codes.Ok, "token already expired, skip")
 		return nil
 	}
 	key := blacklistKeyPrefix + jti
 	if err := a.client.Set(ctx, key, "1", ttl).Err(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		a.logger.ErrorContext(ctx, "tokenBlacklist: Add failed",
+			slog.String("error", err.Error()),
+		)
 		return fmt.Errorf("tokenBlacklist.Add: redis SET failed: %w", err)
 	}
 	return nil
@@ -108,13 +134,19 @@ func (a *TokenBlacklistAdapter) Add(ctx context.Context, jti string, expiresAtUn
 //
 // L1 HIT (jti найден и TTL не истёк): (true, nil) без запроса в Redis.
 // L1 MISS: запрос в Redis EXISTS.
-//   Redis HIT:         пишем в L1, возвращаем (true, nil).
-//   Redis MISS:        возвращаем (false, nil). L1 не пополняется.
-//   Redis недоступен: возвращаем (false, err). Fail-closed в TokenService.
+//
+//	Redis HIT:         пишем в L1, возвращаем (true, nil).
+//	Redis MISS:        возвращаем (false, nil). L1 не пополняется.
+//	Redis недоступен: возвращаем (false, err). Fail-closed в TokenService.
 //
 // Инвариант: L1 не кеширует "false" (не в blacklist).
 // Если jti был добавлен через Add после L1 MISS, Redis найдёт его на следующем запросе.
 func (a *TokenBlacklistAdapter) Contains(ctx context.Context, jti string) (bool, error) {
+	ctx, span := a.tracer.Start(ctx, "tokenBlacklist.Contains",
+		trace.WithAttributes(attribute.String("jti.prefix", safePrefix(jti))),
+	)
+	defer span.End()
+
 	// L1 lookup
 	a.l1mu.RLock()
 	entry, hit := a.l1[jti]
@@ -122,24 +154,34 @@ func (a *TokenBlacklistAdapter) Contains(ctx context.Context, jti string) (bool,
 
 	if hit && time.Now().Before(entry.expiresAt) {
 		// L1 HIT: jti в blacklist, TTL ещё актуален
+		span.SetAttributes(attribute.Bool("l1.hit", true))
 		return true, nil
 	}
+
+	span.SetAttributes(attribute.Bool("l1.hit", false))
 
 	// L2 Redis: EXISTS -- не читаем значение, только проверяем наличие ключа
 	key := blacklistKeyPrefix + jti
 	count, err := a.client.Exists(ctx, key).Result()
 	if err != nil {
 		// Redis недоступен -- fail-closed: TokenService должен вернуть ErrTokenRevoked
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		a.logger.ErrorContext(ctx, "tokenBlacklist: Contains redis unavailable",
+			slog.String("error", err.Error()),
+		)
 		return false, fmt.Errorf("tokenBlacklist.Contains: redis unavailable: %w", err)
 	}
 
 	if count > 0 {
 		// Redis HIT: токен в blacklist -- пополняем L1
+		span.SetAttributes(attribute.Bool("l2.hit", true))
 		a.setL1(jti)
 		return true, nil
 	}
 
 	// Redis MISS: токен не отозван -- L1 не пополняем
+	span.SetAttributes(attribute.Bool("l2.hit", false))
 	return false, nil
 }
 
@@ -154,6 +196,11 @@ func (a *TokenBlacklistAdapter) Contains(ctx context.Context, jti string) (bool,
 // Redis недоступен: возвращает (0, err) -- fail-closed в TokenService.
 // L1 не используется: rev нужен актуальным на каждый запрос.
 func (a *TokenBlacklistAdapter) GetAccountRev(ctx context.Context, accountID string) (int64, error) {
+	ctx, span := a.tracer.Start(ctx, "tokenBlacklist.GetAccountRev",
+		trace.WithAttributes(attribute.String("account.id", accountID)),
+	)
+	defer span.End()
+
 	key := accountRevKeyPrefix + accountID
 	val, err := a.client.Get(ctx, key).Result()
 	if errors.Is(err, redis.Nil) {
@@ -161,11 +208,23 @@ func (a *TokenBlacklistAdapter) GetAccountRev(ctx context.Context, accountID str
 		return 0, nil
 	}
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		a.logger.ErrorContext(ctx, "tokenBlacklist: GetAccountRev redis unavailable",
+			slog.String("account_id", accountID),
+			slog.String("error", err.Error()),
+		)
 		return 0, fmt.Errorf("tokenBlacklist.GetAccountRev: redis unavailable: %w", err)
 	}
 	rev, parseErr := strconv.ParseInt(val, 10, 64)
 	if parseErr != nil {
 		// Невалидное значение в Redis -- возвращаем цепочку ошибки
+		span.RecordError(parseErr)
+		span.SetStatus(codes.Error, "corrupted rev value")
+		a.logger.ErrorContext(ctx, "tokenBlacklist: GetAccountRev corrupted value in Redis",
+			slog.String("account_id", accountID),
+			slog.String("raw_value", val),
+		)
 		return 0, fmt.Errorf("tokenBlacklist.GetAccountRev: corrupted rev value %q in Redis: %w", val, parseErr)
 	}
 	return rev, nil
@@ -181,8 +240,23 @@ func (a *TokenBlacklistAdapter) GetAccountRev(ctx context.Context, accountID str
 // Redis недоступен: возвращает err. Вызывающий AccountService логирует как WARN
 // (транзакция уже закоммичена, rev в PostgreSQL актуален; деградация только до L3 lookup).
 func (a *TokenBlacklistAdapter) SetAccountRev(ctx context.Context, accountID string, rev int64) error {
+	ctx, span := a.tracer.Start(ctx, "tokenBlacklist.SetAccountRev",
+		trace.WithAttributes(
+			attribute.String("account.id", accountID),
+			attribute.Int64("rev", rev),
+		),
+	)
+	defer span.End()
+
 	key := accountRevKeyPrefix + accountID
 	if err := a.client.Set(ctx, key, strconv.FormatInt(rev, 10), accountRevTTL).Err(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		a.logger.ErrorContext(ctx, "tokenBlacklist: SetAccountRev failed",
+			slog.String("account_id", accountID),
+			slog.Int64("rev", rev),
+			slog.String("error", err.Error()),
+		)
 		return fmt.Errorf("tokenBlacklist.SetAccountRev: redis SET failed: %w", err)
 	}
 	return nil
@@ -230,6 +304,15 @@ func (a *TokenBlacklistAdapter) evictOneExpired() {
 			return
 		}
 	}
+}
+
+// safePrefix возвращает первые 8 символов строки для trace attributes.
+// Исключает логирование полного jti (PII mitigation).
+func safePrefix(s string) string {
+	if len(s) > 8 {
+		return s[:8]
+	}
+	return s
 }
 
 // ---------------------------------------------------------------------------
