@@ -5,12 +5,21 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 
-	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	"github.com/Reddetk/SayMoDev/identy-service/adapter/primary/http/middleware"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	inport "github.com/Reddetk/SayMoDev/identy-service/port/in"
 )
+
+// authTracer -- tracer для auth handler spans.
+// Имя совпадает с именем в ObservabilityMiddleware чтобы spans оказались
+// в одном trace дереве (Observability.md §Trace Context Propagation).
+var authTracer = otel.Tracer("identity-service")
 
 // ---------------------------------------------------------------------------
 // Request / response types (never exported beyond this package)
@@ -148,8 +157,13 @@ func isInfraError(err error) bool {
 
 func handleGetJWKS(op inport.TokenOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		keys, err := op.GetJWKS(c.Request.Context())
+		ctx := c.Request.Context()
+		_, span := authTracer.Start(ctx, "validate_jwt.verify_signature")
+		defer span.End()
+
+		keys, err := op.GetJWKS(ctx)
 		if err != nil {
+			span.SetStatus(codes.Error, err.Error())
 			// ErrJWKSKeysEmpty is a config/infra error: downstream cannot verify tokens -> 503.
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "jwks unavailable"})
 			return
@@ -188,25 +202,38 @@ func handleRegisterVerify(otp inport.OTPIssuer) gin.HandlerFunc {
 
 func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		logger := loggerFromCtx(c)
+		traceID := middleware.TraceIDFromContext(c)
+
 		var req registerReq
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
+		// span: register.validate_input (Observability.md §Registration)
+		ctx, spanValidate := authTracer.Start(c.Request.Context(), "register.validate_input")
+		spanValidate.SetAttributes(attribute.String("register.method", "email"))
+
 		passwordHash, err := hashPassword(req.Password)
 		if err != nil {
+			spanValidate.SetStatus(codes.Error, "bcrypt failed")
+			spanValidate.End()
 			respondInternalErr(c)
 			return
 		}
+		spanValidate.End()
 
 		classifier := inport.ClassifierDTO{
 			Difficulty:  req.Classifier.Difficulty,
 			AphasiaType: req.Classifier.AphasiaType,
 		}
 
+		// span: register.check_email_uniqueness (Observability.md §Registration)
+		ctx, spanCheck := authTracer.Start(ctx, "register.check_email_uniqueness")
+
 		if err := reg.Register(
-			c.Request.Context(),
+			ctx,
 			req.Email,
 			req.VerifyCode,
 			"",
@@ -215,6 +242,8 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 			classifier,
 			req.Fingerprint,
 		); err != nil {
+			spanCheck.SetStatus(codes.Error, err.Error())
+			spanCheck.End()
 			switch {
 			case isOTPError(err):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or expired verification code"})
@@ -233,6 +262,14 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 			}
 			return
 		}
+		spanCheck.End()
+
+		// Observability.md §Logs: account_registered INFO
+		logger.Info("account_registered",
+			zap.String("trace_id", traceID),
+			zap.String("method", "email"),
+		)
+
 		c.Status(http.StatusCreated)
 	}
 }
@@ -245,6 +282,10 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 
 func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		logger := loggerFromCtx(c)
+		traceID := middleware.TraceIDFromContext(c)
+		spanID := middleware.SpanIDFromContext(c)
+
 		var req loginReq
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -257,23 +298,54 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 			return
 		}
 
+		// span: auth.verify_password (Observability.md §Authentication)
+		// bcrypt.Compare ожидается ~100-300ms при cost 12 -- span показывает реальное время.
+		ctx, spanAuth := authTracer.Start(c.Request.Context(), "auth.verify_password",
+			trace.WithAttributes(attribute.String("auth.method", "email")),
+		)
+
 		result, err := auth.Login(
-			c.Request.Context(),
+			ctx,
 			req.Email,
 			passwordHash,
 			req.Fingerprint,
 			c.ClientIP(),
 		)
 		if err != nil {
+			spanAuth.SetStatus(codes.Error, err.Error())
+			spanAuth.End()
+
 			switch {
-			// Spec Login §: "401 generic always" for all credential/lock/deleted cases.
-			// Must NOT reveal whether it is wrong credentials, locked, or deleted.
+			// Spec Login §: "401 generic always" для всех credential/lock/deleted случаев.
+			// Не раскрываем причину отказа.
 			case err == corerr.ErrInvalidCredentials ||
 				err == corerr.ErrAccountNotFound:
+				// Observability.md §Logs: jwt_validation_failed WARN
+				// account_id намеренно опущен -- anti-enumeration.
+				logger.Warn("jwt_validation_failed",
+					zap.String("trace_id", traceID),
+					zap.String("span_id", spanID),
+					zap.String("reason", "invalid_credentials"),
+					zap.String("ip", c.ClientIP()),
+					zap.String("user_agent", c.Request.UserAgent()),
+				)
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 			case isAccountLocked(err):
+				// account_locked пишется в core (Lock usecase), здесь только auth failure.
+				logger.Warn("jwt_validation_failed",
+					zap.String("trace_id", traceID),
+					zap.String("span_id", spanID),
+					zap.String("reason", "account_locked"),
+					zap.String("ip", c.ClientIP()),
+				)
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 			case err == corerr.ErrAccountDeleted:
+				logger.Warn("jwt_validation_failed",
+					zap.String("trace_id", traceID),
+					zap.String("span_id", spanID),
+					zap.String("reason", "account_deleted"),
+					zap.String("ip", c.ClientIP()),
+				)
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 			case isFingerprintError(err):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid fingerprint"})
@@ -282,6 +354,15 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 			}
 			return
 		}
+		spanAuth.End()
+
+		// Observability.md §Logs: session_created INFO
+		logger.Info("session_created",
+			zap.String("trace_id", traceID),
+			zap.String("account_id", result.AccountID),
+			zap.String("session_id", result.SessionID),
+			zap.String("device_fingerprint", req.Fingerprint),
+		)
 
 		c.JSON(http.StatusOK, gin.H{
 			"access_token": result.AccessToken,
@@ -298,6 +379,9 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 
 func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		logger := loggerFromCtx(c)
+		traceID := middleware.TraceIDFromContext(c)
+
 		raw, ok := c.Get(middleware.AuthContextKey)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing auth context"})
@@ -317,7 +401,8 @@ func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gi
 			return
 		}
 
-		ctx := c.Request.Context()
+		// span: auth.update_session (Observability.md §Authentication)
+		ctx, spanSession := authTracer.Start(c.Request.Context(), "auth.update_session")
 
 		// Step 1: destroy session.
 		if err := session.Logout(ctx, ac.AccountID, ac.SessionID); err != nil {
@@ -325,16 +410,27 @@ func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gi
 			case err == corerr.ErrSessionNotFound:
 				// Session already gone -- idempotent, continue.
 			default:
+				spanSession.SetStatus(codes.Error, err.Error())
+				spanSession.End()
 				respondErr(c, err)
 				return
 			}
 		}
+		spanSession.End()
 
 		// Step 2: blacklist jti.
 		// DESIGN GAP: RevokeToken(ctx, accountID, jti, expiresAt, rev, reason) requires
 		// jti and expiresAt which are not in AuthContext. Skipped until AuthContext
 		// is extended with JTI and ExpiresAt fields (port/in change required).
 		_ = token
+
+		// Observability.md §Logs: session_terminated INFO
+		logger.Info("session_terminated",
+			zap.String("trace_id", traceID),
+			zap.String("account_id", ac.AccountID),
+			zap.String("session_id", ac.SessionID),
+			zap.String("reason", "logout"),
+		)
 
 		c.Status(http.StatusNoContent)
 	}
@@ -368,23 +464,33 @@ func handlePasswordResetRequest(otp inport.OTPIssuer) gin.HandlerFunc {
 
 func handlePasswordResetConfirm(pwdOp inport.PasswordOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		logger := loggerFromCtx(c)
+		traceID := middleware.TraceIDFromContext(c)
+
 		var req passwordResetConfirmReq
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
+		// span: password.bcrypt_hash (Observability.md §Password operations)
+		ctx, spanHash := authTracer.Start(c.Request.Context(), "password.bcrypt_hash",
+			trace.WithAttributes(attribute.String("password.operation", "hash")),
+		)
 		newPasswordHash, err := hashPassword(req.NewPassword)
 		if err != nil {
+			spanHash.SetStatus(codes.Error, "bcrypt failed")
+			spanHash.End()
 			respondInternalErr(c)
 			return
 		}
+		spanHash.End()
 
 		// plainNewPassword forwarded for history reuse check (bcrypt.Compare in core).
 		// newPasswordHash forwarded for storage.
 		// Neither is logged or persisted beyond this call.
 		if err := pwdOp.ConfrimPasswordReset(
-			c.Request.Context(),
+			ctx,
 			req.Email,
 			req.Code,
 			req.NewPassword,
@@ -404,6 +510,12 @@ func handlePasswordResetConfirm(pwdOp inport.PasswordOperator) gin.HandlerFunc {
 			}
 			return
 		}
+
+		// Observability.md §Logs: password_changed INFO
+		logger.Info("password_changed",
+			zap.String("trace_id", traceID),
+			zap.String("initiator", "user"),
+		)
 
 		c.JSON(http.StatusOK, gin.H{"message": "Password changed, re-authentication required"})
 	}
@@ -441,6 +553,9 @@ func handleOAuthGoogleInitiate(auth inport.AccountAuthenticator) gin.HandlerFunc
 
 func handleOAuthGoogleCallback(auth inport.AccountAuthenticator) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		logger := loggerFromCtx(c)
+		traceID := middleware.TraceIDFromContext(c)
+
 		code := c.Query("code")
 		receivedCSRF := c.Query("state")
 		if code == "" || receivedCSRF == "" {
@@ -465,12 +580,17 @@ func handleOAuthGoogleCallback(auth inport.AccountAuthenticator) gin.HandlerFunc
 			CodeVerifier: parts[1],
 		}
 
-		// Best-effort fingerprint for server-side OAuth callback:
-		// full client-hints fingerprint is unavailable in redirect context.
+		// Best-effort fingerprint для server-side OAuth callback:
+		// full client-hints fingerprint недоступен в redirect context.
 		fingerprint := c.GetHeader("User-Agent")
 
+		// span: auth.verify_password (oauth path) -- Observability.md §Authentication
+		ctx, spanOAuth := authTracer.Start(c.Request.Context(), "auth.verify_password",
+			trace.WithAttributes(attribute.String("auth.method", "oauth2")),
+		)
+
 		result, err := auth.HandleGoogleCallback(
-			c.Request.Context(),
+			ctx,
 			code,
 			receivedCSRF,
 			storedState,
@@ -478,6 +598,8 @@ func handleOAuthGoogleCallback(auth inport.AccountAuthenticator) gin.HandlerFunc
 			c.ClientIP(),
 		)
 		if err != nil {
+			spanOAuth.SetStatus(codes.Error, err.Error())
+			spanOAuth.End()
 			switch {
 			case isOAuthStateError(err):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid oauth state"})
@@ -488,6 +610,15 @@ func handleOAuthGoogleCallback(auth inport.AccountAuthenticator) gin.HandlerFunc
 			}
 			return
 		}
+		spanOAuth.End()
+
+		// Observability.md §Logs: session_created INFO
+		logger.Info("session_created",
+			zap.String("trace_id", traceID),
+			zap.String("account_id", result.AccountID),
+			zap.String("session_id", result.SessionID),
+			zap.String("device_fingerprint", fingerprint),
+		)
 
 		c.JSON(http.StatusOK, gin.H{
 			"access_token": result.AccessToken,

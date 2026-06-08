@@ -11,6 +11,8 @@
 //     полями, предписанными Observability.md §Logs:
 //     timestamp, level, service, trace_id, span_id, method, path,
 //     status, latency_ms, ip, user_agent.
+//     Также сохраняет *zap.Logger в gin.Context (ContextKeyLogger) чтобы
+//     handlers и respond.go могли писать domain log entries.
 //
 //  3. Metrics -- инкрементирует cors_requests_total и cors_rejected_total
 //     counters (BC#1 §Metrics Security Counter) через переданный Registerer.
@@ -39,6 +41,9 @@ const (
 	ContextKeyTraceID = "trace_id"
 	// ContextKeySpanID -- ключ для span_id в gin.Context.
 	ContextKeySpanID = "span_id"
+	// ContextKeyLogger -- ключ для *zap.Logger в gin.Context.
+	// Используется respond.go и handlers для domain log entries.
+	ContextKeyLogger = "zap_logger"
 )
 
 // ObservabilityDeps -- зависимости middleware.
@@ -51,12 +56,12 @@ type ObservabilityDeps struct {
 
 // observabilityMiddleware -- внутреннее состояние; инициализируется один раз.
 type observabilityMiddleware struct {
-	logger              *zap.Logger
-	tracer              trace.Tracer
-	corsRequestsTotal   *prometheus.CounterVec
-	corsRejectedTotal   *prometheus.CounterVec
-	corsPreflightTotal  *prometheus.CounterVec
-	authDuration        *prometheus.HistogramVec
+	logger             *zap.Logger
+	tracer             trace.Tracer
+	corsRequestsTotal  *prometheus.CounterVec
+	corsRejectedTotal  *prometheus.CounterVec
+	corsPreflightTotal *prometheus.CounterVec
+	authDuration       *prometheus.HistogramVec
 }
 
 // NewObservabilityMiddleware регистрирует Prometheus метрики BC#1 и возвращает
@@ -80,7 +85,7 @@ func NewObservabilityMiddleware(deps ObservabilityDeps) gin.HandlerFunc {
 		},
 		[]string{"origin"},
 	)
-	CorsPreflight := prometheus.NewCounterVec(
+	corsPreflight := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "cors_preflight_requests_total",
 			Help: "OPTIONS preflight requests (Observability.md BC#1 Security Counter).",
@@ -96,11 +101,10 @@ func NewObservabilityMiddleware(deps ObservabilityDeps) gin.HandlerFunc {
 		[]string{"status"},
 	)
 
-	// MustRegister паникует при дублировании -- используем RegisterOrGet-паттерн
-	// для idempotent регистрации (тесты могут вызывать NewGinRouter несколько раз).
+	// registerOrGet -- идемпотентная регистрация; тесты могут вызывать NewGinRouter несколько раз.
 	registerOrGet(deps.Registerer, corsRequests)
 	registerOrGet(deps.Registerer, corsRejected)
-	registerOrGet(deps.Registerer, CorsPreflight)
+	registerOrGet(deps.Registerer, corsPreflight)
 	registerOrGet(deps.Registerer, authDuration)
 
 	mw := &observabilityMiddleware{
@@ -108,7 +112,7 @@ func NewObservabilityMiddleware(deps ObservabilityDeps) gin.HandlerFunc {
 		tracer:             otel.Tracer(deps.TracerName),
 		corsRequestsTotal:  corsRequests,
 		corsRejectedTotal:  corsRejected,
-		corsPreflightTotal: CorsPreflight,
+		corsPreflightTotal: corsPreflight,
 		authDuration:       authDuration,
 	}
 
@@ -142,9 +146,17 @@ func (m *observabilityMiddleware) handle(c *gin.Context) {
 	traceID := span.SpanContext().TraceID().String()
 	spanID := span.SpanContext().SpanID().String()
 
-	// Сохраняем в gin.Context для handlers (JWT-middleware, audit, etc.).
+	// Сохраняем в gin.Context для handlers и respond.go.
 	c.Set(ContextKeyTraceID, traceID)
 	c.Set(ContextKeySpanID, spanID)
+
+	// Сохраняем logger с уже проставленными trace_id/span_id.
+	// Handlers пишут domain log entries через loggerFromCtx(c).
+	requestLogger := m.logger.With(
+		zap.String("trace_id", traceID),
+		zap.String("span_id", spanID),
+	)
+	c.Set(ContextKeyLogger, requestLogger)
 
 	// --- 2. CORS preflight counter ---
 	origin := c.Request.Header.Get("Origin")
@@ -167,8 +179,7 @@ func (m *observabilityMiddleware) handle(c *gin.Context) {
 		attribute.Int64("http.response.latency_ms", latency.Milliseconds()),
 	)
 
-	// auth_duration_seconds -- записываем только для auth-эндпоинтов.
-	// Остальные маршруты используют отдельные histograms (вне scope этого PR).
+	// auth_duration_seconds -- записываем только для login endpoint.
 	if c.FullPath() == "/iam/auth/login" {
 		statusLabel := "success"
 		if status >= 400 {
@@ -177,7 +188,7 @@ func (m *observabilityMiddleware) handle(c *gin.Context) {
 		m.authDuration.WithLabelValues(statusLabel).Observe(latency.Seconds())
 	}
 
-	// ZAP structured log: уровень определяется по HTTP-статусу.
+	// ZAP request-completion log.
 	fields := []zap.Field{
 		zap.String("trace_id", traceID),
 		zap.String("span_id", spanID),
@@ -233,7 +244,7 @@ func isAlreadyRegistered(err error, target *prometheus.AlreadyRegisteredError) b
 	return ok
 }
 
-// TraceIDFromContext -- helper: возвращает trace_id из gin.Context.
+// TraceIDFromContext -- возвращает trace_id из gin.Context.
 // Возвращает пустую строку если trace_id не был установлен (запрос без OTel).
 func TraceIDFromContext(c *gin.Context) string {
 	v, _ := c.Get(ContextKeyTraceID)
@@ -241,7 +252,7 @@ func TraceIDFromContext(c *gin.Context) string {
 	return s
 }
 
-// SpanIDFromContext -- helper: возвращает span_id из gin.Context.
+// SpanIDFromContext -- возвращает span_id из gin.Context.
 func SpanIDFromContext(c *gin.Context) string {
 	v, _ := c.Get(ContextKeySpanID)
 	s, _ := v.(string)

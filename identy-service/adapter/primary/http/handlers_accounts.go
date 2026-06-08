@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/codes"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/Reddetk/SayMoDev/identy-service/adapter/primary/http/middleware"
@@ -41,8 +43,12 @@ func handleGetAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accountID := c.Param("accountId")
 
-		dto, err := accOp.AdminGetAccountData(c.Request.Context(), accountID)
+		ctx, span := authTracer.Start(c.Request.Context(), "auth.get_account")
+		defer span.End()
+
+		dto, err := accOp.AdminGetAccountData(ctx, accountID)
 		if err != nil {
+			span.SetStatus(codes.Error, err.Error())
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
@@ -90,8 +96,12 @@ func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			return
 		}
 
-		current, err := accOp.AdminGetAccountData(c.Request.Context(), accountID)
+		ctx, span := authTracer.Start(c.Request.Context(), "auth.update_account")
+		defer span.End()
+
+		current, err := accOp.AdminGetAccountData(ctx, accountID)
 		if err != nil {
+			span.SetStatus(codes.Error, err.Error())
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
@@ -108,7 +118,8 @@ func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			current.PersonalInfo = *req.PersonalInfo
 		}
 
-		if err := accOp.AdminChangeAccountData(c.Request.Context(), current); err != nil {
+		if err := accOp.AdminChangeAccountData(ctx, current); err != nil {
+			span.SetStatus(codes.Error, err.Error())
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
@@ -144,7 +155,11 @@ func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 		ac := middleware.MustGetAuthContext(c)
 		accountID := c.Param("accountId")
 
-		if err := accOp.SoftDelete(c.Request.Context(), accountID, ac.AccountID); err != nil {
+		ctx, span := authTracer.Start(c.Request.Context(), "auth.delete_account")
+		defer span.End()
+
+		if err := accOp.SoftDelete(ctx, accountID, ac.AccountID); err != nil {
+			span.SetStatus(codes.Error, err.Error())
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
@@ -170,8 +185,12 @@ func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accountID := c.Param("accountId")
 
-		sessions, err := sesOp.AdminGetSessions(c.Request.Context(), accountID)
+		ctx, span := authTracer.Start(c.Request.Context(), "auth.list_sessions")
+		defer span.End()
+
+		sessions, err := sesOp.AdminGetSessions(ctx, accountID)
 		if err != nil {
+			span.SetStatus(codes.Error, err.Error())
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
@@ -195,11 +214,15 @@ func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
 
 func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		logger := loggerFromCtx(c)
+		traceID := middleware.TraceIDFromContext(c)
+
 		ac := middleware.MustGetAuthContext(c)
 		accountID := c.Param("accountId")
 		sessionID := c.Param("sessionId")
 
-		ctx := c.Request.Context()
+		ctx, span := authTracer.Start(c.Request.Context(), "auth.update_session")
+		defer span.End()
 
 		if ac.Role == middleware.RoleAdministrator && ac.AccountID != accountID {
 			if err := sesOp.AdminTerminateSession(ctx, accountID, sessionID, ac.AccountID); err != nil {
@@ -207,9 +230,11 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 				case err == corerr.ErrSessionNotFound:
 					// Idempotent -- session already gone.
 				case err == corerr.ErrAccountNotFound:
+					span.SetStatus(codes.Error, err.Error())
 					c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
 					return
 				default:
+					span.SetStatus(codes.Error, err.Error())
 					respondErr(c, err)
 					return
 				}
@@ -220,11 +245,24 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 				case err == corerr.ErrSessionNotFound:
 					// Idempotent.
 				default:
+					span.SetStatus(codes.Error, err.Error())
 					respondErr(c, err)
 					return
 				}
 			}
 		}
+
+		// Observability.md §Logs: session_terminated INFO
+		reason := "logout"
+		if ac.Role == middleware.RoleAdministrator && ac.AccountID != accountID {
+			reason = "admin"
+		}
+		logger.Info("session_terminated",
+			zap.String("trace_id", traceID),
+			zap.String("account_id", accountID),
+			zap.String("session_id", sessionID),
+			zap.String("reason", reason),
+		)
 
 		c.Status(http.StatusNoContent)
 	}
@@ -250,6 +288,8 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 
 func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		logger := loggerFromCtx(c)
+		traceID := middleware.TraceIDFromContext(c)
 		accountID := c.Param("accountId")
 
 		var req changePasswordReq
@@ -259,8 +299,11 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 		}
 
 		// Step 1: fetch stored hash to verify currentPassword.
-		current, err := accOp.AdminGetAccountData(c.Request.Context(), accountID)
+		ctx, spanFetch := authTracer.Start(c.Request.Context(), "auth.get_account")
+		current, err := accOp.AdminGetAccountData(ctx, accountID)
 		if err != nil {
+			spanFetch.SetStatus(codes.Error, err.Error())
+			spanFetch.End()
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				// Anti-enumeration: 401, not 404.
@@ -272,6 +315,7 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 			}
 			return
 		}
+		spanFetch.End()
 
 		// Federated account edge case
 		if current.PasswordHash == nil {
@@ -280,9 +324,13 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 		}
 
 		// Step 2: verify currentPassword against stored hash.
+		// span: password.history_check (Observability.md §Password operations)
+		ctx, spanCompare := authTracer.Start(ctx, "password.history_check")
 		// bcrypt.CompareHashAndPassword is constant-time.
 		// TODO fix
 		if err := bcrypt.CompareHashAndPassword([]byte(*current.PasswordHash), []byte(req.CurrentPassword)); err != nil {
+			spanCompare.SetStatus(codes.Error, "password mismatch")
+			spanCompare.End()
 			if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid current password"})
 				return
@@ -291,20 +339,28 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 			respondInternalErr(c)
 			return
 		}
+		spanCompare.End()
 
 		// Step 3: hash new password and delegate to use case.
+		ctx, spanHash := authTracer.Start(ctx, "password.bcrypt_hash")
 		newPasswordHash, err := hashPassword(req.NewPassword)
 		if err != nil {
+			spanHash.SetStatus(codes.Error, "bcrypt failed")
+			spanHash.End()
 			respondInternalErr(c)
 			return
 		}
+		spanHash.End()
 
+		ctx, spanChange := authTracer.Start(ctx, "auth.update_session")
 		if err := passOp.PasswordChange(
-			c.Request.Context(),
+			ctx,
 			accountID,
 			req.NewPassword,
 			newPasswordHash,
 		); err != nil {
+			spanChange.SetStatus(codes.Error, err.Error())
+			spanChange.End()
 			switch {
 			case err == corerr.ErrInvalidCredentials:
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid current password"})
@@ -317,6 +373,14 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 			}
 			return
 		}
+		spanChange.End()
+
+		// Observability.md §Logs: password_changed INFO
+		logger.Info("password_changed",
+			zap.String("trace_id", traceID),
+			zap.String("account_id", accountID),
+			zap.String("initiator", "user"),
+		)
 
 		c.Status(http.StatusNoContent)
 	}
@@ -332,13 +396,20 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 
 func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		logger := loggerFromCtx(c)
+		traceID := middleware.TraceIDFromContext(c)
+
 		ac := middleware.MustGetAuthContext(c)
 		accountID := c.Param("accountId")
 
 		var req lockAccountReq
 		_ = c.ShouldBindJSON(&req)
 
-		if err := accOp.LockAccount(c.Request.Context(), accountID, req.LockedUntil, ac.AccountID); err != nil {
+		ctx, span := authTracer.Start(c.Request.Context(), "auth.update_account")
+		defer span.End()
+
+		if err := accOp.LockAccount(ctx, accountID, req.LockedUntil, ac.AccountID); err != nil {
+			span.SetStatus(codes.Error, err.Error())
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
@@ -351,6 +422,14 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			}
 			return
 		}
+
+		// Observability.md §Logs: account_locked WARN
+		logger.Warn("account_locked",
+			zap.String("trace_id", traceID),
+			zap.String("account_id", accountID),
+			zap.String("reason", "admin"),
+			zap.Any("locked_until", req.LockedUntil),
+		)
 
 		c.JSON(http.StatusOK, gin.H{
 			"status":       "blocked",
@@ -367,10 +446,17 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 
 func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		logger := loggerFromCtx(c)
+		traceID := middleware.TraceIDFromContext(c)
+
 		ac := middleware.MustGetAuthContext(c)
 		accountID := c.Param("accountId")
 
-		if err := accOp.UnlockAccount(c.Request.Context(), accountID, ac.AccountID); err != nil {
+		ctx, span := authTracer.Start(c.Request.Context(), "auth.update_account")
+		defer span.End()
+
+		if err := accOp.UnlockAccount(ctx, accountID, ac.AccountID); err != nil {
+			span.SetStatus(codes.Error, err.Error())
 			switch {
 			case err == corerr.ErrAccountNotFound:
 				c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
@@ -383,6 +469,12 @@ func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 			}
 			return
 		}
+
+		logger.Info("account_unlocked",
+			zap.String("trace_id", traceID),
+			zap.String("account_id", accountID),
+			zap.String("initiator", ac.AccountID),
+		)
 
 		c.JSON(http.StatusOK, gin.H{"status": "active"})
 	}
