@@ -13,6 +13,9 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -45,7 +48,6 @@ const (
 func main() {
 	logger, err := zap.NewProduction()
 	if err != nil {
-		// zap.NewProduction не должен падать в нормальных условиях.
 		panic(fmt.Sprintf("failed to init logger: %v", err))
 	}
 	defer func() { _ = logger.Sync() }()
@@ -61,10 +63,8 @@ func run(logger *zap.Logger) error {
 	defer stop()
 
 	// --- 1. OTel tracing -------------------------------------------------------
-	// Спецификация: Observability.md -- OTLP gRPC экспортёр.
 	shutdownTracer, err := initTracer(ctx)
 	if err != nil {
-		// Non-fatal: observability не должна блокировать запуск сервиса.
 		logger.Warn("otel tracer init failed, continuing without tracing", zap.Error(err))
 	} else {
 		defer func() {
@@ -77,8 +77,6 @@ func run(logger *zap.Logger) error {
 	}
 
 	// --- 2. PostgreSQL pool ----------------------------------------------------
-	// BC#1 invariant: PC/EC -- consistency over availability.
-	// Pool закрывается в defer после HTTP-сервера.
 	dsn := requireEnv("POSTGRES_DSN")
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
@@ -92,8 +90,6 @@ func run(logger *zap.Logger) error {
 	logger.Info("postgres connected")
 
 	// --- 3. Redis client -------------------------------------------------------
-	// L2 кэш: jti blacklist, account:rev, rate limit counters.
-	// Спецификация: fail-closed при недоступности rate limiting (§5 Rate Limiting Invariant).
 	redisOpt, err := redis.ParseURL(requireEnv("REDIS_URL"))
 	if err != nil {
 		return fmt.Errorf("redis.ParseURL: %w", err)
@@ -106,50 +102,63 @@ func run(logger *zap.Logger) error {
 	}()
 
 	if err := redisClient.Ping(ctx).Err(); err != nil {
-		// fail-closed: Redis недоступен при старте -- не запускаем сервис.
-		// Причина: rate limiting и blacklist деградируют без Redis (§5, §Caching Strategy).
 		return fmt.Errorf("redis ping: %w", err)
 	}
 	logger.Info("redis connected")
 
 	// --- 4. Secondary adapters -------------------------------------------------
+
+	// 4a. Postgres account repository.
 	repo, err := secondary.NewPostgresAccountRepository(pool, logger)
 	if err != nil {
 		return fmt.Errorf("NewPostgresAccountRepository: %w", err)
 	}
 
-	tokenIssuer := secondary.NewRSATokenIssuer( // TODO error fall
-		requireEnv("JWT_PRIVATE_KEY_PATH"),
-		requireEnv("JWT_KID"),
-		logger,
-	)
+	// 4b. RSA token issuer.
+	// Загрузка текущей пары RSA-ключей из PEM-файлов.
+	// Опциональный предыдущий публичный ключ (rotation overlap): если JWT_PREV_PUBLIC_KEY_PATH пусто -- prevключ nil.
+	currentPriv, err := loadRSAPrivateKey(requireEnv("JWT_PRIVATE_KEY_PATH"))
 	if err != nil {
-		return fmt.Errorf("NewRSATokenIssuer: %w", err)
+		return fmt.Errorf("load JWT private key: %w", err)
+	}
+	currentPub, err := loadRSAPublicKey(requireEnv("JWT_PUBLIC_KEY_PATH"))
+	if err != nil {
+		return fmt.Errorf("load JWT public key: %w", err)
+	}
+	currentKid := requireEnv("JWT_KID")
+
+	var prevPub *rsa.PublicKey
+	var prevKid string
+	if prevPath := getEnv("JWT_PREV_PUBLIC_KEY_PATH", ""); prevPath != "" {
+		prevPub, err = loadRSAPublicKey(prevPath)
+		if err != nil {
+			return fmt.Errorf("load JWT prev public key: %w", err)
+		}
+		prevKid = requireEnv("JWT_PREV_KID")
 	}
 
-	blacklist := redisada.NewTokenBlacklistAdapter(redisClient, logger) // TODO error fall
-	if err != nil {
-		return fmt.Errorf("NewRedisTokenBlacklist: %w", err)
-	}
+	tokenIssuer := secondary.NewRSATokenIssuer(currentPriv, currentPub, currentKid, prevPub, prevKid)
 
-	rateLimiter := redisada.NewRateLimiterAdapter(redisClient, logger) // TODO error fall
-	if err != nil {
-		return fmt.Errorf("NewRedisRateLimiter: %w", err)
-	}
+	// 4c. Redis adapters.
+	blacklist := redisada.NewTokenBlacklistAdapter(redisClient, logger)
+	rateLimiter := redisada.NewRateLimiterAdapter(redisClient, logger)
 
+	// 4d. Outbox events producer.
 	eventsProducer, err := secondary.NewOutboxEventsProducer(pool, logger)
 	if err != nil {
 		return fmt.Errorf("NewOutboxEventsProducer: %w", err)
 	}
 
-	googleOAuth, err := secondary.NewGoogleOAuthAdapter(
-		requireEnv("GOOGLE_CLIENT_ID"),
-		requireEnv("GOOGLE_CLIENT_SECRET"),
-		requireEnv("GOOGLE_REDIRECT_URI"),
-		logger,
-	)
+	// 4e. Google OAuth adapter.
+	// NewGoogleOAuthAdapter принимает GoogleOAuthConfig (struct), а не positional args.
+	googleOAuth, err := secondary.NewGoogleOAuthAdapter(secondary.GoogleOAuthConfig{
+		ClientID:     requireEnv("GOOGLE_CLIENT_ID"),
+		ClientSecret: requireEnv("GOOGLE_CLIENT_SECRET"),
+		RedirectURI:  requireEnv("GOOGLE_REDIRECT_URI"),
+		Logger:       logger,
+	})
 	if err != nil {
-		return fmt.Errorf("NewGoogleOAuthProvider: %w", err)
+		return fmt.Errorf("NewGoogleOAuthAdapter: %w", err)
 	}
 
 	// --- 5. Core services ------------------------------------------------------
@@ -163,12 +172,18 @@ func run(logger *zap.Logger) error {
 	)
 
 	// --- 6. Primary adapter (HTTP) ---------------------------------------------
-	// CORS invariant (§8): CORS middleware выполняется ДО JWT-валидации.
-	// Допустимые origins определяются через APP_ENV.
-	router := primary.NewGinRouter(primary.RouterConfig{
-		AuthService: authService,
-		Logger:      logger,
-		AppEnv:      getEnv("APP_ENV", "development"),
+	// NewGinRouter принимает RouterDeps, a не RouterConfig.
+	// Спецификация: CORS invariant (§8): CORS middleware выполняется ДО JWT-валидации.
+	router := primary.NewGinRouter(primary.RouterDeps{
+		Logger:          logger,
+		TokenValidator:  authService,
+		Authenticator:   authService,
+		Registrator:     authService,
+		SessionOperator: authService,
+		TokenOperator:   authService,
+		AccountOpertator: authService,
+		PasswordOperator: authService,
+		OTPIssuer:       authService,
 	})
 
 	addr := getEnv("HTTP_ADDR", ":8080")
@@ -207,6 +222,70 @@ func run(logger *zap.Logger) error {
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// RSA key loaders
+// ---------------------------------------------------------------------------
+
+// loadRSAPrivateKey читает PKCS#8 или PKCS#1 PEM-файл и возвращает *rsa.PrivateKey.
+func loadRSAPrivateKey(path string) (*rsa.PrivateKey, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read private key file: %w", err)
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, fmt.Errorf("no PEM block found in private key file")
+	}
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		return x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "PRIVATE KEY":
+		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		rsaKey, ok := key.(*rsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("PKCS8 key is not RSA")
+		}
+		return rsaKey, nil
+	default:
+		return nil, fmt.Errorf("unsupported PEM type: %s", block.Type)
+	}
+}
+
+// loadRSAPublicKey читает PKIX или PKCS#1 PEM-файл и возвращает *rsa.PublicKey.
+func loadRSAPublicKey(path string) (*rsa.PublicKey, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read public key file: %w", err)
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, fmt.Errorf("no PEM block found in public key file")
+	}
+	switch block.Type {
+	case "RSA PUBLIC KEY":
+		return x509.ParsePKCS1PublicKey(block.Bytes)
+	case "PUBLIC KEY":
+		key, err := x509.ParsePKIXPublicKey(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		rsaKey, ok := key.(*rsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("PKIX key is not RSA")
+		}
+		return rsaKey, nil
+	default:
+		return nil, fmt.Errorf("unsupported PEM type: %s", block.Type)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// OTel
+// ---------------------------------------------------------------------------
+
 // initTracer инициализирует OTel SDK с OTLP gRPC экспортёром.
 // Согласно Observability.md: service.name = "identity-service".
 func initTracer(ctx context.Context) (func(context.Context) error, error) {
@@ -238,12 +317,15 @@ func initTracer(ctx context.Context) (func(context.Context) error, error) {
 	return tp.Shutdown, nil
 }
 
-// requireEnv читает переменную окружения или завершает запуск с ошибкой.
+// ---------------------------------------------------------------------------
+// Env helpers
+// ---------------------------------------------------------------------------
+
+// requireEnv читает переменную окружения или паникует.
+// Паника намеренна: отсутствие обязательной переменной -- ошибка конфигурации, не runtime.
 func requireEnv(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
-		// Паника здесь намеренна: отсутствие обязательной переменной --
-		// ошибка конфигурации, не runtime-ошибка.
 		panic(fmt.Sprintf("required env variable %q is not set", key))
 	}
 	return v
