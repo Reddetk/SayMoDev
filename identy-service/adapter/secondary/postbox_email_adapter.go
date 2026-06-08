@@ -7,9 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"time"
+
+	"go.uber.org/zap"
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
@@ -60,7 +61,7 @@ type PostboxEmailAdapter struct {
 	httpClient  *http.Client
 	iamToken    string // rotated externally; see Config.IAMToken
 	fromAddress string // verified sender address in Postbox
-	logger      *slog.Logger
+	logger      *zap.Logger
 }
 
 // PostboxConfig holds constructor parameters.
@@ -75,8 +76,8 @@ type PostboxConfig struct {
 	// HTTPClient is optional; defaults to a client with a 10-second timeout.
 	HTTPClient *http.Client
 
-	// Logger is optional; defaults to slog.Default().
-	Logger *slog.Logger
+	// Logger is optional; defaults to zap.NewNop().
+	Logger *zap.Logger
 }
 
 // NewPostboxEmailAdapter constructs the adapter and validates required config.
@@ -95,7 +96,7 @@ func NewPostboxEmailAdapter(cfg PostboxConfig) (*PostboxEmailAdapter, error) {
 
 	logger := cfg.Logger
 	if logger == nil {
-		logger = slog.Default()
+		logger = zap.NewNop()
 	}
 
 	return &PostboxEmailAdapter{
@@ -127,9 +128,7 @@ func (a *PostboxEmailAdapter) SendOTP(
 	if !ok {
 		// Missing entry is a programmer error, not a runtime condition.
 		// Return delivery failed so the OTP flow degrades gracefully.
-		a.logger.ErrorContext(ctx, "postbox: unknown OTPPurpose",
-			slog.String("purpose", otpPur.String()),
-		)
+		a.logger.Error("postbox: unknown OTPPurpose", zap.String("purpose", otpPur.String()))
 		return corerr.ErrEmailDeliveryFailed
 	}
 
@@ -146,19 +145,19 @@ func (a *PostboxEmailAdapter) SendOTP(
 	rawJSON, err := json.Marshal(payload)
 	if err != nil {
 		// json.Marshal on a static struct should never fail.
-		a.logger.ErrorContext(ctx, "postbox: failed to marshal request",
-			slog.String("to", toEmail),
-			slog.String("purpose", otpPur.String()),
-			slog.String("error", err.Error()),
+		a.logger.Error("postbox: failed to marshal request",
+			zap.String("to", toEmail),
+			zap.String("purpose", otpPur.String()),
+			zap.Error(err),
 		)
 		return corerr.ErrEmailDeliveryFailed
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, postboxEndpoint, bytes.NewReader(rawJSON))
 	if err != nil {
-		a.logger.ErrorContext(ctx, "postbox: failed to build HTTP request",
-			slog.String("to", toEmail),
-			slog.String("error", err.Error()),
+		a.logger.Error("postbox: failed to build HTTP request",
+			zap.String("to", toEmail),
+			zap.Error(err),
 		)
 		return corerr.ErrEmailServiceUnavailable
 	}
@@ -169,10 +168,10 @@ func (a *PostboxEmailAdapter) SendOTP(
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		// Network-level failure: DNS, TLS, timeout, context cancellation.
-		a.logger.ErrorContext(ctx, "postbox: HTTP transport error",
-			slog.String("to", toEmail),
-			slog.String("purpose", otpPur.String()),
-			slog.String("error", err.Error()),
+		a.logger.Error("postbox: HTTP transport error",
+			zap.String("to", toEmail),
+			zap.String("purpose", otpPur.String()),
+			zap.Error(err),
 		)
 		return corerr.ErrEmailServiceUnavailable
 	}
@@ -182,17 +181,17 @@ func (a *PostboxEmailAdapter) SendOTP(
 	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		a.logger.ErrorContext(ctx, "postbox: non-2xx response",
-			slog.String("to", toEmail),
-			slog.String("purpose", otpPur.String()),
-			slog.Int("status", resp.StatusCode),
+		a.logger.Error("postbox: non-2xx response",
+			zap.String("to", toEmail),
+			zap.String("purpose", otpPur.String()),
+			zap.Int("status", resp.StatusCode),
 		)
 		return corerr.ErrEmailDeliveryFailed
 	}
 
-	a.logger.InfoContext(ctx, "postbox: OTP email sent",
-		slog.String("to", toEmail),
-		slog.String("purpose", otpPur.String()),
+	a.logger.Info("postbox: OTP email sent",
+		zap.String("to", toEmail),
+		zap.String("purpose", otpPur.String()),
 		// code намеренно отсутствует -- OTP Security Invariant SS7
 	)
 	return nil
