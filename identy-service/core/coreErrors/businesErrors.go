@@ -18,10 +18,34 @@ var (
 // Adapter errors
 // ---------------------------------------------------------------------------
 var (
-	ErrEmailDeliveryFailed = errors.New("email selivery failed")
-	ErrOTPRepository       = errors.New("otp rep req is failed")
-	ErrAccountRepository   = errors.New("acc rep is failed")
-	ErrAccountNotFound     = errors.New("account not found")
+	// ErrEmailDeliveryFailed is returned when the email transport accepts the
+	// request but delivery to the recipient fails (bounce, rejection, timeout
+	// after send). Distinct from ErrEmailServiceUnavailable.
+	ErrEmailDeliveryFailed = errors.New("email delivery failed")
+
+	// ErrEmailServiceUnavailable is returned when the SMTP / SES infrastructure
+	// is unreachable before a send attempt (connection refused, DNS failure,
+	// circuit-breaker open). The caller should NOT retry inline; schedule a
+	// background retry or return 503 upstream.
+	ErrEmailServiceUnavailable = errors.New("email service is unavailable")
+
+	// ErrOTPRepository is a legacy catch-all for OTP repository failures.
+	// Prefer ErrDBUnavailable for new code.
+	ErrOTPRepository = errors.New("otp rep req is failed")
+
+	// ErrOTPNotFound is returned by OtpRepository.Find when no VerificationCode
+	// record exists for the given (email, purpose) pair.
+	// Mapped to HTTP 404 / domain ErrUserOTPisNotValid depending on context.
+	ErrOTPNotFound = errors.New("verification code not found")
+
+	// ErrDBUnavailable is returned by any repository port when the underlying
+	// database is unreachable or returns an unrecoverable infrastructure error.
+	// Distinguished from domain-level not-found errors.
+	// Mapped to HTTP 503.
+	ErrDBUnavailable = errors.New("database is unavailable")
+
+	ErrAccountRepository = errors.New("acc rep is failed")
+	ErrAccountNotFound   = errors.New("account not found")
 )
 
 // ---------------------------------------------------------------------------
@@ -201,6 +225,7 @@ var (
 	ErrOAuthStateCSRFTokenEmpty = errors.New("oauth state CSRF token is empty")
 
 	// ErrOAuthStateExpired is returned when the OAuthState has exceeded its TTL.
+	// Also used by NewOAuthState to reject expiresAt <= 0 at construction time.
 	ErrOAuthStateExpired = errors.New("oauth state has expired")
 
 	// ErrOAuthStateNotFound is returned when no OAuthState exists for a callback.
