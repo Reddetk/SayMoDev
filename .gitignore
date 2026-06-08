@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------
+# SayMo monorepo .gitignore
+# ---------------------------------------------------------------------------
+
+# Local dev env files -- НИКОГДА не коммитить
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+
+# RSA ключи и JWKS сгенерированные локально
+*.pem
+*.key
+local_jwks.json
+
+# Go build artifacts
+*/bin/
+*/vendor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
