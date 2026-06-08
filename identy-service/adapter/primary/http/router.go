@@ -7,10 +7,15 @@
 //   - protected: JWT required (logout, account CRUD, sessions, password change, lock/unlock)
 //
 // Middleware порядок выполнения на каждом маршруте:
-//   CORSMiddleware -> gin.Recovery() -> JWTMiddleware -> [OwnershipOrAdmin | RequireRole] -> handler
+//
+//	CORSMiddleware -> ObservabilityMiddleware -> gin.Recovery() -> JWTMiddleware -> [OwnershipOrAdmin | RequireRole] -> handler
 //
 // CORSMiddleware регистрируется первым: preflight OPTIONS должен получить
 // ответ до того как JWTMiddleware потребует Authorization-заголовок.
+//
+// ObservabilityMiddleware регистрируется вторым: извлекает W3C traceparent,
+// создаёт root span "gateway.request.total", пишет ZAP request-completion log.
+// Запускается ДО gin.Recovery() чтобы span закрылся даже при панике.
 //
 // Gate-контроль (кто может достучаться до handler) -- только в middleware.
 // Бизнес-правила (что именно разрешено делать) -- только в handler.
@@ -18,6 +23,8 @@ package http
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
 
 	"github.com/Reddetk/SayMoDev/identy-service/adapter/primary/http/middleware"
 	inport "github.com/Reddetk/SayMoDev/identy-service/port/in"
@@ -25,9 +32,11 @@ import (
 
 // RouterDeps -- зависимости роутера.
 // Все поля -- in-порты; router не знает о реализациях.
-// CORS инжектируется из cmd при запуске сервиса.
+// CORS, Logger и Metrics инжектируются из cmd при запуске сервиса.
 type RouterDeps struct {
 	CORS             middleware.CORSConfig
+	Logger           *zap.Logger            // ZAP logger; используется ObservabilityMiddleware
+	Metrics          prometheus.Registerer  // Prometheus registerer; используется ObservabilityMiddleware
 	TokenValidator   inport.TokenValidator
 	Authenticator    inport.AccountAuthenticator
 	Registrator      inport.AccountRegistrator
@@ -42,8 +51,18 @@ type RouterDeps struct {
 func NewGinRouter(deps RouterDeps) *gin.Engine {
 	router := gin.New()
 
-	// CORSMiddleware -- первым: preflight OPTIONS не должен доходить до JWT-валидации.
+	// 1. CORSMiddleware -- первым: preflight OPTIONS не должен доходить до JWT-валидации.
 	router.Use(middleware.NewCORSMiddleware(deps.CORS))
+
+	// 2. ObservabilityMiddleware -- извлекает/создаёт trace context, логирует запрос.
+	//    Регистрируется ДО gin.Recovery() чтобы span.End() вызвался даже при панике handler-а.
+	router.Use(middleware.NewObservabilityMiddleware(middleware.ObservabilityDeps{
+		Logger:     deps.Logger,
+		Registerer: deps.Metrics,
+		TracerName: "identity-service",
+	}))
+
+	// 3. gin.Recovery() -- перехватывает паники после того как observability span открыт.
 	router.Use(gin.Recovery())
 
 	jwtMW := middleware.NewJWTMiddleware(deps.TokenValidator)
