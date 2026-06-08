@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -15,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
@@ -64,17 +64,17 @@ const (
 // This adapter never touches Kafka directly.
 type OutboxEventsProducer struct {
 	pool   *pgxpool.Pool
-	logger *slog.Logger
+	logger *zap.Logger
 	tracer trace.Tracer
 }
 
 // NewOutboxEventsProducer constructs the adapter.
-func NewOutboxEventsProducer(pool *pgxpool.Pool, logger *slog.Logger) (*OutboxEventsProducer, error) {
+func NewOutboxEventsProducer(pool *pgxpool.Pool, logger *zap.Logger) (*OutboxEventsProducer, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("outbox events producer: pool is required")
 	}
 	if logger == nil {
-		logger = slog.Default()
+		logger = zap.NewNop()
 	}
 	return &OutboxEventsProducer{
 		pool:   pool,
@@ -121,17 +121,17 @@ func (p *OutboxEventsProducer) AccountRegistered(
 	if err := p.insert(ctx, evtAccountRegistered, accountID, payload); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		p.logger.ErrorContext(ctx, "outbox: AccountRegistered insert failed",
-			slog.String("account_id", accountID),
-			slog.String("event_type", evtAccountRegistered),
-			slog.String("error", err.Error()),
+		p.logger.Error("outbox: AccountRegistered insert failed",
+			zap.String("account_id", accountID),
+			zap.String("event_type", evtAccountRegistered),
+			zap.Error(err),
 		)
 		return corerr.ErrOutboxUnavailable
 	}
 
-	p.logger.InfoContext(ctx, "outbox: event enqueued",
-		slog.String("event_type", evtAccountRegistered),
-		slog.String("account_id", accountID),
+	p.logger.Info("outbox: event enqueued",
+		zap.String("event_type", evtAccountRegistered),
+		zap.String("account_id", accountID),
 	)
 	return nil
 }
@@ -174,7 +174,7 @@ func (p *OutboxEventsProducer) AccountLockedByFailedAttempts(
 	defer span.End()
 
 	payload := map[string]any{
-		"lockedUntil":   lockedUntil, // nullable: nil = permanent
+		"lockedUntil":   lockedUntil,
 		"attemptsCount": attemptsCount,
 	}
 	return p.insertWithLogging(ctx, span, evtAccountLockedByFailedAttempts, accountID, payload)
@@ -452,9 +452,9 @@ func (p *OutboxEventsProducer) insert(
 }
 
 // insertWithLogging is the standard public-method wrapper:
-//   1. calls insert
-//   2. on error: records span error, logs ERROR, returns ErrOutboxUnavailable
-//   3. on success: logs INFO
+//  1. calls insert
+//  2. on error: records span error, logs ERROR, returns ErrOutboxUnavailable
+//  3. on success: logs INFO
 func (p *OutboxEventsProducer) insertWithLogging(
 	ctx context.Context,
 	span trace.Span,
@@ -465,17 +465,17 @@ func (p *OutboxEventsProducer) insertWithLogging(
 	if err := p.insert(ctx, eventType, partitionKey, payload); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		p.logger.ErrorContext(ctx, "outbox: insert failed",
-			slog.String("event_type", eventType),
-			slog.String("partition_key", partitionKey),
-			slog.String("error", err.Error()),
+		p.logger.Error("outbox: insert failed",
+			zap.String("event_type", eventType),
+			zap.String("partition_key", partitionKey),
+			zap.Error(err),
 		)
 		return corerr.ErrOutboxUnavailable
 	}
 
-	p.logger.InfoContext(ctx, "outbox: event enqueued",
-		slog.String("event_type", eventType),
-		slog.String("partition_key", partitionKey),
+	p.logger.Info("outbox: event enqueued",
+		zap.String("event_type", eventType),
+		zap.String("partition_key", partitionKey),
 	)
 	return nil
 }
