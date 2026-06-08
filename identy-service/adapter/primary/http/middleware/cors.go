@@ -6,23 +6,54 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// CORSConfig -- параметры политики CORS для первичного адаптера.
+// Observability.md Metrics Security Counter:
+//   cors_requests_total           {origin, method}
+//   cors_rejected_total           {origin}   -- alert if rate > threshold
+//   cors_preflight_requests_total {origin}
+
+var (
+	corsRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cors_requests_total",
+			Help: "Total CORS requests by origin and method.",
+		},
+		[]string{"origin", "method"},
+	)
+	corsRejectedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cors_rejected_total",
+			Help: "CORS requests rejected: origin not in whitelist.",
+		},
+		[]string{"origin"},
+	)
+	corsPreflightTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cors_preflight_requests_total",
+			Help: "Total CORS preflight (OPTIONS) requests by origin.",
+		},
+		[]string{"origin"},
+	)
+)
+
+// CORSConfig -- CORS policy parameters for the primary adapter.
 //
-// Инжектируется из cmd при построении RouterDeps.
-// Нулевое значение (CORSConfig{}) -- CORS отключён (все preflight -> 403).
+// Injected from cmd at RouterDeps construction.
+// Zero value (CORSConfig{}) -- CORS disabled (all preflight -> 403).
 //
-// AllowedOrigins: список разрешённых origin.
-//   Wildcard "*" допустим только если AllowCredentials = false.
-//   Пустой срез -- запрещает все cross-origin запросы.
+// AllowedOrigins: list of allowed origins.
+//   Wildcard "*" is allowed only if AllowCredentials = false.
+//   Empty slice -- blocks all cross-origin requests.
 //
-// AllowCredentials: true обязателен для Bearer-токенов из браузера.
-//   При true wildcard "*" в AllowedOrigins недопустим -- браузер блокирует.
+// AllowCredentials: true required for Bearer tokens from the browser.
+//   With true, wildcard "*" in AllowedOrigins is not allowed -- browser blocks.
 //
-// MaxAge: время кеширования preflight-ответа в секундах.
-//   0 -- браузер не кеширует (каждый запрос делает OPTIONS).
-//   Рекомендуемое значение: 600 (10 мин).
+// MaxAge: preflight response cache time in seconds.
+//   0 -- browser does not cache (each request sends OPTIONS).
+//   Recommended: 600 (10 min).
 type CORSConfig struct {
 	AllowedOrigins   []string
 	AllowedMethods   []string
@@ -32,13 +63,14 @@ type CORSConfig struct {
 	MaxAge           int
 }
 
-// NewCORSMiddleware строит gin.HandlerFunc реализующий политику CORS
-// по переданному CORSConfig.
+// NewCORSMiddleware builds gin.HandlerFunc implementing the CORS policy
+// from the provided CORSConfig.
 //
-// Порядок применения в router.go: первым, до gin.Recovery() и JWTMiddleware.
-// Причина: preflight OPTIONS не должен проходить через JWT-валидацию.
+// Order in router.go: first, before gin.Recovery() and JWTMiddleware.
+// Reason: preflight OPTIONS must not pass through JWT validation.
 //
-// Реализация не использует внешних зависимостей -- только net/http и strings.
+// Metrics: cors_requests_total, cors_rejected_total, cors_preflight_requests_total
+// per Observability.md BC#1. No spans created -- pure in-memory filter, no measurable IO latency.
 func NewCORSMiddleware(cfg CORSConfig) gin.HandlerFunc {
 	allowedOriginSet := make(map[string]struct{}, len(cfg.AllowedOrigins))
 	for _, o := range cfg.AllowedOrigins {
@@ -53,27 +85,29 @@ func NewCORSMiddleware(cfg CORSConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
 
-		// Не cross-origin запрос -- пропускаем без CORS-заголовков.
+		// Not a cross-origin request -- pass without CORS headers.
 		if origin == "" {
 			c.Next()
 			return
 		}
 
-		// Проверяем разрешён ли origin.
 		_, allowed := allowedOriginSet[origin]
 		if !allowed {
-			// Origin не в whitelist -- отвечаем без Access-Control-Allow-Origin.
-			// Браузер заблокирует запрос самостоятельно.
-			// Preflight завершаем явно чтобы не пропустить в цепочку.
+			// Origin not in whitelist.
+			corsRejectedTotal.WithLabelValues(origin).Inc()
 			if c.Request.Method == http.MethodOptions {
+				corsPreflightTotal.WithLabelValues(origin).Inc()
 				c.AbortWithStatus(http.StatusForbidden)
 				return
 			}
+			corsRequestsTotal.WithLabelValues(origin, c.Request.Method).Inc()
 			c.Next()
 			return
 		}
 
-		// Origin разрешён -- выставляем CORS-заголовки.
+		// Origin allowed -- set CORS headers.
+		corsRequestsTotal.WithLabelValues(origin, c.Request.Method).Inc()
+
 		c.Header("Access-Control-Allow-Origin", origin)
 		c.Header("Vary", "Origin")
 
@@ -84,8 +118,9 @@ func NewCORSMiddleware(cfg CORSConfig) gin.HandlerFunc {
 			c.Header("Access-Control-Expose-Headers", exposeHeaders)
 		}
 
-		// Preflight OPTIONS -- отвечаем и прерываем цепочку.
+		// Preflight OPTIONS -- respond and abort chain.
 		if c.Request.Method == http.MethodOptions {
+			corsPreflightTotal.WithLabelValues(origin).Inc()
 			if allowMethods != "" {
 				c.Header("Access-Control-Allow-Methods", allowMethods)
 			}
