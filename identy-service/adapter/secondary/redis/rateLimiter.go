@@ -4,7 +4,6 @@ package redis
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 
 	consts "github.com/Reddetk/SayMoDev/identy-service/core/consts"
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
@@ -56,7 +56,6 @@ type fallbackCounter struct {
 func (c *fallbackCounter) increment(ttl time.Duration) int64 {
 	now := time.Now()
 	if now.UnixNano() > c.expiresAt.Load() {
-		// TTL истёк -- сброс окна
 		c.count.Store(0)
 		c.expiresAt.Store(now.Add(ttl).UnixNano())
 	}
@@ -80,12 +79,12 @@ func (c *fallbackCounter) get() int64 {
 // Две стратегии хранения счётчиков:
 //   - L1 (Redis): точный счётчик, разделяется между всеми инстанциями.
 //   - L2 (in-process): fail-closed фоллбэк при недоступности Redis.
-//       Счётчик локальный для процесса, порог = 10 % от Redis-лимита.
+//     Счётчик локальный для процесса, порог = 10 % от Redis-лимита.
 //
 // Fail-closed инвариант: ошибка Redis никогда не означает "пропустить".
 type RateLimiterAdapter struct {
 	client redis.Cmdable
-	logger *slog.Logger
+	logger *zap.Logger
 	tracer trace.Tracer
 
 	// in-process fallback: sync.Map[string, *fallbackCounter]
@@ -94,10 +93,10 @@ type RateLimiterAdapter struct {
 }
 
 // NewRateLimiterAdapter создаёт адаптер с указанным Redis-клиентом.
-// logger nil -- используется slog.Default().
-func NewRateLimiterAdapter(client redis.Cmdable, logger *slog.Logger) *RateLimiterAdapter {
+// logger nil -- используется zap.NewNop().
+func NewRateLimiterAdapter(client redis.Cmdable, logger *zap.Logger) *RateLimiterAdapter {
 	if logger == nil {
-		logger = slog.Default()
+		logger = zap.NewNop()
 	}
 	return &RateLimiterAdapter{
 		client: client,
@@ -113,7 +112,7 @@ func NewRateLimiterAdapter(client redis.Cmdable, logger *slog.Logger) *RateLimit
 // CheckIP проверяет количество попыток с данного IP за последний час.
 //
 // Redis HIT: если счётчик >= consts.MaxLoginAttemptsPerIPPerHour (100) -- ErrRateLimitIP.
-// Redis недоступен: fail-closed через in-process счётчик (conserve порог = 10).
+// Redis недоступен: fail-closed через in-process счётчик (порог = 10).
 func (a *RateLimiterAdapter) CheckIP(ctx context.Context, clientIP string) error {
 	ctx, span := a.tracer.Start(ctx, "rateLimiter.CheckIP",
 		trace.WithAttributes(attribute.String("client.ip", clientIP)),
@@ -123,10 +122,12 @@ func (a *RateLimiterAdapter) CheckIP(ctx context.Context, clientIP string) error
 	key := fmt.Sprintf(rlIPKeyFmt, clientIP)
 	count, err := a.getCounter(ctx, key)
 	if err != nil {
-		// Redis недоступен: warn + fail-closed fallback
-		a.logger.WarnContext(ctx, "rateLimiter: CheckIP redis unavailable, using fallback",
-			slog.String("client_ip", clientIP),
-			slog.String("error", err.Error()),
+		sctx := span.SpanContext()
+		a.logger.Warn("rateLimiter: CheckIP redis unavailable, using fallback",
+			zap.String("client_ip", clientIP),
+			zap.String("error", err.Error()),
+			zap.String("trace_id", sctx.TraceID().String()),
+			zap.String("span_id", sctx.SpanID().String()),
 		)
 		span.SetAttributes(attribute.Bool("fallback", true))
 		count = a.getFallbackIP(clientIP)
@@ -152,7 +153,7 @@ func (a *RateLimiterAdapter) CheckIP(ctx context.Context, clientIP string) error
 // CheckAccount проверяет количество неудачных попыток для аккаунта за сутки.
 //
 // Redis HIT: если счётчик >= MaxFailedLoginAttemptsPerDay (50) -- ErrRateLimitAccount.
-// Redis недоступен: fail-closed через in-process счётчик (conserve порог = 5).
+// Redis недоступен: fail-closed через in-process счётчик (порог = 5).
 func (a *RateLimiterAdapter) CheckAccount(ctx context.Context, accountID string) error {
 	ctx, span := a.tracer.Start(ctx, "rateLimiter.CheckAccount",
 		trace.WithAttributes(attribute.String("account.id", accountID)),
@@ -162,9 +163,12 @@ func (a *RateLimiterAdapter) CheckAccount(ctx context.Context, accountID string)
 	key := fmt.Sprintf(rlAccountKeyFmt, accountID)
 	count, err := a.getCounter(ctx, key)
 	if err != nil {
-		a.logger.WarnContext(ctx, "rateLimiter: CheckAccount redis unavailable, using fallback",
-			slog.String("account_id", accountID),
-			slog.String("error", err.Error()),
+		sctx := span.SpanContext()
+		a.logger.Warn("rateLimiter: CheckAccount redis unavailable, using fallback",
+			zap.String("account_id", accountID),
+			zap.String("error", err.Error()),
+			zap.String("trace_id", sctx.TraceID().String()),
+			zap.String("span_id", sctx.SpanID().String()),
 		)
 		span.SetAttributes(attribute.Bool("fallback", true))
 		count = a.getFallbackAccount(accountID)
@@ -221,14 +225,16 @@ func (a *RateLimiterAdapter) RecordFailure(ctx context.Context, clientIP string,
 	})
 
 	if pipeErr != nil {
-		// Redis недоступен: fail-closed -- инкрементируем in-process счётчики
 		span.RecordError(pipeErr)
 		span.SetStatus(codes.Error, pipeErr.Error())
 		span.SetAttributes(attribute.Bool("fallback", true))
-		a.logger.ErrorContext(ctx, "rateLimiter: RecordFailure redis pipeline failed, falling back to in-process counters",
-			slog.String("client_ip", clientIP),
-			slog.String("account_id", accountID),
-			slog.String("error", pipeErr.Error()),
+		sctx := span.SpanContext()
+		a.logger.Error("rateLimiter: RecordFailure redis pipeline failed, falling back to in-process counters",
+			zap.String("client_ip", clientIP),
+			zap.String("account_id", accountID),
+			zap.String("error", pipeErr.Error()),
+			zap.String("trace_id", sctx.TraceID().String()),
+			zap.String("span_id", sctx.SpanID().String()),
 		)
 		a.incrementFallbackIP(clientIP)
 		if accountID != "" {
@@ -240,12 +246,14 @@ func (a *RateLimiterAdapter) RecordFailure(ctx context.Context, clientIP string,
 	// EXPIRE если ключ создан впервые (INCR -> 1)
 	if ipCmd != nil && ipCmd.Val() == 1 {
 		if expErr := a.client.Expire(ctx, ipKey, rlIPTTL).Err(); expErr != nil {
-			// Некритическая ошибка: ключ записан без TTL (станет persistent).
 			span.RecordError(expErr)
-			a.logger.ErrorContext(ctx, "rateLimiter: EXPIRE ip key failed -- key will be persistent",
-				slog.String("client_ip", clientIP),
-				slog.String("key", ipKey),
-				slog.String("error", expErr.Error()),
+			sctx := span.SpanContext()
+			a.logger.Error("rateLimiter: EXPIRE ip key failed -- key will be persistent",
+				zap.String("client_ip", clientIP),
+				zap.String("key", ipKey),
+				zap.String("error", expErr.Error()),
+				zap.String("trace_id", sctx.TraceID().String()),
+				zap.String("span_id", sctx.SpanID().String()),
 			)
 			return fmt.Errorf("rateLimiter.RecordFailure: EXPIRE ip key failed: %w", expErr)
 		}
@@ -255,10 +263,13 @@ func (a *RateLimiterAdapter) RecordFailure(ctx context.Context, clientIP string,
 		accountKey := fmt.Sprintf(rlAccountKeyFmt, accountID)
 		if expErr := a.client.Expire(ctx, accountKey, rlAccountTTL).Err(); expErr != nil {
 			span.RecordError(expErr)
-			a.logger.ErrorContext(ctx, "rateLimiter: EXPIRE account key failed -- key will be persistent",
-				slog.String("account_id", accountID),
-				slog.String("key", accountKey),
-				slog.String("error", expErr.Error()),
+			sctx := span.SpanContext()
+			a.logger.Error("rateLimiter: EXPIRE account key failed -- key will be persistent",
+				zap.String("account_id", accountID),
+				zap.String("key", accountKey),
+				zap.String("error", expErr.Error()),
+				zap.String("trace_id", sctx.TraceID().String()),
+				zap.String("span_id", sctx.SpanID().String()),
 			)
 			return fmt.Errorf("rateLimiter.RecordFailure: EXPIRE account key failed: %w", expErr)
 		}
