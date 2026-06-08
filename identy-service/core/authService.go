@@ -364,7 +364,7 @@ func (s *AuthService) openSessionAndIssueToken(
 		return in.LoginResult{}, err
 	}
 
-	if err := s.accRep.SaveSessionWithTx(ctx, account); err != nil {
+	if err := s.accRep.SaveSessionWithTx(ctx, account, evictedJTI); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "save session failed")
 		return in.LoginResult{}, err

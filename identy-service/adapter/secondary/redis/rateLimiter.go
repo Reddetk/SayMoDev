@@ -1,3 +1,4 @@
+// Package redis stands for redis secondary adapter implemnetation
 package redis
 
 import (

@@ -29,8 +29,8 @@ type MockAccountRepository struct {
 
 // CreateAccountWithTx saves a new account aggregate in an ACID transaction.
 //
-// Happy path:  Return("<uuid>", nil)
-// Error path:  Return("", corerr.ErrEmailAlreadyExists)
+// Happy path:  Return(nil)
+// Error path:  Return(corerr.ErrEmailAlreadyExists)
 func (m *MockAccountRepository) CreateAccountWithTx(
 	ctx context.Context,
 	account *entity.Account,
@@ -62,8 +62,9 @@ func (m *MockAccountRepository) UpdateAccountStatusTx(
 	ctx context.Context,
 	account *entity.Account,
 	revokedJTIs []string,
+	actorID string,
 ) error {
-	args := m.Called(ctx, account, revokedJTIs)
+	args := m.Called(ctx, account, revokedJTIs, actorID)
 	return args.Error(0)
 }
 
@@ -121,6 +122,7 @@ func (m *MockAccountRepository) FindByAccountID(
 func (m *MockAccountRepository) SaveSessionWithTx(
 	ctx context.Context,
 	account *entity.Account,
+	evictedJTI string,
 ) error {
 	args := m.Called(ctx, account)
 	return args.Error(0)
@@ -204,11 +206,11 @@ func (m *MockAccountRepository) ChangeAccountData(
 var _ interface {
 	CreateAccountWithTx(context.Context, *entity.Account) (string, error)
 	ResetPassword(context.Context, *entity.Account, string) error
-	UpdateAccountStatusTx(context.Context, *entity.Account, []string) error
+	UpdateAccountStatusTx(context.Context, *entity.Account, []string, string) error
 	EmailExist(context.Context, string) (bool, error)
 	FindByEmail(context.Context, string) (*entity.Account, error)
 	FindByAccountID(context.Context, string) (*entity.Account, error)
-	SaveSessionWithTx(context.Context, *entity.Account) error
+	SaveSessionWithTx(context.Context, *entity.Account, string) error
 	DeleteSessionWithTx(context.Context, *entity.Account, string) error
 	FindByGoogleUID(context.Context, string) (*entity.Account, error)
 	LinkGoogleUID(context.Context, string, string) error

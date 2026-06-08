@@ -64,7 +64,7 @@ type AccountRepository interface {
 	// - если account.EvictedJTI() != "" -- записывает его в blacklist (outbox L3) и вызывает ClearEvictedJTI()
 	// - обновляет metadata аккаунта (updated_at)
 	// Полный агрегат передаётся для консистентности; адаптер извлекает нужные поля
-	SaveSessionWithTx(ctx context.Context, account *entity.Account) error
+	SaveSessionWithTx(ctx context.Context, account *entity.Account, evictedJTI string) error
 
 	// DeleteSessionWithTx удаляет сессию из агрегата и персистирует результат.
 	// ACID транзакция:

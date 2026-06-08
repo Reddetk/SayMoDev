@@ -510,15 +510,22 @@ func (r *PostgresAccountRepository) CreateAccountWithTx(
 	return account.UUID(), nil
 }
 
-// ---------------------------------------------------------------------------
-// SaveSessionWithTx
-// ---------------------------------------------------------------------------
-
+// SaveSessionWithTx persists the session state of account inside a transaction.
+// evictedJTI is the JTI of the session that was evicted by OpenSession (G5/G9
+// eviction policy). Pass empty string if no session was evicted.
+// The caller (authService) receives evictedJTI as a return value from
+// account.OpenSession and passes it here explicitly -- the aggregate does NOT
+// store this value.
 func (r *PostgresAccountRepository) SaveSessionWithTx(
-	ctx context.Context, account *entity.Account,
+	ctx context.Context,
+	account *entity.Account,
+	evictedJTI string,
 ) error {
 	ctx, span := r.tracer.Start(ctx, "repo.SaveSessionWithTx",
-		trace.WithAttributes(attribute.String("account.id", account.UUID())),
+		trace.WithAttributes(
+			attribute.String("account.id", account.UUID()),
+			attribute.Bool("session.evicted", evictedJTI != ""),
+		),
 	)
 	defer span.End()
 
@@ -535,7 +542,6 @@ func (r *PostgresAccountRepository) SaveSessionWithTx(
 	}
 
 	// 2. Replace sessions: delete all, re-insert current set (max 5 rows).
-	// Simpler than per-row upsert given the small cardinality bound.
 	const deleteSessions = `DELETE FROM sessions WHERE account_id = $1`
 	if _, err = tx.Exec(ctx, deleteSessions, account.UUID()); err != nil {
 		span.RecordError(err)
@@ -555,13 +561,14 @@ func (r *PostgresAccountRepository) SaveSessionWithTx(
 		}
 	}
 
-	// 3. G9: evicted JTI -> outbox L3 blacklist
-	if evicted := account.EvictedJTI(); evicted != "" {
+	// 3. G9: evicted JTI -> outbox token.revoked (L3 blacklist via outbox worker).
+	// evictedJTI is passed explicitly by the caller, not read from the aggregate.
+	if evictedJTI != "" {
 		if err = repoOutboxInsert(ctx, tx, repoEvtTokenRevoked, account.UUID(), map[string]any{
 			"revision":  account.Revision(),
 			"revokedAt": time.Now().UnixMilli(),
 			"reason":    "session_evicted",
-			"jti":       evicted,
+			"jti":       evictedJTI,
 		}); err != nil {
 			span.RecordError(err)
 			return fmt.Errorf("SaveSessionWithTx outbox eviction: %w", err)
@@ -579,12 +586,10 @@ func (r *PostgresAccountRepository) SaveSessionWithTx(
 		return fmt.Errorf("SaveSessionWithTx commit: %w", err)
 	}
 
-	// Clear read-once field after successful commit.
-	account.ClearEvictedJTI()
-
 	r.logger.InfoContext(ctx, "repo: session saved",
 		slog.String("account_id", account.UUID()),
 		slog.Int("sessions_count", len(account.Sessions())),
+		slog.Bool("session_evicted", evictedJTI != ""),
 	)
 	return nil
 }
