@@ -8,6 +8,7 @@ import (
 
 	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -16,9 +17,6 @@ const (
 
 	// FixtureEmail is the stable email used across all test fixtures.
 	FixtureEmail = "fixture@example.com"
-
-	// FixturePasswordHash is a valid bcrypt hash (cost 10) of the string "Password1!".
-	FixturePasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 
 	// FixtureGoogleUID is the stable google_uid used in OAuth fixture.
 	FixtureGoogleUID = "google-uid-fixture-001"
@@ -43,10 +41,11 @@ const (
 
 	// FixtureCodeChallenge is the BASE64URL(SHA256(FixtureCodeVerifier)) value.
 	FixtureCodeChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
-	FixtureClientIP      = "255.255.255.255"
 
 	// FixtureClientIP is the stable client IP address used in service-level tests.
 	FixtureClientIP = "127.0.0.1"
+
+	FixturePassword1 = "Password1!"
 )
 
 // NewActiveAccount returns a restored active patient Account with a password hash
@@ -62,8 +61,8 @@ func NewActiveAccount() *entity.Account {
 		now,
 		meta,
 	)
-
-	hash := FixturePasswordHash
+	hashedBytes, _ := bcrypt.GenerateFromPassword([]byte(FixturePassword1), bcrypt.DefaultCost)
+	hash := string(hashedBytes)
 	account, _ := entity.RestoreAccount(
 		FixtureAccountID,
 		FixtureEmail,

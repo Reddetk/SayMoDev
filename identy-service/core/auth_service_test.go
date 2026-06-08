@@ -63,7 +63,7 @@ func TestLogin_HappyPath(t *testing.T) {
 	result, err := svc.Login(
 		context.Background(),
 		testdata.FixtureEmail,
-		"Password1!",
+		testdata.FixturePassword1,
 		testdata.FixtureFingerprint,
 		testdata.FixtureClientIP,
 	)
@@ -94,7 +94,7 @@ func TestLogin_RateLimitIP_StopsBeforeFindByEmail(t *testing.T) {
 	_, err := svc.Login(
 		context.Background(),
 		testdata.FixtureEmail,
-		"Password1!",
+		testdata.FixturePassword1,
 		testdata.FixtureFingerprint,
 		testdata.FixtureClientIP,
 	)
@@ -119,7 +119,7 @@ func TestLogin_AccountNotFound_ReturnsErrInvalidCredentials(t *testing.T) {
 	_, err := svc.Login(
 		context.Background(),
 		"unknown@saymo.ru",
-		"Password1!",
+		testdata.FixturePassword1,
 		testdata.FixtureFingerprint,
 		testdata.FixtureClientIP,
 	)
@@ -182,7 +182,7 @@ func TestLogin_AccountLocked_StopsAfterFindByEmail(t *testing.T) {
 	_, err := svc.Login(
 		context.Background(),
 		testdata.FixtureEmail,
-		"Password1!",
+		testdata.FixturePassword1,
 		testdata.FixtureFingerprint,
 		testdata.FixtureClientIP,
 	)
@@ -211,7 +211,7 @@ func TestLogin_RateLimitAccount_StopsBeforeBcrypt(t *testing.T) {
 	_, err := svc.Login(
 		context.Background(),
 		testdata.FixtureEmail,
-		"Password1!",
+		testdata.FixturePassword1,
 		testdata.FixtureFingerprint,
 		testdata.FixtureClientIP,
 	)
@@ -244,7 +244,7 @@ func TestLogin_TokenIssuerFails_ReturnsError(t *testing.T) {
 	_, err := svc.Login(
 		context.Background(),
 		testdata.FixtureEmail,
-		"Password1!",
+		testdata.FixturePassword1,
 		testdata.FixtureFingerprint,
 		testdata.FixtureClientIP,
 	)
@@ -282,7 +282,7 @@ func TestLogin_EventsProducerFails_StillReturnsToken(t *testing.T) {
 	result, err := svc.Login(
 		context.Background(),
 		testdata.FixtureEmail,
-		"Password1!",
+		testdata.FixturePassword1,
 		testdata.FixtureFingerprint,
 		testdata.FixtureClientIP,
 	)
@@ -378,7 +378,7 @@ func TestLogin_EvictedJTI_AddedToBlacklistAfterSaveSession(t *testing.T) {
 	result, err := svc.Login(
 		context.Background(),
 		testdata.FixtureEmail,
-		"Password1!",
+		testdata.FixturePassword1,
 		testdata.FixtureFingerprint,
 		testdata.FixtureClientIP,
 	)
