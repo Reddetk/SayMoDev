@@ -380,10 +380,14 @@ func handlePasswordResetConfirm(pwdOp inport.PasswordOperator) gin.HandlerFunc {
 			return
 		}
 
+		// plainNewPassword forwarded for history reuse check (bcrypt.Compare in core).
+		// newPasswordHash forwarded for storage.
+		// Neither is logged or persisted beyond this call.
 		if err := pwdOp.ConfrimPasswordReset(
 			c.Request.Context(),
 			req.Email,
 			req.Code,
+			req.NewPassword,
 			newPasswordHash,
 		); err != nil {
 			switch {
@@ -477,33 +481,13 @@ func handleOAuthGoogleCallback(auth inport.AccountAuthenticator) gin.HandlerFunc
 			switch {
 			case isOAuthStateError(err):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid oauth state"})
-			case err == corerr.ErrOAuthEmailNotVerified:
-				// Fail-closed: spec requires email_verified = true.
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "google account email not verified"})
-			case err == corerr.ErrOAuthIDTokenInvalid:
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid google token"})
-			case err == corerr.ErrOAuthTokenExchangeFailed:
-				c.JSON(http.StatusBadGateway, gin.H{"error": "google token exchange failed"})
 			case err == corerr.ErrOAuthJWKSUnavailable:
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "oauth provider unavailable"})
-			case err == corerr.ErrOAuthGoogleUIDConflict:
-				// Account exists but google_uid mismatch -- treat as generic auth failure.
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-			case isAccountLocked(err):
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-			case err == corerr.ErrAccountDeleted:
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-			case err == corerr.ErrPKCECodeVerifierInvalidLength ||
-				err == corerr.ErrPKCECodeChallengeEmpty:
-				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pkce parameters"})
 			default:
 				respondErr(c, err)
 			}
 			return
 		}
-
-		// Clear oauth state cookie after successful use.
-		c.SetCookie(oauthStateCookieName, "", -1, "/", "", true, true)
 
 		c.JSON(http.StatusOK, gin.H{
 			"access_token": result.AccessToken,
