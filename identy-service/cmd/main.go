@@ -142,7 +142,7 @@ func run(logger *zap.Logger) error {
 		return fmt.Errorf("NewOutboxEventsProducer: %w", err)
 	}
 
-	googleOAuth, err := secondary.NewGoogleOAuthProvider(
+	googleOAuth, err := secondary.NewGoogleOAuthAdapter(
 		requireEnv("GOOGLE_CLIENT_ID"),
 		requireEnv("GOOGLE_CLIENT_SECRET"),
 		requireEnv("GOOGLE_REDIRECT_URI"),
@@ -165,7 +165,7 @@ func run(logger *zap.Logger) error {
 	// --- 6. Primary adapter (HTTP) ---------------------------------------------
 	// CORS invariant (§8): CORS middleware выполняется ДО JWT-валидации.
 	// Допустимые origins определяются через APP_ENV.
-	router := primary.NewRouter(primary.RouterConfig{
+	router := primary.NewGinRouter(primary.RouterConfig{
 		AuthService: authService,
 		Logger:      logger,
 		AppEnv:      getEnv("APP_ENV", "development"),
