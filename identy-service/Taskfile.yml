@@ -4,6 +4,9 @@ version: '3'
 vars:
   ENV: '{{default "local" .ENV}}'
   MIGRATIONS: ./migrations
+  # Максимальное количество попыток дождаться postgres healthy (5s * 24 = 120s)
+  PG_WAIT_RETRIES: '24'
+  PG_WAIT_SLEEP: '5'
 
 dotenv: ['.env.{{.ENV}}']
 
@@ -48,14 +51,35 @@ tasks:
     cmds:
       - docker compose logs -f postgres redis-bc1 redis-blacklist
 
+  # Ожидает пока postgres не перейдёт в статус healthy.
+  # Проверяет через docker inspect, не через TCP-сокет --
+  # позволяет избежать конфликта с локальным PG на том же порту.
+  infra:wait-pg:
+    desc: "Wait until postgres container is healthy"
+    internal: true
+    cmds:
+      - |
+        for i in $(seq 1 {{.PG_WAIT_RETRIES}}); do
+          STATUS=$(docker inspect --format='{{{{.State.Health.Status}}}}' identy-service-postgres-1 2>/dev/null)
+          echo "postgres health: $STATUS (attempt $i/{{.PG_WAIT_RETRIES}})"
+          if [ "$STATUS" = "healthy" ]; then
+            exit 0
+          fi
+          sleep {{.PG_WAIT_SLEEP}}
+        done
+        echo "ERROR: postgres did not become healthy in time"
+        docker compose logs postgres
+        exit 1
+
   # ---------------------------------------------------------------------------
   # Migrations
   # ---------------------------------------------------------------------------
 
   migrate:up:
-    desc: "Apply all pending migrations"
-    deps: [infra:up]
+    desc: "Apply all pending migrations (waits for postgres healthy)"
     cmds:
+      - task: infra:up
+      - task: infra:wait-pg
       - go run ./cmd/migrate/main.go -action up
 
   migrate:down:
@@ -70,34 +94,12 @@ tasks:
     requires:
       vars: [VERSION]
 
-  migrate:status:
-    desc: "Print current migration version and dirty flag"
-    cmds:
-      - |
-        go run - <<'EOF'
-        package main
-        import (
-          "fmt"
-          "os"
-          "github.com/golang-migrate/migrate/v4"
-          _ "github.com/golang-migrate/migrate/v4/database/postgres"
-          _ "github.com/golang-migrate/migrate/v4/source/file"
-        )
-        func main() {
-          m, err := migrate.New("file://./migrations", os.Getenv("POSTGRES_DSN"))
-          if err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
-          v, dirty, err := m.Version()
-          if err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
-          fmt.Printf("version=%d  dirty=%v\n", v, dirty)
-        }
-        EOF
-
   # ---------------------------------------------------------------------------
   # Server
   # ---------------------------------------------------------------------------
 
   run:
-    desc: "Run identity-service locally (requires infra:up and migrate:up)"
+    desc: "Run identity-service locally"
     cmds:
       - go run ./cmd/main.go
 
@@ -142,9 +144,10 @@ tasks:
   # ---------------------------------------------------------------------------
 
   dev:
-    desc: "One-shot local dev start: infra -> migrate -> run"
+    desc: "One-shot local dev start: infra -> wait-pg -> migrate -> run"
     cmds:
       - task: infra:up
+      - task: infra:wait-pg
       - task: migrate:up
       - task: run
 
@@ -168,3 +171,4 @@ tasks:
     cmds:
       - go test ./... -count=1 -coverprofile=coverage.out
       - go tool cover -html=coverage.out -o coverage.html
+      - echo "Report: coverage.html"
