@@ -23,6 +23,7 @@ import (
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 )
 
 // ---------------------------------------------------------------------------
@@ -53,7 +54,7 @@ type GoogleOAuthConfig struct {
 	HTTPClient *http.Client
 
 	// Logger is optional; defaults to zap.NewNop().
-	Logger *zap.Logger
+	Logger logger.Logger
 
 	// NowFunc is optional; defaults to time.Now. Used for TTL checks in tests.
 	NowFunc func() time.Time
@@ -92,7 +93,7 @@ type GoogleOAuthAdapter struct {
 	clientSecret string
 	redirectURI  string
 	httpClient   *http.Client
-	logger       *zap.Logger
+	logger       logger.Logger
 	now          func() time.Time
 	jwks         jwksCache
 }
@@ -114,9 +115,7 @@ func NewGoogleOAuthAdapter(cfg GoogleOAuthConfig) (*GoogleOAuthAdapter, error) {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
 	logger := cfg.Logger
-	if logger == nil {
-		logger = zap.NewNop()
-	}
+
 	nowFunc := cfg.NowFunc
 	if nowFunc == nil {
 		nowFunc = time.Now

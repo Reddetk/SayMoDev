@@ -18,6 +18,7 @@ import (
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 )
 
 // ---------------------------------------------------------------------------
@@ -64,18 +65,16 @@ const (
 // This adapter never touches Kafka directly.
 type OutboxEventsProducer struct {
 	pool   *pgxpool.Pool
-	logger *zap.Logger
+	logger logger.Logger
 	tracer trace.Tracer
 }
 
 // NewOutboxEventsProducer constructs the adapter.
-func NewOutboxEventsProducer(pool *pgxpool.Pool, logger *zap.Logger) (*OutboxEventsProducer, error) {
+func NewOutboxEventsProducer(pool *pgxpool.Pool, logger logger.Logger) (*OutboxEventsProducer, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("outbox events producer: pool is required")
 	}
-	if logger == nil {
-		logger = zap.NewNop()
-	}
+
 	return &OutboxEventsProducer{
 		pool:   pool,
 		logger: logger,

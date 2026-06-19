@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/Reddetk/SayMoDev/identy-service/adapter/primary/http/middleware"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 )
 
 // respondErr -- финальный fallback для всех use-case ошибок.
@@ -58,18 +59,14 @@ func respondInternalErr(c *gin.Context) {
 	c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 }
 
-// loggerFromCtx извлекает *zap.Logger из gin.Context.
+// loggerFromCtx извлекает logger.Logger из gin.Context.
 // ObservabilityMiddleware сохраняет его под ключом middleware.ContextKeyLogger.
 // Если logger не найден (запрос без observability middleware -- например в тестах),
 // возвращает zap.NewNop() чтобы не паниковать.
-func loggerFromCtx(c *gin.Context) *zap.Logger {
-	v, exists := c.Get(middleware.ContextKeyLogger)
-	if !exists {
-		return zap.NewNop()
-	}
-	l, ok := v.(*zap.Logger)
-	if !ok {
-		return zap.NewNop()
-	}
+func loggerFromCtx(c *gin.Context) logger.Logger {
+	v, _ := c.Get(middleware.ContextKeyLogger)
+
+	l, _ := v.(logger.Logger)
+
 	return l
 }

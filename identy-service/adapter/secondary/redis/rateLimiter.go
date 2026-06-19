@@ -17,6 +17,7 @@ import (
 
 	consts "github.com/Reddetk/SayMoDev/identy-service/core/consts"
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 )
 
 // ---------------------------------------------------------------------------
@@ -84,7 +85,7 @@ func (c *fallbackCounter) get() int64 {
 // Fail-closed инвариант: ошибка Redis никогда не означает "пропустить".
 type RateLimiterAdapter struct {
 	client redis.Cmdable
-	logger *zap.Logger
+	logger logger.Logger
 	tracer trace.Tracer
 
 	// in-process fallback: sync.Map[string, *fallbackCounter]
@@ -94,10 +95,7 @@ type RateLimiterAdapter struct {
 
 // NewRateLimiterAdapter создаёт адаптер с указанным Redis-клиентом.
 // logger nil -- используется zap.NewNop().
-func NewRateLimiterAdapter(client redis.Cmdable, logger *zap.Logger) *RateLimiterAdapter {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
+func NewRateLimiterAdapter(client redis.Cmdable, logger logger.Logger) *RateLimiterAdapter {
 	return &RateLimiterAdapter{
 		client: client,
 		logger: logger,

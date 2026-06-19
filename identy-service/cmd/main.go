@@ -40,6 +40,7 @@ import (
 	"github.com/Reddetk/SayMoDev/identy-service/adapter/secondary/postgres"
 	redisada "github.com/Reddetk/SayMoDev/identy-service/adapter/secondary/redis"
 	"github.com/Reddetk/SayMoDev/identy-service/core"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 )
 
 const (
@@ -48,19 +49,14 @@ const (
 )
 
 func main() {
-	logger, err := zap.NewProduction()
-	if err != nil {
-		panic(fmt.Sprintf("failed to init logger: %v", err))
-	}
-	defer func() { _ = logger.Sync() }()
-
+	logger := logger.New()
 	if err := run(logger); err != nil {
 		logger.Error("identity-service: fatal startup error", zap.Error(err))
 		os.Exit(1)
 	}
 }
 
-func run(logger *zap.Logger) error {
+func run(logger logger.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

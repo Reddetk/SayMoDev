@@ -21,6 +21,7 @@ import (
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 	out "github.com/Reddetk/SayMoDev/identy-service/port/out"
 )
 
@@ -53,16 +54,13 @@ const (
 // operation -- the outbox worker replicates to Kafka asynchronously.
 type PostgresAccountRepository struct {
 	pool   *pgxpool.Pool
-	logger *zap.Logger
+	logger logger.Logger
 	tracer trace.Tracer
 }
 
-func NewPostgresAccountRepository(pool *pgxpool.Pool, logger *zap.Logger) (*PostgresAccountRepository, error) {
+func NewPostgresAccountRepository(pool *pgxpool.Pool, logger logger.Logger) (*PostgresAccountRepository, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("postgres account repo: pool is required")
-	}
-	if logger == nil {
-		logger = zap.NewNop()
 	}
 	return &PostgresAccountRepository{
 		pool:   pool,
@@ -88,7 +86,7 @@ type pgxQuerier interface {
 // rollbackOnError should be deferred immediately after tx.Begin.
 // Rolls back if the transaction was not yet committed (pgx.ErrTxClosed means
 // Commit already ran). Does not overwrite the originating error.
-func rollbackOnError(ctx context.Context, tx pgx.Tx, logger *zap.Logger) {
+func rollbackOnError(ctx context.Context, tx pgx.Tx, logger logger.Logger) {
 	if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
 		logger.Warn("repo: rollback failed", zap.Error(err))
 	}

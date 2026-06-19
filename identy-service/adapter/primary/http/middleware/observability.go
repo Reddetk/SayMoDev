@@ -11,7 +11,7 @@
 //     полями, предписанными Observability.md §Logs:
 //     timestamp, level, service, trace_id, span_id, method, path,
 //     status, latency_ms, ip, user_agent.
-//     Также сохраняет *zap.Logger в gin.Context (ContextKeyLogger) чтобы
+//     Также сохраняет logger.Logger в gin.Context (ContextKeyLogger) чтобы
 //     handlers и respond.go могли писать domain log entries.
 //
 //  3. Metrics -- инкрементирует cors_requests_total и cors_rejected_total
@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
@@ -41,7 +42,7 @@ const (
 	ContextKeyTraceID = "trace_id"
 	// ContextKeySpanID -- ключ для span_id в gin.Context.
 	ContextKeySpanID = "span_id"
-	// ContextKeyLogger -- ключ для *zap.Logger в gin.Context.
+	// ContextKeyLogger -- ключ для logger.Logger в gin.Context.
 	// Используется respond.go и handlers для domain log entries.
 	ContextKeyLogger = "zap_logger"
 )
@@ -49,14 +50,14 @@ const (
 // ObservabilityDeps -- зависимости middleware.
 // Все поля обязательны; nil вызовет панику при первом запросе.
 type ObservabilityDeps struct {
-	Logger     *zap.Logger
+	Logger     logger.Logger
 	Registerer prometheus.Registerer
 	TracerName string // имя трейсера, например "identity-service"
 }
 
 // observabilityMiddleware -- внутреннее состояние; инициализируется один раз.
 type observabilityMiddleware struct {
-	logger             *zap.Logger
+	logger             logger.Logger
 	tracer             trace.Tracer
 	corsRequestsTotal  *prometheus.CounterVec
 	corsRejectedTotal  *prometheus.CounterVec

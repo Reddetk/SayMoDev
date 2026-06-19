@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -14,12 +15,12 @@ import (
 // Логер обогащается trace_id/span_id из ObservabilityMiddleware через
 // ContextKeyLogger -- дублирования полей нет.
 type OwnershipMiddleware struct {
-	logger *zap.Logger
+	logger logger.Logger
 }
 
 // NewOwnershipMiddleware создаёт OwnershipMiddleware.
 // logger -- базовый логер сервиса; per-request поля добавляются из gin.Context.
-func NewOwnershipMiddleware(logger *zap.Logger) *OwnershipMiddleware {
+func NewOwnershipMiddleware(logger logger.Logger) *OwnershipMiddleware {
 	return &OwnershipMiddleware{logger: logger}
 }
 

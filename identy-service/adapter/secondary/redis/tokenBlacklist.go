@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -64,7 +65,7 @@ type l1Entry struct {
 // TokenService интерпретирует её как ErrTokenRevoked (HTTP 401).
 type TokenBlacklistAdapter struct {
 	client redis.Cmdable
-	logger *zap.Logger
+	logger logger.Logger
 	tracer trace.Tracer
 
 	l1mu  sync.RWMutex
@@ -74,10 +75,7 @@ type TokenBlacklistAdapter struct {
 
 // NewTokenBlacklistAdapter создаёт адаптер.
 // logger nil -- используется zap.NewNop().
-func NewTokenBlacklistAdapter(client redis.Cmdable, logger *zap.Logger) *TokenBlacklistAdapter {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
+func NewTokenBlacklistAdapter(client redis.Cmdable, logger logger.Logger) *TokenBlacklistAdapter {
 	return &TokenBlacklistAdapter{
 		client: client,
 		logger: logger,

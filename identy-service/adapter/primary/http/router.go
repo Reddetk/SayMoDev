@@ -23,9 +23,9 @@ package http
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
 
 	"github.com/Reddetk/SayMoDev/identy-service/adapter/primary/http/middleware"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 	inport "github.com/Reddetk/SayMoDev/identy-service/port/in"
 )
 
@@ -34,7 +34,7 @@ import (
 // CORS, Logger и Metrics инжектируются из cmd при запуске сервиса.
 type RouterDeps struct {
 	CORS             middleware.CORSConfig
-	Logger           *zap.Logger           // ZAP logger; используется ObservabilityMiddleware, JWTMiddleware, RBACMiddleware, OwnershipMiddleware
+	Logger           logger.Logger         // ZAP logger; используется ObservabilityMiddleware, JWTMiddleware, RBACMiddleware, OwnershipMiddleware
 	Metrics          prometheus.Registerer // Prometheus registerer; используется ObservabilityMiddleware
 	TokenValidator   inport.TokenValidator
 	Authenticator    inport.AccountAuthenticator

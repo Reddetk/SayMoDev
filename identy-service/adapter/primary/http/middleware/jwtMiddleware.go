@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 	inport "github.com/Reddetk/SayMoDev/identy-service/port/in"
 )
 
@@ -46,10 +47,10 @@ var jwtValidationTotal = promauto.NewCounterVec(
 // Logging: zap WARN with fields reason, jti, ip, user_agent, trace_id, span_id.
 type JWTMiddleware struct {
 	validator inport.TokenValidator
-	logger    *zap.Logger
+	logger    logger.Logger
 }
 
-func NewJWTMiddleware(validator inport.TokenValidator, logger *zap.Logger) *JWTMiddleware {
+func NewJWTMiddleware(validator inport.TokenValidator, logger logger.Logger) *JWTMiddleware {
 	return &JWTMiddleware{validator: validator, logger: logger}
 }
 

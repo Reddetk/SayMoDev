@@ -14,6 +14,7 @@ import (
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 )
 
 // postboxProdEndpoint -- AWS SESv2-compatible endpoint Yandex Cloud Postbox.
@@ -63,7 +64,7 @@ type PostboxEmailAdapter struct {
 	iamToken    string
 	fromAddress string
 	endpoint    string // prod URL or local mock
-	logger      *zap.Logger
+	logger      logger.Logger
 }
 
 // PostboxConfig holds constructor parameters.
@@ -83,7 +84,7 @@ type PostboxConfig struct {
 	HTTPClient *http.Client
 
 	// Logger is optional; defaults to zap.NewNop().
-	Logger *zap.Logger
+	Logger logger.Logger
 }
 
 // NewPostboxEmailAdapter constructs the adapter and validates required config.
@@ -106,9 +107,6 @@ func NewPostboxEmailAdapter(cfg PostboxConfig) (*PostboxEmailAdapter, error) {
 	}
 
 	logger := cfg.Logger
-	if logger == nil {
-		logger = zap.NewNop()
-	}
 
 	return &PostboxEmailAdapter{
 		httpClient:  client,

@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 )
 
 // ---------------------------------------------------------------------------
@@ -34,11 +33,11 @@ import (
 //   Для PostgreSQL: time.UnixMilli(ms).UTC() <-> t.UnixMilli().
 type PostgresOtpRepository struct {
 	pool   *pgxpool.Pool
-	logger *zap.Logger
+	logger logger.Logger
 }
 
 // NewPostgresOtpRepository создаёт репозиторий с указанным pgx-пулом.
-func NewPostgresOtpRepository(pool *pgxpool.Pool, logger *zap.Logger) *PostgresOtpRepository {
+func NewPostgresOtpRepository(pool *pgxpool.Pool, logger logger.Logger) *PostgresOtpRepository {
 	return &PostgresOtpRepository{
 		pool:   pool,
 		logger: logger,

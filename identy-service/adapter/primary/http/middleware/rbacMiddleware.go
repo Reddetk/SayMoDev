@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -16,13 +17,13 @@ import (
 // trace_id/span_id логер, который ObservabilityMiddleware кладёт туда
 // для каждого запроса. Это исключает дублирование полей трейсинга.
 type RBACMiddleware struct {
-	logger *zap.Logger
+	logger logger.Logger
 }
 
 // NewRBACMiddleware создаёт RBACMiddleware.
 // logger -- базовый логер сервиса (без trace полей);
 // per-request trace поля добавляются из gin.Context автоматически.
-func NewRBACMiddleware(logger *zap.Logger) *RBACMiddleware {
+func NewRBACMiddleware(logger logger.Logger) *RBACMiddleware {
 	return &RBACMiddleware{logger: logger}
 }
 
@@ -65,15 +66,15 @@ func (m *RBACMiddleware) RequireRole(roles ...string) gin.HandlerFunc {
 	}
 }
 
-// loggerFromGinCtx возвращает per-request *zap.Logger из gin.Context
+// loggerFromGinCtx возвращает per-request logger.Logger из gin.Context
 // (положенный ObservabilityMiddleware). Если ключ отсутствует (тест без
 // ObservabilityMiddleware), возвращает fallback.
-func loggerFromGinCtx(c *gin.Context, fallback *zap.Logger) *zap.Logger {
+func loggerFromGinCtx(c *gin.Context, fallback logger.Logger) logger.Logger {
 	v, exists := c.Get(ContextKeyLogger)
 	if !exists {
 		return fallback
 	}
-	l, ok := v.(*zap.Logger)
+	l, ok := v.(logger.Logger)
 	if !ok {
 		return fallback
 	}
