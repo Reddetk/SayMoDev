@@ -17,8 +17,7 @@ import (
 // Config -- агрегированная конфигурация identity-service.
 // Имена переменных согласованы с cmd/main.go (источник правды).
 //
-// Переменные окружения:
-//   HTTP_ADDR                    :8080
+// Обязательные переменные:
 //   POSTGRES_DSN                 postgres://user:pass@host:5432/db?sslmode=disable
 //   REDIS_URL                    redis://:pass@host:6379/0
 //   REDIS_BLACKLIST_ADDR         host:6380
@@ -26,20 +25,23 @@ import (
 //   JWT_PRIVATE_KEY_PATH         /run/secrets/private.pem
 //   JWT_PUBLIC_KEY_PATH          /run/secrets/public.pem
 //   JWT_KID                      key-v1
-//   JWT_PREV_PUBLIC_KEY_PATH     (optional) /run/secrets/prev_public.pem
-//   JWT_PREV_KID                 (optional) key-v0
-//   OTEL_EXPORTER_OTLP_ENDPOINT  host:4317
-//   SERVICE_NAME                 identity-service
-//   SERVICE_VERSION              v1.0.0
-//   ENVIRONMENT                  production | staging | development
-//   LOG_LEVEL                    debug | info | warn | error
-//   LOG_DEVELOPMENT              true | false
 //   GOOGLE_CLIENT_ID             ...
 //   GOOGLE_CLIENT_SECRET         ...
 //   GOOGLE_REDIRECT_URI          https://...
 //   POSTBOX_IAM_TOKEN            ...
 //   POSTBOX_FROM_ADDRESS         noreply@saymo.ru
-//   CORS_ALLOWED_ORIGINS         https://app.saymo.com,...
+//
+// Опциональные:
+//   HTTP_ADDR                    :8080  (default)
+//   JWT_PREV_PUBLIC_KEY_PATH     /run/secrets/prev_public.pem
+//   JWT_PREV_KID                 key-v0
+//   OTEL_EXPORTER_OTLP_ENDPOINT  localhost:4317  (default)
+//   SERVICE_NAME                 identity-service  (default)
+//   SERVICE_VERSION              dev  (default)
+//   ENVIRONMENT                  development  (default)
+//   LOG_LEVEL                    info  (default)
+//   LOG_DEVELOPMENT              false  (default)
+//   CORS_ALLOWED_ORIGINS         http://localhost:3000,...
 type Config struct {
 	HTTPAddr    string
 	PostgresDSN string
@@ -48,11 +50,13 @@ type Config struct {
 	RedisBlacklistAddr     string
 	RedisBlacklistPassword string
 
-	JWTPrivateKeyPath  string
-	JWTPublicKeyPath   string
-	JWTKid             string
-	JWTPrevPublicKey   string // optional
-	JWTPrevKid         string // optional
+	JWTPrivateKeyPath string
+	JWTPublicKeyPath  string
+	JWTKid            string
+	JWTPrevPublicKey  string // optional: путь к предыдущему публичному ключу (rotation overlap)
+	JWTPrevKid        string // optional
+
+	OTelEndpoint string
 
 	GoogleOAuth secondary.GoogleOAuthConfig
 	Postbox     secondary.PostboxConfig
@@ -67,9 +71,6 @@ func Load() (*Config, error) {
 	cfg := &Config{}
 	var missing []string
 
-	// --- infrastructure ------------------------------------------------------
-	cfg.HTTPAddr = envOr("HTTP_ADDR", ":8080")
-
 	require := func(key string, dst *string) {
 		if v := os.Getenv(key); v != "" {
 			*dst = v
@@ -78,19 +79,23 @@ func Load() (*Config, error) {
 		}
 	}
 
-	require("POSTGRES_DSN", &cfg.PostbresDSN)
+	// --- infrastructure ------------------------------------------------------
+	cfg.HTTPAddr = envOr("HTTP_ADDR", ":8080")
+	cfg.OTelEndpoint = envOr("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
+
+	require("POSTGRES_DSN", &cfg.PostgresDSN)
 	require("REDIS_URL", &cfg.RedisURL)
 	require("REDIS_BLACKLIST_ADDR", &cfg.RedisBlacklistAddr)
 	require("REDIS_BLACKLIST_PASSWORD", &cfg.RedisBlacklistPassword)
+
+	// --- JWT -----------------------------------------------------------------
 	require("JWT_PRIVATE_KEY_PATH", &cfg.JWTPrivateKeyPath)
 	require("JWT_PUBLIC_KEY_PATH", &cfg.JWTPublicKeyPath)
 	require("JWT_KID", &cfg.JWTKid)
 
-	// optional -- предыдущий ключ при rotation overlap
+	// optional: rotation overlap window (>= 7 days per spec)
 	cfg.JWTPrevPublicKey = os.Getenv("JWT_PREV_PUBLIC_KEY_PATH")
 	cfg.JWTPrevKid = os.Getenv("JWT_PREV_KID")
-
-	cfg.OTelEndpoint = envOr("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
 
 	// --- telemetry -----------------------------------------------------------
 	serviceName := envOr("SERVICE_NAME", "identity-service")
