@@ -1,0 +1,32 @@
+# Dockerfile.server -- основной бинарник сервиса (multi-stage)
+# Stage builder компилирует cmd/main.go.
+# Stage runtime -- distroless, без shell и лишних инструментов.
+
+# ---- Stage 1: builder -------------------------------------------------------
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w" \
+    -o /app/bin/server \
+    ./cmd/main.go
+
+# ---- Stage 2: runtime -------------------------------------------------------
+FROM gcr.io/distroless/static-debian12
+
+WORKDIR /app
+
+COPY --from=builder /app/bin/server ./server
+
+# RSA ключи монтируются снаружи через volume или secrets.
+# JWT_PRIVATE_KEY_PATH и JWT_PUBLIC_KEY_PATH в env указывают путь внутри контейнера.
+
+EXPOSE 8080
+
+ENTRYPOINT ["./server"]
