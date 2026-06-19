@@ -10,8 +10,7 @@ tasks:
 
   # ---------------------------------------------------------------------------
   # RSA keys
-  # Генерация через Go -- не требует openssl в PATH.
-  # Идемпотентно: если ключи уже есть -- ничего не делает.
+  # Генерация через Go -- не требует openssl в PATH. Идемпотентно.
   # ---------------------------------------------------------------------------
 
   gen-rsa:
@@ -27,7 +26,7 @@ tasks:
   # ---------------------------------------------------------------------------
 
   infra:up:
-    desc: "Start postgres + redis (detached). Postgres healthcheck is managed by docker compose."
+    desc: "Start postgres + redis (detached). Postgres healthcheck managed by docker compose."
     cmds:
       - docker compose up -d postgres redis-bc1 redis-blacklist migrate-init
       - docker compose ps
@@ -49,8 +48,6 @@ tasks:
 
   # ---------------------------------------------------------------------------
   # Migrations
-  # Запуск напрямую через go run -- для быстрой итерации без сборки образа.
-  # Гарантия готовности postgres -- на стороне вызывающего кода (infra:up до migrate:up).
   # ---------------------------------------------------------------------------
 
   migrate:up:
@@ -69,6 +66,17 @@ tasks:
       - go run ./cmd/migrate/main.go -action force -version {{.VERSION}}
     requires:
       vars: [VERSION]
+
+  # ---------------------------------------------------------------------------
+  # Postbox mock (dev-only)
+  # Запускай в отдельном терминале рядом с task run.
+  # Инбокс: http://localhost:9025
+  # ---------------------------------------------------------------------------
+
+  postbox:mock:
+    desc: "Run local Postbox mock on :9025 (dev-only, never use in prod)"
+    cmds:
+      - go run ./cmd/postboxmock/main.go
 
   # ---------------------------------------------------------------------------
   # Server
@@ -110,9 +118,9 @@ tasks:
       - docker compose logs -f server
 
   # ---------------------------------------------------------------------------
-  # Dev (local go run + docker infra)
+  # Dev
   # Первый запуск: task gen-rsa && task dev
-  # Повторные: task dev
+  # В отдельном терминале: task postbox:mock
   # ---------------------------------------------------------------------------
 
   dev:
@@ -123,7 +131,7 @@ tasks:
       - task: run
 
   # ---------------------------------------------------------------------------
-  # Dev helpers
+  # Helpers
   # ---------------------------------------------------------------------------
 
   tidy:

@@ -16,8 +16,9 @@ import (
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
 )
 
-// postboxEndpoint -- AWS SESv2-compatible endpoint Yandex Cloud Postbox.
-const postboxEndpoint = "https://postbox.cloud.yandex.net/v2/email/outbound-emails"
+// postboxProdEndpoint -- AWS SESv2-compatible endpoint Yandex Cloud Postbox.
+// Переопределяется через PostboxConfig.Endpoint для локальной разработки.
+const postboxProdEndpoint = "https://postbox.cloud.yandex.net/v2/email/outbound-emails"
 
 // subjectByPurpose maps OTPPurpose to a human-readable email subject.
 // Subject does not contain the code (OTP Security Invariant SS7).
@@ -59,19 +60,24 @@ type sesv2SendRequest struct {
 // (inject a fresh token per request or use a token-refreshing wrapper).
 type PostboxEmailAdapter struct {
 	httpClient  *http.Client
-	iamToken    string // rotated externally; see Config.IAMToken
-	fromAddress string // verified sender address in Postbox
+	iamToken    string
+	fromAddress string
+	endpoint    string // prod URL or local mock
 	logger      *zap.Logger
 }
 
 // PostboxConfig holds constructor parameters.
 type PostboxConfig struct {
 	// IAMToken is the Yandex Cloud IAM subject token used in X-YaCloud-SubjectToken.
-	// Obtain via metadata service or service-account key; refresh before expiry (1h TTL).
 	IAMToken string
 
 	// FromAddress must be a verified sender address registered in Yandex Postbox.
 	FromAddress string
+
+	// Endpoint overrides the default prod URL.
+	// Used in local development to point at cmd/postboxmock.
+	// If empty, defaults to postboxProdEndpoint.
+	Endpoint string
 
 	// HTTPClient is optional; defaults to a client with a 10-second timeout.
 	HTTPClient *http.Client
@@ -89,6 +95,11 @@ func NewPostboxEmailAdapter(cfg PostboxConfig) (*PostboxEmailAdapter, error) {
 		return nil, fmt.Errorf("postbox adapter: FromAddress is required")
 	}
 
+	endpoint := cfg.Endpoint
+	if endpoint == "" {
+		endpoint = postboxProdEndpoint
+	}
+
 	client := cfg.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
@@ -103,6 +114,7 @@ func NewPostboxEmailAdapter(cfg PostboxConfig) (*PostboxEmailAdapter, error) {
 		httpClient:  client,
 		iamToken:    cfg.IAMToken,
 		fromAddress: cfg.FromAddress,
+		endpoint:    endpoint,
 		logger:      logger,
 	}, nil
 }
@@ -126,13 +138,10 @@ func (a *PostboxEmailAdapter) SendOTP(
 ) error {
 	subject, ok := subjectByPurpose[otpPur]
 	if !ok {
-		// Missing entry is a programmer error, not a runtime condition.
-		// Return delivery failed so the OTP flow degrades gracefully.
 		a.logger.Error("postbox: unknown OTPPurpose", zap.String("purpose", otpPur.String()))
 		return corerr.ErrEmailDeliveryFailed
 	}
 
-	// Build plaintext body. code is intentionally NOT logged anywhere in this file.
 	body := fmt.Sprintf("Ваш код подтверждения: %s\n\nКод действителен 10 минут.", code)
 
 	payload := sesv2SendRequest{
@@ -144,7 +153,6 @@ func (a *PostboxEmailAdapter) SendOTP(
 
 	rawJSON, err := json.Marshal(payload)
 	if err != nil {
-		// json.Marshal on a static struct should never fail.
 		a.logger.Error("postbox: failed to marshal request",
 			zap.String("to", toEmail),
 			zap.String("purpose", otpPur.String()),
@@ -153,7 +161,7 @@ func (a *PostboxEmailAdapter) SendOTP(
 		return corerr.ErrEmailDeliveryFailed
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, postboxEndpoint, bytes.NewReader(rawJSON))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint, bytes.NewReader(rawJSON))
 	if err != nil {
 		a.logger.Error("postbox: failed to build HTTP request",
 			zap.String("to", toEmail),
@@ -167,7 +175,6 @@ func (a *PostboxEmailAdapter) SendOTP(
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		// Network-level failure: DNS, TLS, timeout, context cancellation.
 		a.logger.Error("postbox: HTTP transport error",
 			zap.String("to", toEmail),
 			zap.String("purpose", otpPur.String()),
@@ -177,7 +184,6 @@ func (a *PostboxEmailAdapter) SendOTP(
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Drain body to allow connection reuse.
 	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

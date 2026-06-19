@@ -118,8 +118,6 @@ func run(logger *zap.Logger) error {
 	}
 
 	// 4b. RSA token issuer.
-	// Загрузка текущей пары RSA-ключей из PEM-файлов.
-	// Опциональный предыдущий публичный ключ (rotation overlap): если JWT_PREV_PUBLIC_KEY_PATH пусто -- prevключ nil.
 	currentPriv, err := loadRSAPrivateKey(requireEnv("JWT_PRIVATE_KEY_PATH"))
 	if err != nil {
 		return fmt.Errorf("load JWT private key: %w", err)
@@ -153,7 +151,6 @@ func run(logger *zap.Logger) error {
 	}
 
 	// 4e. Google OAuth adapter.
-	// NewGoogleOAuthAdapter принимает GoogleOAuthConfig (struct), а не positional args.
 	googleOAuth, err := secondary.NewGoogleOAuthAdapter(secondary.GoogleOAuthConfig{
 		ClientID:     requireEnv("GOOGLE_CLIENT_ID"),
 		ClientSecret: requireEnv("GOOGLE_CLIENT_SECRET"),
@@ -164,7 +161,15 @@ func run(logger *zap.Logger) error {
 		return fmt.Errorf("NewGoogleOAuthAdapter: %w", err)
 	}
 
-	emailBox, err := secondary.NewPostboxEmailAdapter(secondary.PostboxConfig{}) // TODO NOT
+	// 4f. Postbox email adapter.
+	// POSTBOX_ENDPOINT: если не задан -- используется prod URL.
+	// Для локальной разработки: POSTBOX_ENDPOINT=http://localhost:9025/v2/email/outbound-emails
+	emailBox, err := secondary.NewPostboxEmailAdapter(secondary.PostboxConfig{
+		IAMToken:    requireEnv("POSTBOX_IAM_TOKEN"),
+		FromAddress: requireEnv("POSTBOX_FROM_ADDRESS"),
+		Endpoint:    getEnv("POSTBOX_ENDPOINT", ""),
+		Logger:      logger,
+	})
 	if err != nil {
 		return fmt.Errorf("NewPostboxEmailAdapter: %w", err)
 	}
@@ -179,14 +184,12 @@ func run(logger *zap.Logger) error {
 		googleOAuth,
 	)
 
-	accService := core.NewAccountService(otpRep, repo, eventsProducer, blacklist) // error
+	accService := core.NewAccountService(otpRep, repo, eventsProducer, blacklist)
 	tokenService := core.NewTokenService(tokenIssuer, blacklist, eventsProducer)
 	sessionService := core.NewSessionService(repo, blacklist, eventsProducer)
 	otpService := core.NewOTPService(otpRep, repo, emailBox)
 
 	// --- 6. Primary adapter (HTTP) ---------------------------------------------
-	// NewGinRouter принимает RouterDeps, a не RouterConfig.
-	// Спецификация: CORS invariant (§8): CORS middleware выполняется ДО JWT-валидации.
 	router := primary.NewGinRouter(primary.RouterDeps{
 		Logger:           logger,
 		TokenValidator:   tokenService,
@@ -239,7 +242,6 @@ func run(logger *zap.Logger) error {
 // RSA key loaders
 // ---------------------------------------------------------------------------
 
-// loadRSAPrivateKey читает PKCS#8 или PKCS#1 PEM-файл и возвращает *rsa.PrivateKey.
 func loadRSAPrivateKey(path string) (*rsa.PrivateKey, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -267,7 +269,6 @@ func loadRSAPrivateKey(path string) (*rsa.PrivateKey, error) {
 	}
 }
 
-// loadRSAPublicKey читает PKIX или PKCS#1 PEM-файл и возвращает *rsa.PublicKey.
 func loadRSAPublicKey(path string) (*rsa.PublicKey, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -299,8 +300,6 @@ func loadRSAPublicKey(path string) (*rsa.PublicKey, error) {
 // OTel
 // ---------------------------------------------------------------------------
 
-// initTracer инициализирует OTel SDK с OTLP gRPC экспортёром.
-// Согласно Observability.md: service.name = "identity-service".
 func initTracer(ctx context.Context) (func(context.Context) error, error) {
 	endpoint := getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
 
@@ -334,8 +333,6 @@ func initTracer(ctx context.Context) (func(context.Context) error, error) {
 // Env helpers
 // ---------------------------------------------------------------------------
 
-// requireEnv читает переменную окружения или паникует.
-// Паника намеренна: отсутствие обязательной переменной -- ошибка конфигурации, не runtime.
 func requireEnv(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
@@ -344,7 +341,6 @@ func requireEnv(key string) string {
 	return v
 }
 
-// getEnv читает переменную окружения с fallback-значением.
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
