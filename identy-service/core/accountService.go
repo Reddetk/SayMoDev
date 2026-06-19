@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 
 	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 	"github.com/Reddetk/SayMoDev/identy-service/port/out"
@@ -53,6 +54,7 @@ type AccountService struct {
 	accRep         out.AccountRepository
 	eventsProducer out.AccountEventsProducer
 	tokenBlacklist out.TokenBlacklist
+	log            logger.Logger
 }
 
 var accTracer = otel.Tracer("iam.AccountService")
@@ -62,8 +64,9 @@ func NewAccountService(
 	accR out.AccountRepository,
 	eventsP out.AccountEventsProducer,
 	tokenBL out.TokenBlacklist,
+	log logger.Logger,
 ) *AccountService {
-	return &AccountService{otpR, accR, eventsP, tokenBL}
+	return &AccountService{otpR, accR, eventsP, tokenBL, log}
 }
 
 func (a *AccountService) AdminGetAccountData(ctx context.Context, accountID string) (in.AccountDTO, error) {
@@ -72,6 +75,10 @@ func (a *AccountService) AdminGetAccountData(ctx context.Context, accountID stri
 
 	acc, err := a.accRep.FindByAccountID(ctx, accountID)
 	if err != nil {
+		a.log.Error("account.adminGet: FindByAccountID failed",
+			logger.String("account_id", accountID),
+			logger.Error(err),
+		)
 		return in.AccountDTO{}, err
 	}
 
@@ -101,14 +108,6 @@ func (a *AccountService) AdminChangeAccountData(ctx context.Context, accountDTO 
 }
 
 // Register -- Step 2: POST //auth/register
-//
-// Flow:
-//  1. Anti-enumeration: if email already registered -- simulate OTP latency, return nil (identical response shape)
-//  2. Validate OTP via constant-time comparison (§7)
-//  3. ACID transaction in repository: create account + password_history + outbox rows (AccountRegistered, AccountEmailVerified) + OTP cleanup
-//
-// Events AccountRegistered and AccountEmailVerified are published via outbox inside CreateAccountWithTx.
-// They are NOT published here to preserve atomicity -- outbox guarantees at-least-once delivery.
 func (a *AccountService) Register(
 	ctx context.Context,
 	email, usrVerifyCode, personalInfo, passwordHash string,
@@ -119,20 +118,26 @@ func (a *AccountService) Register(
 	ctx, span := accTracer.Start(ctx, "AccountService.Register")
 	defer span.End()
 
+	log := a.log.With(logger.String("op", "register"))
+
 	role, err := valobj.ParseRole(roleDTO)
 	if err != nil {
 		span.RecordError(err)
+		log.Warn("account.register: invalid role", logger.String("role", roleDTO), logger.Error(err))
 		return err
 	}
 
 	emailExists, err := a.accRep.EmailExist(ctx, email)
 	if err != nil {
+		log.Error("account.register: EmailExist failed", logger.Error(err))
 		return corerr.ErrAccountRepository
 	}
 
-	// §1 Anti-enumeration: identical timing and response shape for existing emails
+	// §1 Anti-enumeration
 	if emailExists {
+		log.Debug("account.register: email already exists, simulating (anti-enumeration)")
 		if err := a.otpRep.Immulate(ctx); err != nil {
+			log.Error("account.register: Immulate failed", logger.Error(err))
 			return corerr.ErrOTPRepository
 		}
 		return nil
@@ -141,24 +146,24 @@ func (a *AccountService) Register(
 	otp, err := valobj.NewOTP(usrVerifyCode)
 	if err != nil {
 		span.RecordError(err)
+		log.Warn("account.register: invalid OTP format", logger.Error(err))
 		return err
 	}
 
 	if err := a.checkOTP(ctx, email, otp, valobj.OTPPurposeRegistration); err != nil {
 		span.RecordError(err)
+		log.Warn("account.register: OTP check failed", logger.Error(err))
 		return err
 	}
 
 	cls, err := valobj.MapClassifier(classifier)
 	if err != nil {
+		log.Warn("account.register: invalid classifier", logger.Error(err))
 		return err
 	}
 	return a.createAccount(ctx, email, personalInfo, role, passwordHash, valobj.RegistrationMethodEmail, cls)
 }
 
-// checkOTP loads the stored verification record and performs constant-time hash comparison.
-// §7: generic error on any mismatch -- never distinguish wrong code / expired / not found.
-// §7: OTP plaintext is never written to logs or spans.
 func (a *AccountService) checkOTP(ctx context.Context, email string, otp valobj.OTP, purpose valobj.OTPPurpose) error {
 	ctx, span := accTracer.Start(ctx, "AccountService.checkOTP")
 	defer span.End()
@@ -166,27 +171,23 @@ func (a *AccountService) checkOTP(ctx context.Context, email string, otp valobj.
 	stored, err := a.otpRep.Find(ctx, email, purpose)
 	if err != nil {
 		span.RecordError(err)
+		a.log.Error("account.checkOTP: Find failed", logger.Error(err))
 		return corerr.ErrOTPRepository
 	}
 
-	// §7: single generic error for expired / not-found / wrong-code
 	if stored == nil || stored.IsExpired() {
+		a.log.Debug("account.checkOTP: OTP not found or expired")
 		return corerr.ErrUserOTPisNotCorrect
 	}
 
 	if subtle.ConstantTimeCompare([]byte(stored.Hash()), []byte(otp.Hash())) != 1 {
+		a.log.Debug("account.checkOTP: hash mismatch")
 		return corerr.ErrUserOTPisNotCorrect
 	}
 
 	return nil
 }
 
-// checkPasswordReuse returns ErrPasswordReused if plainNewPassword matches any of the
-// last N entries in the account's password history.
-//
-// §2: reuse check uses PasswordEntry.MatchesPlaintext (bcrypt.CompareHashAndPassword).
-// Byte equality is always false for valid bcrypt hashes because each hash embeds a unique random salt.
-// plainNewPassword is the raw password from the HTTP request; it is never stored or logged.
 func (a *AccountService) checkPasswordReuse(history []valobj.PasswordEntry, plainNewPassword string) error {
 	for _, entry := range history {
 		if entry.MatchesPlaintext(plainNewPassword) {
@@ -196,14 +197,6 @@ func (a *AccountService) checkPasswordReuse(history []valobj.PasswordEntry, plai
 	return nil
 }
 
-// createAccount builds the Account aggregate, attaches the first password history entry,
-// and persists everything in a single ACID transaction via the repository port.
-//
-// The repository is responsible for:
-//   - inserting the account row
-//   - inserting the password_history row
-//   - writing AccountRegistered and AccountEmailVerified outbox rows
-//   - deleting the consumed OTP record
 func (a *AccountService) createAccount(
 	ctx context.Context,
 	email, personalInfo string,
@@ -215,15 +208,19 @@ func (a *AccountService) createAccount(
 	ctx, span := accTracer.Start(ctx, "AccountService.createAccount")
 	defer span.End()
 
+	log := a.log.With(logger.String("op", "createAccount"))
+
 	acc, err := entity.NewAccount(email, personalInfo, role, passwordHash)
 	if err != nil {
 		span.RecordError(err)
+		log.Error("account.create: NewAccount failed", logger.Error(err))
 		return err
 	}
 
 	passwordEntry, err := valobj.NewPasswordEntry(passwordHash, acc.Metadata())
 	if err != nil {
 		span.RecordError(err)
+		log.Error("account.create: NewPasswordEntry failed", logger.Error(err))
 		return err
 	}
 	acc.AddPasswordHistory(passwordEntry)
@@ -231,33 +228,27 @@ func (a *AccountService) createAccount(
 	accountID, err := a.accRep.CreateAccountWithTx(ctx, acc)
 	if err != nil {
 		span.RecordError(err)
+		log.Error("account.create: CreateAccountWithTx failed", logger.Error(err))
 		return err
 	}
 
 	err = a.eventsProducer.AccountRegistered(ctx, accountID, role, clasifier, registrationMethod.String())
 	if err != nil {
+		log.Error("account.create: AccountRegistered event failed",
+			logger.String("account_id", accountID),
+			logger.Error(err),
+		)
 		return err
 	}
 
+	log.Info("account.create: account created", logger.String("account_id", accountID))
 	span.AddEvent("account.created",
 		trace.WithAttributes(attribute.String("accountID", accountID)),
 	)
 	return nil
 }
 
-// ConfrimPasswordReset -- POST //auth/password-reset (unauthenticated, OTP-gated)
-//
-// Flow:
-//  1. Constant-time OTP verification (§7)
-//  2. §2 Password history reuse check via PasswordEntry.MatchesPlaintext (O(5) bcrypt.Compare)
-//  3. entity.ChangePassword performs T4 mass-revoke: rev++, all sessions cleared, returns revokedJTIs (ADR)
-//  4. ACID transaction: password update + rev + cleared sessions persisted via ResetPassword port
-//  5. SetAccountRev writes new rev to Redis L2 (§G9; non-fatal on error)
-//  6. Publish AccessTokenRevoked for every revoked jti (outbox -- async durable)
-//  7. Publish AccountPasswordResetCompleted (audit)
-//
-// §6: mass-revoke is mandatory -- a locked/reset account must not leave valid 30-day tokens outstanding.
-// §3: rev++ performed by entity; revokedJTIs returned and passed to events producer.
+// ConfrimPasswordReset -- POST //auth/password-reset
 func (a *AccountService) ConfrimPasswordReset(
 	ctx context.Context,
 	email string,
@@ -268,54 +259,69 @@ func (a *AccountService) ConfrimPasswordReset(
 	ctx, span := accTracer.Start(ctx, "AccountService.ConfrimPasswordReset")
 	defer span.End()
 
+	log := a.log.With(logger.String("op", "passwordReset"))
+
 	account, err := a.accRep.FindByEmail(ctx, email)
 	if err != nil {
 		span.RecordError(err)
+		log.Error("account.passwordReset: FindByEmail failed", logger.Error(err))
 		return err
 	}
 
 	otpVO, err := valobj.NewOTP(otp)
 	if err != nil {
 		span.RecordError(err)
+		log.Warn("account.passwordReset: invalid OTP format", logger.Error(err))
 		return err
 	}
 
 	if err := a.checkOTP(ctx, email, otpVO, valobj.OTPPurposePasswordReset); err != nil {
 		span.RecordError(err)
+		log.Warn("account.passwordReset: OTP check failed", logger.Error(err))
 		return err
 	}
 
-	// §2: reuse check before T4 mass-revoke to avoid unnecessary session invalidation
 	if err := a.checkPasswordReuse(account.PasswordHistory(), plainNewPassword); err != nil {
 		span.RecordError(err)
+		log.Warn("account.passwordReset: password reuse detected",
+			logger.String("account_id", account.UUID()),
+		)
 		return err
 	}
 
-	// T4 Mass-Revoke: ChangePassword increments rev, clears all sessions, returns their JTIs
 	revokedJTIs, err := account.ChangePassword(newPasswordHash)
 	if err != nil {
 		span.RecordError(err)
+		log.Error("account.passwordReset: ChangePassword failed", logger.Error(err))
 		return err
 	}
 
-	// ACID: persist new password hash + incremented rev + cleared sessions
 	if err := a.accRep.ResetPassword(ctx, account, newPasswordHash); err != nil {
 		span.RecordError(err)
+		log.Error("account.passwordReset: ResetPassword TX failed",
+			logger.String("account_id", account.UUID()),
+			logger.Error(err),
+		)
 		return err
 	}
 
-	// §G9: write new rev to Redis L2 for immediate rev-check without PostgreSQL lookup
 	a.setAccountRevOrWarn(ctx, span, account.UUID(), account.Revision())
 
 	now := time.Now().UnixMilli()
-
 	a.publishRevokedJTIs(ctx, account.UUID(), account.Revision(), now, "password_reset", revokedJTIs)
 
 	if err := a.eventsProducer.AccountPasswordResetCompleted(ctx, account.UUID(), now); err != nil {
 		span.RecordError(err)
-		// non-fatal: outbox will retry; do not block the caller
+		log.Warn("account.passwordReset: AccountPasswordResetCompleted event failed",
+			logger.String("account_id", account.UUID()),
+			logger.Error(err),
+		)
 	}
 
+	log.Info("account.passwordReset: completed",
+		logger.String("account_id", account.UUID()),
+		logger.Int("revoked_sessions", len(revokedJTIs)),
+	)
 	span.AddEvent("password.reset", trace.WithAttributes(
 		attribute.String("accountID", account.UUID()),
 		attribute.Int("revokedSessions", len(revokedJTIs)),
@@ -324,17 +330,6 @@ func (a *AccountService) ConfrimPasswordReset(
 }
 
 // PasswordChange -- POST //auth/password-change (authenticated)
-//
-// Flow:
-//  1. §2 Password history reuse check via PasswordEntry.MatchesPlaintext (O(5) bcrypt.Compare)
-//  2. entity.ChangePassword performs T4 mass-revoke: rev++, all sessions cleared, returns revokedJTIs
-//  3. ACID transaction: new hash + rev + cleared sessions persisted via ResetPassword port
-//  4. SetAccountRev writes new rev to Redis L2 (§G9; non-fatal on error)
-//  5. Publish AccessTokenRevoked for every revoked jti
-//  6. Publish AccountPasswordChanged (audit)
-//
-// §2: history reuse check uses PasswordEntry.MatchesPlaintext (bcrypt.Compare) -- not byte equality.
-// Caller (HTTP handler) is responsible for verifying the current password before calling this method.
 func (a *AccountService) PasswordChange(
 	ctx context.Context,
 	accountID string,
@@ -344,36 +339,37 @@ func (a *AccountService) PasswordChange(
 	ctx, span := accTracer.Start(ctx, "AccountService.PasswordChange")
 	defer span.End()
 
+	log := a.log.With(logger.String("account_id", accountID), logger.String("op", "passwordChange"))
+
 	account, err := a.accRep.FindByAccountID(ctx, accountID)
 	if err != nil {
 		span.RecordError(err)
+		log.Error("account.passwordChange: FindByAccountID failed", logger.Error(err))
 		return err
 	}
 
-	// §2: reuse check before T4 mass-revoke to avoid unnecessary session invalidation
 	if err := a.checkPasswordReuse(account.PasswordHistory(), plainNewPassword); err != nil {
 		span.RecordError(err)
+		log.Warn("account.passwordChange: password reuse detected")
 		return err
 	}
 
-	// T4 Mass-Revoke
 	revokedJTIs, err := account.ChangePassword(newPasswordHash)
 	if err != nil {
 		span.RecordError(err)
+		log.Error("account.passwordChange: ChangePassword failed", logger.Error(err))
 		return err
 	}
 
-	// ACID: new hash + rev++ + sessions cleared
 	if err := a.accRep.ResetPassword(ctx, account, newPasswordHash); err != nil {
 		span.RecordError(err)
+		log.Error("account.passwordChange: ResetPassword TX failed", logger.Error(err))
 		return err
 	}
 
-	// §G9: write new rev to Redis L2 for immediate rev-check without PostgreSQL lookup
 	a.setAccountRevOrWarn(ctx, span, account.UUID(), account.Revision())
 
 	now := time.Now().UnixMilli()
-
 	a.publishRevokedJTIs(ctx, account.UUID(), account.Revision(), now, "password_changed", revokedJTIs)
 
 	if err := a.eventsProducer.AccountPasswordChanged(
@@ -383,8 +379,12 @@ func (a *AccountService) PasswordChange(
 		len(account.PasswordHistory()),
 	); err != nil {
 		span.RecordError(err)
+		log.Warn("account.passwordChange: AccountPasswordChanged event failed", logger.Error(err))
 	}
 
+	log.Info("account.passwordChange: completed",
+		logger.Int("revoked_sessions", len(revokedJTIs)),
+	)
 	span.AddEvent("password.changed", trace.WithAttributes(
 		attribute.String("accountID", account.UUID()),
 		attribute.Int("revokedSessions", len(revokedJTIs)),
@@ -393,11 +393,6 @@ func (a *AccountService) PasswordChange(
 }
 
 // LockAccount -- POST //admin/accounts/:id/lock
-//
-// §6 Lock Semantics: rev++ + all jti blacklisted + sessions deleted atomically.
-// Both brute-force auto-lock and admin-lock must follow the same T4 mass-revoke procedure.
-// RBAC (administrator role check) is enforced by the HTTP handler / middleware before reaching this method.
-// actorID is taken from JWT claims (token.sub), never from the request body (§ Audit).
 func (a *AccountService) LockAccount(
 	ctx context.Context,
 	accountID string,
@@ -407,36 +402,45 @@ func (a *AccountService) LockAccount(
 	ctx, span := accTracer.Start(ctx, "AccountService.LockAccount")
 	defer span.End()
 
+	log := a.log.With(
+		logger.String("account_id", accountID),
+		logger.String("actor_id", actorID),
+		logger.String("op", "lockAccount"),
+	)
+
 	account, err := a.accRep.FindByAccountID(ctx, accountID)
 	if err != nil {
 		span.RecordError(err)
+		log.Error("account.lock: FindByAccountID failed", logger.Error(err))
 		return err
 	}
 
-	// T4 Mass-Revoke: sets status=blocked, lockedUntil, rev++, clears all sessions
 	revokedJTIs, err := account.Lock(until)
 	if err != nil {
 		span.RecordError(err)
+		log.Warn("account.lock: Lock entity method failed", logger.Error(err))
 		return err
 	}
 
-	// ACID: persist status + lockedUntil + rev + blacklist entries for all revoked JTIs
 	if err := a.accRep.UpdateAccountStatusTx(ctx, account, revokedJTIs, actorID); err != nil {
 		span.RecordError(err)
+		log.Error("account.lock: UpdateAccountStatusTx failed", logger.Error(err))
 		return err
 	}
 
-	// §G9: write new rev to Redis L2 for immediate rev-check without PostgreSQL lookup
 	a.setAccountRevOrWarn(ctx, span, account.UUID(), account.Revision())
 
 	now := time.Now().UnixMilli()
-
 	a.publishRevokedJTIs(ctx, account.UUID(), account.Revision(), now, "account_locked", revokedJTIs)
 
 	if err := a.eventsProducer.AccountLockedByAdmin(ctx, account.UUID(), until, actorID); err != nil {
 		span.RecordError(err)
+		log.Warn("account.lock: AccountLockedByAdmin event failed", logger.Error(err))
 	}
 
+	log.Info("account.lock: account locked",
+		logger.Int("revoked_sessions", len(revokedJTIs)),
+	)
 	span.AddEvent("account.locked", trace.WithAttributes(
 		attribute.String("accountID", account.UUID()),
 		attribute.String("actorID", actorID),
@@ -446,10 +450,6 @@ func (a *AccountService) LockAccount(
 }
 
 // UnlockAccount -- POST //admin/accounts/:id/unlock
-//
-// Restores status=active, clears lockedUntil.
-// Does NOT issue a new token -- actor must re-authenticate.
-// RBAC and actorID sourcing follow the same rules as LockAccount.
 func (a *AccountService) UnlockAccount(
 	ctx context.Context,
 	accountID string,
@@ -458,30 +458,38 @@ func (a *AccountService) UnlockAccount(
 	ctx, span := accTracer.Start(ctx, "AccountService.UnlockAccount")
 	defer span.End()
 
+	log := a.log.With(
+		logger.String("account_id", accountID),
+		logger.String("actor_id", actorID),
+		logger.String("op", "unlockAccount"),
+	)
+
 	account, err := a.accRep.FindByAccountID(ctx, accountID)
 	if err != nil {
 		span.RecordError(err)
+		log.Error("account.unlock: FindByAccountID failed", logger.Error(err))
 		return err
 	}
 
-	// Restores status=active, lockedUntil=nil; no sessions to revoke
 	if err := account.Unlock(); err != nil {
 		span.RecordError(err)
+		log.Warn("account.unlock: Unlock entity method failed", logger.Error(err))
 		return err
 	}
 
-	// ACID: persist status + cleared lockedUntil + incremented metadata
-	// revokedJTIs is empty -- Unlock does not perform T4 mass-revoke
 	if err := a.accRep.UpdateAccountStatusTx(ctx, account, nil, actorID); err != nil {
 		span.RecordError(err)
+		log.Error("account.unlock: UpdateAccountStatusTx failed", logger.Error(err))
 		return err
 	}
 
 	now := time.Now().UnixMilli()
 	if err := a.eventsProducer.AccountUnlocked(ctx, account.UUID(), now); err != nil {
 		span.RecordError(err)
+		log.Warn("account.unlock: AccountUnlocked event failed", logger.Error(err))
 	}
 
+	log.Info("account.unlock: account unlocked")
 	span.AddEvent("account.unlocked", trace.WithAttributes(
 		attribute.String("accountID", account.UUID()),
 	))
@@ -489,10 +497,6 @@ func (a *AccountService) UnlockAccount(
 }
 
 // SoftDelete -- DELETE //admin/accounts/:id
-//
-// T4 Mass-Revoke: status=deleted, rev++, all sessions cleared.
-// Downstream cascade (BC#2 billing archive, BC#4 PII anonymisation) is driven by AccountDeleted event.
-// actorID is sourced from JWT claims in the calling layer.
 func (a *AccountService) SoftDelete(
 	ctx context.Context,
 	accountID string,
@@ -501,36 +505,45 @@ func (a *AccountService) SoftDelete(
 	ctx, span := accTracer.Start(ctx, "AccountService.SoftDelete")
 	defer span.End()
 
+	log := a.log.With(
+		logger.String("account_id", accountID),
+		logger.String("actor_id", actorID),
+		logger.String("op", "softDelete"),
+	)
+
 	account, err := a.accRep.FindByAccountID(ctx, accountID)
 	if err != nil {
 		span.RecordError(err)
+		log.Error("account.delete: FindByAccountID failed", logger.Error(err))
 		return err
 	}
 
-	// T4 Mass-Revoke: sets status=deleted, rev++, clears all sessions
 	revokedJTIs, err := account.SoftDelete()
 	if err != nil {
 		span.RecordError(err)
+		log.Error("account.delete: SoftDelete entity method failed", logger.Error(err))
 		return err
 	}
 
-	// ACID: persist status + rev + blacklist entries for all revoked JTIs
 	if err := a.accRep.UpdateAccountStatusTx(ctx, account, revokedJTIs, actorID); err != nil {
 		span.RecordError(err)
+		log.Error("account.delete: UpdateAccountStatusTx failed", logger.Error(err))
 		return err
 	}
 
-	// §G9: write new rev to Redis L2 for immediate rev-check without PostgreSQL lookup
 	a.setAccountRevOrWarn(ctx, span, account.UUID(), account.Revision())
 
 	now := time.Now().UnixMilli()
-
 	a.publishRevokedJTIs(ctx, account.UUID(), account.Revision(), now, "account_deleted", revokedJTIs)
 
 	if err := a.eventsProducer.AccountDeleted(ctx, account.UUID(), now, actorID); err != nil {
 		span.RecordError(err)
+		log.Warn("account.delete: AccountDeleted event failed", logger.Error(err))
 	}
 
+	log.Info("account.delete: account deleted",
+		logger.Int("revoked_sessions", len(revokedJTIs)),
+	)
 	span.AddEvent("account.deleted", trace.WithAttributes(
 		attribute.String("accountID", account.UUID()),
 		attribute.String("actorID", actorID),
@@ -540,12 +553,6 @@ func (a *AccountService) SoftDelete(
 }
 
 // publishRevokedJTIs publishes AccessTokenRevoked for each revoked JTI.
-//
-// G9 Revocation Write Order: Redis L2 blacklist write is performed by the infrastructure adapter
-// behind the AccountEventsProducer (outbox pattern). Errors are logged as spans but do not
-// propagate to the caller -- the outbox guarantees eventual delivery to L3 PostgreSQL.
-//
-// §6: every T4 mass-revoke operation (Lock, ChangePassword, SoftDelete) calls this helper.
 func (a *AccountService) publishRevokedJTIs(
 	ctx context.Context,
 	accountID string,
@@ -556,7 +563,12 @@ func (a *AccountService) publishRevokedJTIs(
 ) {
 	for _, jti := range revokedJTIs {
 		if err := a.eventsProducer.AccessTokenRevoked(ctx, accountID, rev, now, reason); err != nil {
-			// non-fatal: span records the error; outbox will retry delivery
+			a.log.Warn("account.publishRevokedJTIs: AccessTokenRevoked failed",
+				logger.String("account_id", accountID),
+				logger.String("jti", jti),
+				logger.String("reason", reason),
+				logger.Error(err),
+			)
 			_, span := accTracer.Start(ctx, "AccountService.publishRevokedJTIs.warn")
 			span.RecordError(err)
 			span.SetAttributes(
@@ -570,10 +582,6 @@ func (a *AccountService) publishRevokedJTIs(
 }
 
 // setAccountRevOrWarn writes the new rev to Redis L2 after a successful T4 mass-revoke transaction.
-//
-// §G9: the TX is already committed when this is called; failure here only degrades the
-// rev-check path to L3 PostgreSQL lookup (TokenService falls back automatically).
-// Error is recorded as a span warning, not propagated to the caller.
 func (a *AccountService) setAccountRevOrWarn(
 	ctx context.Context,
 	span trace.Span,
@@ -581,6 +589,11 @@ func (a *AccountService) setAccountRevOrWarn(
 	rev int64,
 ) {
 	if err := a.tokenBlacklist.SetAccountRev(ctx, accountID, rev); err != nil {
+		a.log.Warn("account.setAccountRev: SetAccountRev failed, degraded to L3 lookup",
+			logger.String("account_id", accountID),
+			logger.Int64("rev", rev),
+			logger.Error(err),
+		)
 		span.RecordError(err)
 		span.SetAttributes(
 			attribute.String("warn", "SetAccountRev failed; degraded to L3 lookup"),
