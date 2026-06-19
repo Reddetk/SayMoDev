@@ -10,15 +10,14 @@ tasks:
 
   # ---------------------------------------------------------------------------
   # RSA keys
-  # PowerShell: New-Item -ItemType Directory -Force используется вместо mkdir -p
+  # Генерация через Go -- не требует openssl в PATH.
+  # Идемпотентно: если ключи уже есть -- ничего не делает.
   # ---------------------------------------------------------------------------
 
   gen-rsa:
-    desc: "Generate RSA-2048 key pair in testdata/keys/"
+    desc: "Generate RSA-2048 key pair in testdata/keys/ (no openssl required)"
     cmds:
-      - powershell -Command "New-Item -ItemType Directory -Force -Path testdata/keys | Out-Null"
-      - openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out testdata/keys/private.pem
-      - openssl rsa -pubout -in testdata/keys/private.pem -out testdata/keys/public.pem
+      - go run ./cmd/genrsa/main.go
     generates:
       - testdata/keys/private.pem
       - testdata/keys/public.pem
@@ -83,13 +82,11 @@ tasks:
   build:
     desc: "Build server binary -> bin/server"
     cmds:
-      - powershell -Command "New-Item -ItemType Directory -Force -Path bin | Out-Null"
       - go build -ldflags="-s -w" -o bin/server ./cmd/main.go
 
   build:migrate:
     desc: "Build migrate binary -> bin/migrate"
     cmds:
-      - powershell -Command "New-Item -ItemType Directory -Force -Path bin | Out-Null"
       - go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate/main.go
 
   # ---------------------------------------------------------------------------
@@ -114,7 +111,8 @@ tasks:
 
   # ---------------------------------------------------------------------------
   # Dev (local go run + docker infra)
-  # Порядок: gen-rsa (если ключей нет) -> infra:up -> migrate:up -> run
+  # Первый запуск: task gen-rsa && task dev
+  # Повторные: task dev
   # ---------------------------------------------------------------------------
 
   dev:
