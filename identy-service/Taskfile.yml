@@ -10,12 +10,13 @@ tasks:
 
   # ---------------------------------------------------------------------------
   # RSA keys
+  # PowerShell: New-Item -ItemType Directory -Force используется вместо mkdir -p
   # ---------------------------------------------------------------------------
 
   gen-rsa:
     desc: "Generate RSA-2048 key pair in testdata/keys/"
     cmds:
-      - mkdir -p testdata/keys
+      - powershell -Command "New-Item -ItemType Directory -Force -Path testdata/keys | Out-Null"
       - openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out testdata/keys/private.pem
       - openssl rsa -pubout -in testdata/keys/private.pem -out testdata/keys/public.pem
     generates:
@@ -29,7 +30,7 @@ tasks:
   infra:up:
     desc: "Start postgres + redis (detached). Postgres healthcheck is managed by docker compose."
     cmds:
-      - docker compose up -d postgres redis-bc1 redis-blacklist migrate-init 
+      - docker compose up -d postgres redis-bc1 redis-blacklist migrate-init
       - docker compose ps
 
   infra:down:
@@ -82,13 +83,13 @@ tasks:
   build:
     desc: "Build server binary -> bin/server"
     cmds:
-      - mkdir -p bin
+      - powershell -Command "New-Item -ItemType Directory -Force -Path bin | Out-Null"
       - go build -ldflags="-s -w" -o bin/server ./cmd/main.go
 
   build:migrate:
     desc: "Build migrate binary -> bin/migrate"
     cmds:
-      - mkdir -p bin
+      - powershell -Command "New-Item -ItemType Directory -Force -Path bin | Out-Null"
       - go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate/main.go
 
   # ---------------------------------------------------------------------------
@@ -113,8 +114,7 @@ tasks:
 
   # ---------------------------------------------------------------------------
   # Dev (local go run + docker infra)
-  # Гарантия порядка: infra:up должен завершиться и postgres должен стать healthy
-  # до запуска migrate:up. Если postgres ещё не готов -- подожди 30s и повтори task migrate:up.
+  # Порядок: gen-rsa (если ключей нет) -> infra:up -> migrate:up -> run
   # ---------------------------------------------------------------------------
 
   dev:
