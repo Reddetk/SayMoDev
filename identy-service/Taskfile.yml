@@ -51,26 +51,6 @@ tasks:
     cmds:
       - docker compose logs -f postgres redis-bc1 redis-blacklist
 
-  # Ожидает пока postgres не перейдёт в статус healthy.
-  # Проверяет через docker inspect, не через TCP-сокет --
-  # позволяет избежать конфликта с локальным PG на том же порту.
-  infra:wait-pg:
-    desc: "Wait until postgres container is healthy"
-    internal: true
-    cmds:
-      - |
-        for i in $(seq 1 {{.PG_WAIT_RETRIES}}); do
-          STATUS=$(docker inspect --format='{{{{.State.Health.Status}}}}' identy-service-postgres-1 2>/dev/null)
-          echo "postgres health: $STATUS (attempt $i/{{.PG_WAIT_RETRIES}})"
-          if [ "$STATUS" = "healthy" ]; then
-            exit 0
-          fi
-          sleep {{.PG_WAIT_SLEEP}}
-        done
-        echo "ERROR: postgres did not become healthy in time"
-        docker compose logs postgres
-        exit 1
-
   # ---------------------------------------------------------------------------
   # Migrations
   # ---------------------------------------------------------------------------
@@ -171,4 +151,3 @@ tasks:
     cmds:
       - go test ./... -count=1 -coverprofile=coverage.out
       - go tool cover -html=coverage.out -o coverage.html
-      - echo "Report: coverage.html"
