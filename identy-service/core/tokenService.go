@@ -10,6 +10,7 @@ import (
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 	"github.com/Reddetk/SayMoDev/identy-service/port/out"
 )
@@ -34,17 +35,20 @@ type TokenService struct {
 	tokenIssuer    out.TokenIssuer
 	tokenBlacklist out.TokenBlacklist
 	eventsProducer out.AccountEventsProducer
+	logger         logger.Logger
 }
 
 func NewTokenService(
 	tokenIssuer out.TokenIssuer,
 	tokenBlacklist out.TokenBlacklist,
 	eventsProducer out.AccountEventsProducer,
+	log logger.Logger,
 ) *TokenService {
 	return &TokenService{
 		tokenIssuer:    tokenIssuer,
 		tokenBlacklist: tokenBlacklist,
 		eventsProducer: eventsProducer,
+		logger:         log,
 	}
 }
 

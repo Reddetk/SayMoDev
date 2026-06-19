@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 	"github.com/Reddetk/SayMoDev/identy-service/port/out"
 )
@@ -38,17 +39,20 @@ type SessionService struct {
 	accRep         out.AccountRepository
 	tokenBlacklist out.TokenBlacklist
 	eventsProducer out.AccountEventsProducer
+	logger         logger.Logger
 }
 
 func NewSessionService(
 	accRep out.AccountRepository,
 	tokenBlacklist out.TokenBlacklist,
 	eventsProducer out.AccountEventsProducer,
+	log logger.Logger,
 ) *SessionService {
 	return &SessionService{
 		accRep:         accRep,
 		tokenBlacklist: tokenBlacklist,
 		eventsProducer: eventsProducer,
+		logger:         log,
 	}
 }
 

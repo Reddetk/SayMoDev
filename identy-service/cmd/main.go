@@ -181,10 +181,10 @@ func run(logger logger.Logger) error {
 		googleOAuth,
 	)
 
-	accService := core.NewAccountService(otpRep, repo, eventsProducer, blacklist)
-	tokenService := core.NewTokenService(tokenIssuer, blacklist, eventsProducer)
+	accService := core.NewAccountService(otpRep, repo, eventsProducer, blacklist, logger)
+	tokenService := core.NewTokenService(tokenIssuer, blacklist, eventsProducer, logger)
 	sessionService := core.NewSessionService(repo, blacklist, eventsProducer)
-	otpService := core.NewOTPService(otpRep, repo, emailBox)
+	otpService := core.NewOTPService(otpRep, repo, emailBox, logger)
 
 	// --- 6. Primary adapter (HTTP) ---------------------------------------------
 	router := primary.NewGinRouter(primary.RouterDeps{

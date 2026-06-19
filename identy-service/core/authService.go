@@ -6,6 +6,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/bytedance/gopkg/util/logger"
 	"github.com/google/uuid"
 
 	"go.opentelemetry.io/otel"
@@ -36,6 +37,7 @@ type AuthService struct {
 	rateLimiter    out.RateLimiter
 	eventsProducer out.AccountEventsProducer
 	googleOAuth    out.GoogleOAuthProvider
+	logger         logger.Logger
 }
 
 func NewAuthService(
@@ -45,6 +47,7 @@ func NewAuthService(
 	rateLimiter out.RateLimiter,
 	eventsProducer out.AccountEventsProducer,
 	googleOAuth out.GoogleOAuthProvider,
+	log logger.Logger,
 ) *AuthService {
 	return &AuthService{
 		accRep:         accRep,
@@ -53,6 +56,7 @@ func NewAuthService(
 		rateLimiter:    rateLimiter,
 		eventsProducer: eventsProducer,
 		googleOAuth:    googleOAuth,
+		logger:         log,
 	}
 }
 

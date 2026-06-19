@@ -26,7 +26,7 @@ func buildAuthService(
 	events *mocks.MockAccountEventsProducer,
 	oauth *mocks.MockGoogleOAuthProvider,
 ) *core.AuthService {
-	return core.NewAuthService(repo, issuer, blacklist, rl, events, oauth)
+	return core.NewAuthService(repo, issuer, blacklist, rl, events, oauth, nil)
 }
 
 // --- AuthService.Login ------------------------------------------------------
