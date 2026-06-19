@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
@@ -200,6 +201,7 @@ func run(logger *zap.Logger) error {
 		AccountOpertator: accService,
 		PasswordOperator: accService,
 		OTPIssuer:        otpService,
+		Metrics:          prometheus.DefaultRegisterer, // TOOO CORS
 	})
 
 	addr := getEnv("HTTP_ADDR", ":8080")

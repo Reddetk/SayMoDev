@@ -45,7 +45,7 @@ func (s *OTPService) issueOTP(ctx context.Context, email string, purpose valobj.
 		return corerr.ErrAccountRepository
 	}
 
-	if emailExists {
+	if !emailExists {
 		if err := s.otpRep.Immulate(ctx); err != nil {
 			return corerr.ErrOTPRepository
 		}
