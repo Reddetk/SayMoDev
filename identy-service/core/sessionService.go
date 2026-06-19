@@ -16,25 +16,6 @@ import (
 
 var sessTracer = otel.Tracer("iam.sessionService")
 
-// SessionService реализует управление жизненным циклом сессии после её создания.
-//
-// Не выпускает токены — это ответственность AuthService.
-// Не знает о AuthService, AccountService или OtpService.
-//
-// Инварианты:
-//   - Максимум 5 concurrent сессий на аккаунт — соблюдается в entity.Account.OpenSession();
-//     этот сервис не проверяет и не дублирует логику.
-//   - Pessimistic lock при eviction — ответственность адаптера (SELECT ... FOR UPDATE в Postgres).
-//   - JTI blacklist: G9 Write Order — outbox (L3) через DeleteSessionWithTx,
-//     Redis L2 — через tokenBlacklist.Add после успешного коммита.
-//
-// Юз-кейсы:
-//   - POST /iam/auth/logout               → Logout
-//   - DELETE /iam/admin/sessions/:id      → AdminTerminateSession
-//
-// События:
-//   - SessionTerminated       — logout
-//   - SessionTerminatedByAdmin — admin-initiated termination
 type SessionService struct {
 	accRep         out.AccountRepository
 	tokenBlacklist out.TokenBlacklist
@@ -56,17 +37,6 @@ func NewSessionService(
 	}
 }
 
-// Logout реализует POST /iam/auth/logout.
-//
-// Цепочка (ADR-001, G9 Write Order):
-//
-//	[1] FindByAccountID — загрузить агрегат со всеми сессиями
-//	[2] account.RevokeSession — удалить сессию с агрегата, получить jti
-//	[3] DeleteSessionWithTx — ACID: DELETE session + INSERT blacklist outbox (L3)
-//	[4] TokenBlacklist.Add — Redis L2 после успешного коммита (G9)
-//	[5] SessionTerminated event — fire-and-forget
-//
-// accountID и sessionID поступают из AuthContext JWT, валидированного middleware.
 func (s *SessionService) Logout(
 	ctx context.Context,
 	accountID string,
@@ -74,6 +44,12 @@ func (s *SessionService) Logout(
 ) error {
 	ctx, span := sessTracer.Start(ctx, "SessionService.Logout")
 	defer span.End()
+
+	log := s.logger.With(
+		logger.String("op", "logout"),
+		logger.String("account_id", accountID),
+		logger.String("session_id", sessionID),
+	)
 
 	span.SetAttributes(
 		attribute.String("session.account_id", accountID),
@@ -84,34 +60,35 @@ func (s *SessionService) Logout(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "account not found")
+		log.Warn("session.logout: account not found", logger.Error(err))
 		return corerr.ErrAccountNotFound
 	}
 
-	// [2] Удаляем сессию с агрегата — получаем jti для blacklist
 	revokedJTI, err := account.RevokeSession(sessionID)
 	if err != nil {
-		// ErrSessionNotFound: сессия уже завершена или не принадлежит аккаунту — idempotent logout
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "session not found")
+		log.Warn("session.logout: RevokeSession failed (session already gone?)", logger.Error(err))
 		return err
 	}
 
-	// [3] ACID: DELETE session + outbox blacklist (L3)
 	if err := s.accRep.DeleteSessionWithTx(ctx, account, revokedJTI); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "delete session failed")
+		log.Error("session.logout: DeleteSessionWithTx failed", logger.Error(err))
 		return err
 	}
 
-	// [4] G9 Write Order: L2 Redis после успешного коммита L3
 	if blErr := s.tokenBlacklist.Add(ctx, revokedJTI, 0); blErr != nil {
-		// WARN: outbox (шаг 3) уже гарантирует L3; L2 недоступен — не блокируем ответ
 		span.RecordError(blErr)
+		log.Warn("session.logout: blacklist L2 Add failed (outbox will retry)",
+			logger.String("revoked_jti", revokedJTI),
+			logger.Error(blErr),
+		)
 	}
 
 	span.SetAttributes(attribute.String("session.revoked_jti", revokedJTI))
 
-	// [5] fire-and-forget: ошибка публикации не блокирует ответ клиенту
 	if evErr := s.eventsProducer.SessionTerminated(
 		ctx,
 		accountID,
@@ -119,19 +96,13 @@ func (s *SessionService) Logout(
 		time.Now().UnixMilli(),
 	); evErr != nil {
 		span.RecordError(evErr)
+		log.Warn("session.logout: SessionTerminated event failed (non-fatal)", logger.Error(evErr))
 	}
 
+	log.Info("session.logout: session terminated", logger.String("revoked_jti", revokedJTI))
 	return nil
 }
 
-// AdminTerminateSession реализует DELETE /iam/admin/sessions/:id.
-//
-// Цепочка идентична Logout, отличается:
-//   - accountID целевого аккаунта (ане adminID из AuthContext) передаётся из path-параметра хандлера
-//   - событие SessionTerminatedByAdmin (ADR-001) содержит adminID
-//
-// adminID — UUID администратора из AuthContext JWT запроса; хандлер вложил его в вызов.
-// targetAccountID — владелец сессии; хандлер резолвит его из path-параметра sessionID через sessions-lookup.
 func (s *SessionService) AdminTerminateSession(
 	ctx context.Context,
 	targetAccountID string,
@@ -141,43 +112,52 @@ func (s *SessionService) AdminTerminateSession(
 	ctx, span := sessTracer.Start(ctx, "SessionService.AdminTerminateSession")
 	defer span.End()
 
+	log := s.logger.With(
+		logger.String("op", "adminTerminateSession"),
+		logger.String("target_account_id", targetAccountID),
+		logger.String("session_id", sessionID),
+		logger.String("admin_id", adminID),
+	)
+
 	span.SetAttributes(
 		attribute.String("session.target_account_id", targetAccountID),
 		attribute.String("session.session_id", sessionID),
 		attribute.String("session.admin_id", adminID),
 	)
 
-	// [1] Загрузить целевой агрегат, не агрегат администратора
 	account, err := s.accRep.FindByAccountID(ctx, targetAccountID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "account not found")
+		log.Warn("session.adminTerminate: account not found", logger.Error(err))
 		return corerr.ErrAccountNotFound
 	}
 
-	// [2] Удалить сессию с агрегата
 	revokedJTI, err := account.RevokeSession(sessionID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "session not found")
+		log.Warn("session.adminTerminate: RevokeSession failed", logger.Error(err))
 		return err
 	}
 
-	// [3] ACID: DELETE session + outbox blacklist (L3)
 	if err := s.accRep.DeleteSessionWithTx(ctx, account, revokedJTI); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "delete session failed")
+		log.Error("session.adminTerminate: DeleteSessionWithTx failed", logger.Error(err))
 		return err
 	}
 
-	// [4] G9 Write Order: Redis L2 после L3
 	if blErr := s.tokenBlacklist.Add(ctx, revokedJTI, 0); blErr != nil {
 		span.RecordError(blErr)
+		log.Warn("session.adminTerminate: blacklist L2 Add failed (outbox will retry)",
+			logger.String("revoked_jti", revokedJTI),
+			logger.Error(blErr),
+		)
 	}
 
 	span.SetAttributes(attribute.String("session.revoked_jti", revokedJTI))
 
-	// [5] fire-and-forget: SessionTerminatedByAdmin (ADR-001) — несёт adminID
 	if evErr := s.eventsProducer.SessionTerminatedByAdmin(
 		ctx,
 		targetAccountID,
@@ -186,8 +166,12 @@ func (s *SessionService) AdminTerminateSession(
 		time.Now().UnixMilli(),
 	); evErr != nil {
 		span.RecordError(evErr)
+		log.Warn("session.adminTerminate: SessionTerminatedByAdmin event failed (non-fatal)", logger.Error(evErr))
 	}
 
+	log.Info("session.adminTerminate: session terminated by admin",
+		logger.String("revoked_jti", revokedJTI),
+	)
 	return nil
 }
 
@@ -197,6 +181,10 @@ func (s *SessionService) AdminGetSessions(ctx context.Context, AccID string) ([]
 
 	acc, err := s.accRep.FindByAccountID(ctx, AccID)
 	if err != nil {
+		s.logger.Warn("session.adminGetSessions: account not found",
+			logger.String("account_id", AccID),
+			logger.Error(err),
+		)
 		return nil, err
 	}
 	return acc.SessionsDTO(), nil

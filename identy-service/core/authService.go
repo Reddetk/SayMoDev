@@ -24,12 +24,6 @@ import (
 
 var authTracer = otel.Tracer("iam.authService")
 
-// AuthService реализует in-port AccountAuthenticator.
-//
-// Зависимости инжектируются только как out-порты (интерфейсы).
-// AuthService не знает о SessionService, TokenService или AccountService.
-// Вся координация выполняется через out.AccountRepository, out.TokenIssuer,
-// out.TokenBlacklist, out.RateLimiter, out.AccountEventsProducer и out.GoogleOAuthProvider.
 type AuthService struct {
 	accRep         out.AccountRepository
 	tokenIssuer    out.TokenIssuer
@@ -60,23 +54,6 @@ func NewAuthService(
 	}
 }
 
-// Login реализует юз-кейс POST /iam/auth/login.
-//
-// Цепочка (строгий порядок):
-//
-//	[1] CheckIP         — до любого обращения к БД (anti-scraping)
-//	[2] FindByEmail     — если не найден, выполняется bcrypt против DummyPasswordHash
-//	                      и возвращается ErrInvalidCredentials (timing safety)
-//	[3] account.IsLocked — проверяем статус агрегата без внешних вызовов
-//	[4] CheckAccount    — per-account rate limit до bcrypt
-//	[5] bcrypt.Compare  — единственное место сравнения пароля;
-//	                      при провале: RecordFailure → ErrInvalidCredentials
-//	[6] openSessionAndIssueToken — общая цепочка выпуска токена
-//
-// Инварианты:
-//   - ErrInvalidCredentials возвращается при любом сбое аутентификации (no credential oracle)
-//   - bcrypt.Compare выполняется ВСЕГДА, в том числе для несуществующего email
-//   - IP-first: 429 возвращается до любого обращения к аккаунту
 func (s *AuthService) Login(
 	ctx context.Context,
 	email string,
@@ -87,9 +64,12 @@ func (s *AuthService) Login(
 	ctx, span := authTracer.Start(ctx, "AuthService.Login")
 	defer span.End()
 
+	log := s.logger.With(logger.String("op", "login"), logger.String("ip", clientIP))
+
 	if err := s.rateLimiter.CheckIP(ctx, clientIP); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "rate limit ip")
+		log.Warn("auth.login: IP rate limit exceeded")
 		return in.LoginResult{}, corerr.ErrRateLimitIP
 	}
 
@@ -99,6 +79,7 @@ func (s *AuthService) Login(
 		span.RecordError(corerr.ErrInvalidCredentials)
 		span.SetAttributes(attribute.Bool("auth.account_found", false))
 		span.SetStatus(codes.Error, "invalid credentials")
+		log.Debug("auth.login: account not found (timing-safe dummy bcrypt executed)")
 		return in.LoginResult{}, corerr.ErrInvalidCredentials
 	}
 
@@ -106,12 +87,14 @@ func (s *AuthService) Login(
 		span.RecordError(corerr.ErrAccountLocked)
 		span.SetAttributes(attribute.Bool("auth.account_locked", true))
 		span.SetStatus(codes.Error, "invalid credentials")
+		log.Warn("auth.login: account is locked", logger.String("account_id", account.UUID()))
 		return in.LoginResult{}, corerr.ErrInvalidCredentials
 	}
 
 	if err := s.rateLimiter.CheckAccount(ctx, account.UUID()); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "rate limit account")
+		log.Warn("auth.login: account rate limit exceeded", logger.String("account_id", account.UUID()))
 		return in.LoginResult{}, corerr.ErrRateLimitAccount
 	}
 
@@ -121,26 +104,17 @@ func (s *AuthService) Login(
 	); err != nil {
 		if rfErr := s.rateLimiter.RecordFailure(ctx, clientIP, account.UUID()); rfErr != nil {
 			span.RecordError(rfErr)
+			log.Warn("auth.login: RecordFailure failed", logger.Error(rfErr))
 		}
 		span.RecordError(corerr.ErrInvalidCredentials)
 		span.SetStatus(codes.Error, "invalid credentials")
+		log.Debug("auth.login: bcrypt mismatch", logger.String("account_id", account.UUID()))
 		return in.LoginResult{}, corerr.ErrInvalidCredentials
 	}
 
 	return s.openSessionAndIssueToken(ctx, account, fingerprint)
 }
 
-// InitiateGoogleOAuth реализует GET /iam/auth/oauth/google.
-//
-// Цепочка:
-//
-//	[1] CheckIP — IP-first rate check (анти-скрейпинг, симметрично Login)
-//	[2] googleOAuth.BuildAuthURL — адаптер генерирует PKCE + CSRF state,
-//	    сохраняет OAuthState server-side (сигнед cookie / store)
-//	[3] возвращает redirectURL — HTTP-хандлер выполняет 302
-//
-// Core не генерирует code_verifier/CSRF — ответственность адаптера.
-// Spec: IAM §OAuth2 flow, шаги [1]–[2].
 func (s *AuthService) InitiateGoogleOAuth(
 	ctx context.Context,
 	clientIP string,
@@ -148,9 +122,12 @@ func (s *AuthService) InitiateGoogleOAuth(
 	ctx, span := authTracer.Start(ctx, "AuthService.InitiateGoogleOAuth")
 	defer span.End()
 
+	log := s.logger.With(logger.String("op", "oauthInitiate"), logger.String("ip", clientIP))
+
 	if err := s.rateLimiter.CheckIP(ctx, clientIP); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "rate limit ip")
+		log.Warn("auth.oauthInitiate: IP rate limit exceeded")
 		return "", in.OAuthState{}, corerr.ErrRateLimitIP
 	}
 
@@ -159,29 +136,15 @@ func (s *AuthService) InitiateGoogleOAuth(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "build auth url failed")
+		log.Error("auth.oauthInitiate: BuildAuthURL failed", logger.Error(err))
 		return "", in.OAuthState{}, err
 	}
 
 	span.SetAttributes(attribute.Bool("oauth.initiated", true))
+	log.Debug("auth.oauthInitiate: redirect URL built")
 	return redirectURL, state, nil
 }
 
-// HandleGoogleCallback реализует GET /iam/auth/oauth/google/callback.
-//
-// Цепочка (строгий порядок):
-//
-//	[1] CheckIP        — IP-first rate check
-//	[2] ValidateState  — CSRF protection до любых DB-вызовов
-//	[3] ExchangeCode   — code exchange + JWKS verify + claims (email_verified=true в адаптере)
-//	[4] claims.EmailVerified() — defence-in-depth проверка в core
-//	[5] resolveOAuthAccount — CASE A/B/C/D lookup/create
-//	[6] account.IsLocked — проверка статуса
-//	[7] openSessionAndIssueToken — общая цепочка выпуска токена
-//
-// Инварианты:
-//   - email_verified: проверяется в адаптере + defence-in-depth в core
-//   - timing safety не применяется — нет password comparison в OAuth
-//   - IP-first симметрично Login
 func (s *AuthService) HandleGoogleCallback(
 	ctx context.Context,
 	code string,
@@ -193,40 +156,42 @@ func (s *AuthService) HandleGoogleCallback(
 	ctx, span := authTracer.Start(ctx, "AuthService.HandleGoogleCallback")
 	defer span.End()
 
-	// [1] IP-first
+	log := s.logger.With(logger.String("op", "oauthCallback"), logger.String("ip", clientIP))
+
 	if err := s.rateLimiter.CheckIP(ctx, clientIP); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "rate limit ip")
+		log.Warn("auth.oauthCallback: IP rate limit exceeded")
 		return in.LoginResult{}, corerr.ErrRateLimitIP
 	}
 
-	// [2] CSRF — до любых DB-вызовов
 	storedStateVO, err := valobj.DTOtoOAuthState(storedState)
 	if err != nil {
 		span.RecordError(err)
-		span.SetStatus(codes.Error, "rate limit ip")
+		span.SetStatus(codes.Error, "invalid stored state")
+		log.Warn("auth.oauthCallback: DTOtoOAuthState failed", logger.Error(err))
 		return in.LoginResult{}, err
 	}
 
 	if err := s.googleOAuth.ValidateState(ctx, receivedCSRF, storedStateVO); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "state validation failed")
+		log.Warn("auth.oauthCallback: CSRF state validation failed", logger.Error(err))
 		return in.LoginResult{}, err
 	}
 
-	// [3] Code exchange + JWKS verify
 	claims, err := s.googleOAuth.ExchangeCode(ctx, code, storedStateVO)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "exchange code failed")
+		log.Error("auth.oauthCallback: ExchangeCode failed", logger.Error(err))
 		return in.LoginResult{}, err
 	}
 
-	// [4] Defence-in-depth: core самостоятельно проверяет email_verified,
-	// даже если адаптер уже гарантировал это в ExchangeCode.
 	if !claims.EmailVerified() {
 		span.RecordError(corerr.ErrOAuthEmailNotVerified)
 		span.SetStatus(codes.Error, "email not verified")
+		log.Warn("auth.oauthCallback: email not verified by Google")
 		return in.LoginResult{}, corerr.ErrOAuthEmailNotVerified
 	}
 
@@ -235,40 +200,25 @@ func (s *AuthService) HandleGoogleCallback(
 		attribute.String("oauth.email", claims.Email()),
 	)
 
-	// [5] Lookup / create account
 	account, err := s.resolveOAuthAccount(ctx, claims)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "resolve account failed")
+		log.Error("auth.oauthCallback: resolveOAuthAccount failed", logger.Error(err))
 		return in.LoginResult{}, err
 	}
 
-	// [6] Заблокированный аккаунт не получает токен
 	if account.IsLocked() {
 		span.RecordError(corerr.ErrAccountLocked)
 		span.SetAttributes(attribute.Bool("auth.account_locked", true))
 		span.SetStatus(codes.Error, "account locked")
+		log.Warn("auth.oauthCallback: account is locked", logger.String("account_id", account.UUID()))
 		return in.LoginResult{}, corerr.ErrAccountLocked
 	}
 
-	// [7]
 	return s.openSessionAndIssueToken(ctx, account, fingerprint)
 }
 
-// resolveOAuthAccount реализует lookup-стратегию CASE A / B / C / D.
-//
-// CASE A: найден по google_uid → возвращаем напрямую
-// CASE B: email найден, google_uid уже привязан и совпадает → возвращаем;
-//
-//	google_uid не совпадает → ErrOAuthGoogleUIDConflict
-//
-// CASE C: email найден, google_uid не привязан → LinkGoogleUID → возвращаем
-// CASE D: не найден ни по google_uid, ни по email →
-//
-//	core строит entity.Account через NewOAuthAccount,
-//	репозиторий получает готовый агрегат (инверсия зависимостей).
-//
-// Span создаётся как дочерний от ctx — явный аргумент span не передаётся.
 func (s *AuthService) resolveOAuthAccount(
 	ctx context.Context,
 	claims valobj.GoogleClaims,
@@ -276,45 +226,48 @@ func (s *AuthService) resolveOAuthAccount(
 	ctx, span := authTracer.Start(ctx, "AuthService.resolveOAuthAccount")
 	defer span.End()
 
-	// CASE A: приоритетный lookup по google_uid (стабильный идентификатор)
+	log := s.logger.With(logger.String("op", "resolveOAuthAccount"), logger.String("google_uid", claims.Sub()))
+
 	account, err := s.accRep.FindByGoogleUID(ctx, claims.Sub())
 	if err == nil {
 		span.SetAttributes(attribute.String("oauth.resolve_case", "A"))
+		log.Debug("auth.resolveOAuth: case A -- found by google_uid")
 		return account, nil
 	}
 
-	// CASE B / C: lookup по email
 	accountByEmail, emailErr := s.accRep.FindByEmail(ctx, claims.Email())
 	if emailErr == nil {
 		existingUID := accountByEmail.GoogleUID()
 		if existingUID != nil && *existingUID != "" {
-			// CASE B: google_uid уже привязан
 			if *existingUID != claims.Sub() {
 				span.RecordError(corerr.ErrOAuthGoogleUIDConflict)
 				span.SetStatus(codes.Error, "google uid conflict")
+				log.Warn("auth.resolveOAuth: case B -- google_uid conflict",
+					logger.String("account_id", accountByEmail.UUID()),
+				)
 				return nil, corerr.ErrOAuthGoogleUIDConflict
 			}
 			span.SetAttributes(attribute.String("oauth.resolve_case", "B"))
+			log.Debug("auth.resolveOAuth: case B -- matched by email+google_uid")
 			return accountByEmail, nil
 		}
 
-		// CASE C: email найден, google_uid не привязан → привязываем
 		if linkErr := s.accRep.LinkGoogleUID(ctx, accountByEmail.UUID(), claims.Sub()); linkErr != nil {
 			span.RecordError(linkErr)
 			span.SetStatus(codes.Error, "link google uid failed")
+			log.Error("auth.resolveOAuth: case C -- LinkGoogleUID failed",
+				logger.String("account_id", accountByEmail.UUID()),
+				logger.Error(linkErr),
+			)
 			return nil, linkErr
 		}
 		span.SetAttributes(attribute.String("oauth.resolve_case", "C"))
+		log.Debug("auth.resolveOAuth: case C -- linked google_uid to existing account",
+			logger.String("account_id", accountByEmail.UUID()),
+		)
 		return accountByEmail, nil
 	}
 
-	// CASE D: аккаунт не найден ни по google_uid, ни по email.
-	// Core строит агрегат самостоятельно — репозиторий не знает о бизнес-логике
-	// построения сущности (гексагональная архитектура, инверсия зависимостей).
-	//
-	// personalInfo: берём claims.Name() — Google ID token стандартно содержит claim "name".
-	// Если name пустой (Google не вернул) — используем email как fallback.
-	// role: patient — дефолтная роль для самостоятельной регистрации.
 	personalInfo := claims.Name()
 	if personalInfo == "" {
 		personalInfo = claims.Email()
@@ -329,14 +282,15 @@ func (s *AuthService) resolveOAuthAccount(
 	if buildErr != nil {
 		span.RecordError(buildErr)
 		span.SetStatus(codes.Error, "build oauth account failed")
+		log.Error("auth.resolveOAuth: case D -- NewOAuthAccount failed", logger.Error(buildErr))
 		return nil, buildErr
 	}
 
-	// AccountRegistered публикуется через outbox внутри CreateOAuthAccountWithTx.
 	createdAccount, createErr := s.accRep.CreateOAuthAccountWithTx(ctx, newAccount)
 	if createErr != nil {
 		span.RecordError(createErr)
 		span.SetStatus(codes.Error, "create oauth account failed")
+		log.Error("auth.resolveOAuth: case D -- CreateOAuthAccountWithTx failed", logger.Error(createErr))
 		return nil, createErr
 	}
 
@@ -344,20 +298,12 @@ func (s *AuthService) resolveOAuthAccount(
 		attribute.String("oauth.resolve_case", "D"),
 		attribute.String("oauth.new_account_id", createdAccount.UUID()),
 	)
+	log.Info("auth.resolveOAuth: case D -- new OAuth account created",
+		logger.String("account_id", createdAccount.UUID()),
+	)
 	return createdAccount, nil
 }
 
-// openSessionAndIssueToken — общая финальная цепочка для Login и HandleGoogleCallback.
-//
-// [1] account.OpenSession   — создание сессии на агрегате (G5: eviction, max 5)
-// [2] SaveSessionWithTx     — ACID: upsert сессий + evictedJTI в outbox (L3)
-// [3] TokenBlacklist.Add    — evictedJTI в Redis L2 (G9 Write Order)
-// [4] TokenIssuer.Issue     — RS256, kid из текущего ключа
-// [5] SessionCreated event  — fire-and-forget через eventsProducer
-// [6] return LoginResult
-//
-// Span создаётся как дочерний от ctx — выделен по KISS/YAGNI,
-// оба публичных метода завершаются идентичным выходом.
 func (s *AuthService) openSessionAndIssueToken(
 	ctx context.Context,
 	account *entity.Account,
@@ -366,6 +312,11 @@ func (s *AuthService) openSessionAndIssueToken(
 	ctx, span := authTracer.Start(ctx, "AuthService.openSessionAndIssueToken")
 	defer span.End()
 
+	log := s.logger.With(
+		logger.String("op", "openSession"),
+		logger.String("account_id", account.UUID()),
+	)
+
 	sessionID := uuid.NewString()
 	jti := uuid.NewString()
 
@@ -373,21 +324,24 @@ func (s *AuthService) openSessionAndIssueToken(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "open session failed")
+		log.Error("auth.openSession: OpenSession failed", logger.Error(err))
 		return in.LoginResult{}, err
 	}
 
 	if err := s.accRep.SaveSessionWithTx(ctx, account, evictedJTI); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "save session failed")
+		log.Error("auth.openSession: SaveSessionWithTx failed", logger.Error(err))
 		return in.LoginResult{}, err
 	}
 
-	// G9 Write Order: outbox (L3) уже записан в SaveSessionWithTx.
-	// Redis L2 обновляем после успешного коммита.
 	if evictedJTI != "" {
 		if blErr := s.tokenBlacklist.Add(ctx, evictedJTI, 0); blErr != nil {
-			// log WARN — не блокируем выпуск токена; outbox обеспечит L3
 			span.RecordError(blErr)
+			log.Warn("auth.openSession: blacklist L2 Add failed for evicted JTI (outbox will retry)",
+				logger.String("evicted_jti", evictedJTI),
+				logger.Error(blErr),
+			)
 		}
 	}
 
@@ -401,6 +355,7 @@ func (s *AuthService) openSessionAndIssueToken(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "token issue failed")
+		log.Error("auth.openSession: TokenIssuer.Issue failed", logger.Error(err))
 		return in.LoginResult{}, err
 	}
 
@@ -410,7 +365,6 @@ func (s *AuthService) openSessionAndIssueToken(
 		attribute.String("auth.jti", issuedJTI),
 	)
 
-	// fire-and-forget: ошибка события не блокирует ответ клиенту
 	if evErr := s.eventsProducer.SessionCreated(
 		ctx,
 		account.UUID(),
@@ -419,17 +373,18 @@ func (s *AuthService) openSessionAndIssueToken(
 		time.Now().Unix(),
 	); evErr != nil {
 		span.RecordError(evErr)
+		log.Warn("auth.openSession: SessionCreated event failed (non-fatal)", logger.Error(evErr))
 	}
 
-	result := in.LoginResult{
+	log.Info("auth.openSession: session opened and token issued",
+		logger.String("session_id", session.SessionID()),
+	)
+
+	_ = trace.SpanFromContext(ctx)
+	return in.LoginResult{
 		AccessToken: accessToken,
 		AccountID:   account.UUID(),
 		Role:        account.Role().String(),
 		SessionID:   session.SessionID(),
-	}
-
-	// Дочерний span закрывается через defer; родительский span получает
-	// корректное дерево трейсов: Login/HandleGoogleCallback → openSessionAndIssueToken.
-	_ = trace.SpanFromContext(ctx) // убеждаемся что ctx не потерял span после Start
-	return result, nil
+	}, nil
 }
