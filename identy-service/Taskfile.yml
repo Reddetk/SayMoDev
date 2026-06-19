@@ -29,7 +29,7 @@ tasks:
   infra:up:
     desc: "Start postgres + redis (detached). Postgres healthcheck is managed by docker compose."
     cmds:
-      - docker compose up -d postgres redis-bc1 redis-blacklist
+      - docker compose up -d postgres redis-bc1 redis-blacklist migrate-init 
       - docker compose ps
 
   infra:down:
@@ -148,4 +148,3 @@ tasks:
     cmds:
       - go test ./... -count=1 -coverprofile=coverage.out
       - go tool cover -html=coverage.out -o coverage.html
-      - echo "Report: coverage.html"
