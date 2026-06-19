@@ -6,7 +6,6 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/bytedance/gopkg/util/logger"
 	"github.com/google/uuid"
 
 	"go.opentelemetry.io/otel"
@@ -18,6 +17,7 @@ import (
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
 	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
 	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/logger"
 	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 	"github.com/Reddetk/SayMoDev/identy-service/port/out"
 )

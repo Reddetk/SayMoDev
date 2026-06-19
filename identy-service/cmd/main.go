@@ -179,11 +179,12 @@ func run(logger logger.Logger) error {
 		rateLimiter,
 		eventsProducer,
 		googleOAuth,
+		logger,
 	)
 
 	accService := core.NewAccountService(otpRep, repo, eventsProducer, blacklist, logger)
 	tokenService := core.NewTokenService(tokenIssuer, blacklist, eventsProducer, logger)
-	sessionService := core.NewSessionService(repo, blacklist, eventsProducer)
+	sessionService := core.NewSessionService(repo, blacklist, eventsProducer, logger)
 	otpService := core.NewOTPService(otpRep, repo, emailBox, logger)
 
 	// --- 6. Primary adapter (HTTP) ---------------------------------------------
