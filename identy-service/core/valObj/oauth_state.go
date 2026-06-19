@@ -2,6 +2,7 @@ package valobj
 
 import (
 	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	"github.com/Reddetk/SayMoDev/identy-service/port/in"
 )
 
 // OAuthState - Value Object that carries PKCE and CSRF parameters
@@ -48,6 +49,25 @@ func NewOAuthState(csrfToken, codeVerifier, codeChallenge string, expiresAt int6
 		codeChallenge: codeChallenge,
 		expiresAt:     expiresAt,
 	}, nil
+}
+
+func DTOtoOAuthState(a in.OAuthState) (OAuthState, error) {
+	return NewOAuthState(
+		a.CsrfToken,
+		a.CodeVerifier,
+		a.CodeChallenge,
+		a.ExpiresAt,
+	)
+}
+
+// MapToDTO is maping
+func (a *OAuthState) MapToDTO() in.OAuthState {
+	return in.OAuthState{
+		CsrfToken:     a.csrfToken,
+		CodeVerifier:  a.codeVerifier,
+		CodeChallenge: a.codeChallenge,
+		ExpiresAt:     a.expiresAt,
+	}
 }
 
 func (s OAuthState) CSRFToken() string     { return s.csrfToken }

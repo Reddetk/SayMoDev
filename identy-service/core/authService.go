@@ -140,21 +140,22 @@ func (s *AuthService) Login(
 func (s *AuthService) InitiateGoogleOAuth(
 	ctx context.Context,
 	clientIP string,
-) (redirectURL string, state valobj.OAuthState, err error) {
+) (redirectURL string, state in.OAuthState, err error) {
 	ctx, span := authTracer.Start(ctx, "AuthService.InitiateGoogleOAuth")
 	defer span.End()
 
 	if err := s.rateLimiter.CheckIP(ctx, clientIP); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "rate limit ip")
-		return "", valobj.OAuthState{}, corerr.ErrRateLimitIP
+		return "", in.OAuthState{}, corerr.ErrRateLimitIP
 	}
 
-	redirectURL, state, err = s.googleOAuth.BuildAuthURL(ctx)
+	redirectURL, stateA, err := s.googleOAuth.BuildAuthURL(ctx)
+	state = stateA.MapToDTO()
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "build auth url failed")
-		return "", valobj.OAuthState{}, err
+		return "", in.OAuthState{}, err
 	}
 
 	span.SetAttributes(attribute.Bool("oauth.initiated", true))
@@ -181,7 +182,7 @@ func (s *AuthService) HandleGoogleCallback(
 	ctx context.Context,
 	code string,
 	receivedCSRF string,
-	storedState valobj.OAuthState,
+	storedState in.OAuthState,
 	fingerprint string,
 	clientIP string,
 ) (in.LoginResult, error) {
@@ -196,14 +197,21 @@ func (s *AuthService) HandleGoogleCallback(
 	}
 
 	// [2] CSRF — до любых DB-вызовов
-	if err := s.googleOAuth.ValidateState(ctx, receivedCSRF, storedState); err != nil {
+	storedStateVO, err := valobj.DTOtoOAuthState(storedState)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "rate limit ip")
+		return in.LoginResult{}, err
+	}
+
+	if err := s.googleOAuth.ValidateState(ctx, receivedCSRF, storedStateVO); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "state validation failed")
 		return in.LoginResult{}, err
 	}
 
 	// [3] Code exchange + JWKS verify
-	claims, err := s.googleOAuth.ExchangeCode(ctx, code, storedState)
+	claims, err := s.googleOAuth.ExchangeCode(ctx, code, storedStateVO)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "exchange code failed")

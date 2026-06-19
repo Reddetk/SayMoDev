@@ -36,6 +36,7 @@ import (
 
 	primary "github.com/Reddetk/SayMoDev/identy-service/adapter/primary/http"
 	secondary "github.com/Reddetk/SayMoDev/identy-service/adapter/secondary"
+	"github.com/Reddetk/SayMoDev/identy-service/adapter/secondary/postgres"
 	redisada "github.com/Reddetk/SayMoDev/identy-service/adapter/secondary/redis"
 	"github.com/Reddetk/SayMoDev/identy-service/core"
 )
@@ -108,6 +109,8 @@ func run(logger *zap.Logger) error {
 
 	// --- 4. Secondary adapters -------------------------------------------------
 
+	otpRep := postgres.NewPostgresOtpRepository(pool, logger)
+
 	// 4a. Postgres account repository.
 	repo, err := secondary.NewPostgresAccountRepository(pool, logger)
 	if err != nil {
@@ -161,6 +164,11 @@ func run(logger *zap.Logger) error {
 		return fmt.Errorf("NewGoogleOAuthAdapter: %w", err)
 	}
 
+	emailBox, err := secondary.NewPostboxEmailAdapter(secondary.PostboxConfig{}) // TODO NOT
+	if err != nil {
+		return fmt.Errorf("NewPostboxEmailAdapter: %w", err)
+	}
+
 	// --- 5. Core services ------------------------------------------------------
 	authService := core.NewAuthService(
 		repo,
@@ -171,19 +179,24 @@ func run(logger *zap.Logger) error {
 		googleOAuth,
 	)
 
+	accService := core.NewAccountService(otpRep, repo, eventsProducer, blacklist) // error
+	tokenService := core.NewTokenService(tokenIssuer, blacklist, eventsProducer)
+	sessionService := core.NewSessionService(repo, blacklist, eventsProducer)
+	otpService := core.NewOTPService(otpRep, repo, emailBox)
+
 	// --- 6. Primary adapter (HTTP) ---------------------------------------------
 	// NewGinRouter принимает RouterDeps, a не RouterConfig.
 	// Спецификация: CORS invariant (§8): CORS middleware выполняется ДО JWT-валидации.
 	router := primary.NewGinRouter(primary.RouterDeps{
-		Logger:          logger,
-		TokenValidator:  authService,
-		Authenticator:   authService,
-		Registrator:     authService,
-		SessionOperator: authService,
-		TokenOperator:   authService,
-		AccountOpertator: authService,
-		PasswordOperator: authService,
-		OTPIssuer:       authService,
+		Logger:           logger,
+		TokenValidator:   tokenService,
+		Authenticator:    authService,
+		Registrator:      accService,
+		SessionOperator:  sessionService,
+		TokenOperator:    tokenService,
+		AccountOpertator: accService,
+		PasswordOperator: accService,
+		OTPIssuer:        otpService,
 	})
 
 	addr := getEnv("HTTP_ADDR", ":8080")

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+vars:
+  ENV: '{{default "local" .ENV}}'
+  MIGRATIONS: ./migrations
+  
+dotenv: ['.env.{{.ENV}}']
+
+tasks:
+  
+  # RSA------
+  gen-rsa:
+    desc: "Generate new rsa in testdata"
+    cmds:
+    - cd .\testdata\keys
+    - openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private.pem
+    - openssl rsa -pubout -in private.pem -out public.pem
