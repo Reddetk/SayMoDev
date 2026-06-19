@@ -4,15 +4,168 @@ version: '3'
 vars:
   ENV: '{{default "local" .ENV}}'
   MIGRATIONS: ./migrations
-  
+
 dotenv: ['.env.{{.ENV}}']
 
 tasks:
-  
-  # RSA------
+
+  # ---------------------------------------------------------------------------
+  # RSA keys
+  # ---------------------------------------------------------------------------
+
   gen-rsa:
-    desc: "Generate new rsa in testdata"
+    desc: "Generate RSA-2048 key pair in testdata/keys/"
     cmds:
-    - cd .\testdata\keys
-    - openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private.pem
-    - openssl rsa -pubout -in private.pem -out public.pem
+      - mkdir -p testdata/keys
+      - openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out testdata/keys/private.pem
+      - openssl rsa -pubout -in testdata/keys/private.pem -out testdata/keys/public.pem
+    generates:
+      - testdata/keys/private.pem
+      - testdata/keys/public.pem
+
+  # ---------------------------------------------------------------------------
+  # Infrastructure (Docker Compose)
+  # ---------------------------------------------------------------------------
+
+  infra:up:
+    desc: "Start postgres + redis-bc1 + redis-blacklist (detached)"
+    cmds:
+      - docker compose up -d postgres redis-bc1 redis-blacklist
+      - docker compose ps
+
+  infra:down:
+    desc: "Stop and remove infra containers (volumes preserved)"
+    cmds:
+      - docker compose down
+
+  infra:destroy:
+    desc: "Stop containers AND delete volumes (full reset)"
+    cmds:
+      - docker compose down -v
+
+  infra:logs:
+    desc: "Tail logs of infra containers"
+    cmds:
+      - docker compose logs -f postgres redis-bc1 redis-blacklist
+
+  # ---------------------------------------------------------------------------
+  # Migrations
+  # ---------------------------------------------------------------------------
+
+  migrate:up:
+    desc: "Apply all pending migrations"
+    deps: [infra:up]
+    cmds:
+      - go run ./cmd/migrate/main.go -action up
+
+  migrate:down:
+    desc: "Roll back the last migration"
+    cmds:
+      - go run ./cmd/migrate/main.go -action down
+
+  migrate:force:
+    desc: "Force-set schema version (use VERSION=N). Fixes dirty state."
+    cmds:
+      - go run ./cmd/migrate/main.go -action force -version {{.VERSION}}
+    requires:
+      vars: [VERSION]
+
+  migrate:status:
+    desc: "Print current migration version and dirty flag"
+    cmds:
+      - |
+        go run - <<'EOF'
+        package main
+        import (
+          "fmt"
+          "os"
+          "github.com/golang-migrate/migrate/v4"
+          _ "github.com/golang-migrate/migrate/v4/database/postgres"
+          _ "github.com/golang-migrate/migrate/v4/source/file"
+        )
+        func main() {
+          m, err := migrate.New("file://./migrations", os.Getenv("POSTGRES_DSN"))
+          if err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
+          v, dirty, err := m.Version()
+          if err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
+          fmt.Printf("version=%d  dirty=%v\n", v, dirty)
+        }
+        EOF
+
+  # ---------------------------------------------------------------------------
+  # Server
+  # ---------------------------------------------------------------------------
+
+  run:
+    desc: "Run identity-service locally (requires infra:up and migrate:up)"
+    cmds:
+      - go run ./cmd/main.go
+
+  build:
+    desc: "Build server binary to bin/server"
+    cmds:
+      - mkdir -p bin
+      - go build -ldflags="-s -w" -o bin/server ./cmd/main.go
+    generates:
+      - bin/server
+
+  build:migrate:
+    desc: "Build migrate binary to bin/migrate"
+    cmds:
+      - mkdir -p bin
+      - go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate/main.go
+    generates:
+      - bin/migrate
+
+  # ---------------------------------------------------------------------------
+  # Docker full stack
+  # ---------------------------------------------------------------------------
+
+  docker:up:
+    desc: "Build and start full stack (infra + migrate + server)"
+    cmds:
+      - docker compose up --build -d
+      - docker compose ps
+
+  docker:down:
+    desc: "Stop full stack"
+    cmds:
+      - docker compose down
+
+  docker:logs:
+    desc: "Tail server logs"
+    cmds:
+      - docker compose logs -f server
+
+  # ---------------------------------------------------------------------------
+  # Dev helpers
+  # ---------------------------------------------------------------------------
+
+  dev:
+    desc: "One-shot local dev start: infra -> migrate -> run"
+    cmds:
+      - task: infra:up
+      - task: migrate:up
+      - task: run
+
+  tidy:
+    desc: "go mod tidy"
+    cmds:
+      - go mod tidy
+
+  lint:
+    desc: "Run golangci-lint"
+    cmds:
+      - golangci-lint run ./...
+
+  test:
+    desc: "Run unit tests"
+    cmds:
+      - go test ./... -count=1 -race
+
+  test:cover:
+    desc: "Run tests with HTML coverage report"
+    cmds:
+      - go test ./... -count=1 -coverprofile=coverage.out
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "Report: coverage.html"
