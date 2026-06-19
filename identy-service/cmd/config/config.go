@@ -15,81 +15,84 @@ import (
 )
 
 // Config -- агрегированная конфигурация identity-service.
-// Заполняется через Load() из переменных окружения.
+// Имена переменных согласованы с cmd/main.go (источник правды).
 //
-// Соглашение по env vars:
-//   HTTP_ADDR            :8080
-//   DATABASE_URL         postgres://user:pass@host:5432/db
-//   REDIS_URL            redis://host:6379
-//   RSA_KEY_PATH         /run/secrets/rsa_private.pem
-//   JWKS_PATH            /run/secrets/jwks.json
-//   OTEL_ENDPOINT        host:4317  (OTLP gRPC)
-//   SERVICE_NAME         identity-service
-//   SERVICE_VERSION      v1.0.0
-//   ENVIRONMENT          production | staging | development
-//   LOG_LEVEL            info | debug | warn | error  (default: info)
-//   LOG_DEVELOPMENT      true | false                  (default: false)
-//   GOOGLE_CLIENT_ID     ...
-//   GOOGLE_CLIENT_SECRET ...
-//   GOOGLE_REDIRECT_URI  https://...
-//   POSTBOX_IAM_TOKEN    ...
-//   POSTBOX_FROM_ADDRESS noreply@saymo.ru
-//   CORS_ALLOWED_ORIGINS https://app.saymo.ru,https://staging.saymo.ru
-//   CORS_ALLOWED_METHODS GET,POST,PUT,DELETE,OPTIONS
-//   CORS_ALLOWED_HEADERS Content-Type,Authorization
-//   CORS_EXPOSED_HEADERS X-Request-Id
-//   CORS_ALLOW_CREDENTIALS true | false  (default: true)
-//   CORS_MAX_AGE         600  (seconds, default: 600)
+// Переменные окружения:
+//   HTTP_ADDR                    :8080
+//   POSTGRES_DSN                 postgres://user:pass@host:5432/db?sslmode=disable
+//   REDIS_URL                    redis://:pass@host:6379/0
+//   REDIS_BLACKLIST_ADDR         host:6380
+//   REDIS_BLACKLIST_PASSWORD     ...
+//   JWT_PRIVATE_KEY_PATH         /run/secrets/private.pem
+//   JWT_PUBLIC_KEY_PATH          /run/secrets/public.pem
+//   JWT_KID                      key-v1
+//   JWT_PREV_PUBLIC_KEY_PATH     (optional) /run/secrets/prev_public.pem
+//   JWT_PREV_KID                 (optional) key-v0
+//   OTEL_EXPORTER_OTLP_ENDPOINT  host:4317
+//   SERVICE_NAME                 identity-service
+//   SERVICE_VERSION              v1.0.0
+//   ENVIRONMENT                  production | staging | development
+//   LOG_LEVEL                    debug | info | warn | error
+//   LOG_DEVELOPMENT              true | false
+//   GOOGLE_CLIENT_ID             ...
+//   GOOGLE_CLIENT_SECRET         ...
+//   GOOGLE_REDIRECT_URI          https://...
+//   POSTBOX_IAM_TOKEN            ...
+//   POSTBOX_FROM_ADDRESS         noreply@saymo.ru
+//   CORS_ALLOWED_ORIGINS         https://app.saymo.com,...
 type Config struct {
-	HTTPAddr     string // :8080
-	DatabaseURL  string // postgres://...
-	RedisURL     string // redis://...
-	RSAKeyPath   string // путь к PEM приватного ключа
-	JWKSPath     string // путь к JWKS JSON (публичные ключи)
-	OTelEndpoint string // gRPC OTLP endpoint (Jaeger/Tempo)
-	GoogleOAuth  secondary.GoogleOAuthConfig
-	Postbox      secondary.PostboxConfig
-	CORS         middleware.CORSConfig
-	Logger       telemetry.LoggerConfig
-	Trace        telemetry.TracerConfig
+	HTTPAddr    string
+	PostgresDSN string
+	RedisURL    string
+
+	RedisBlacklistAddr     string
+	RedisBlacklistPassword string
+
+	JWTPrivateKeyPath  string
+	JWTPublicKeyPath   string
+	JWTKid             string
+	JWTPrevPublicKey   string // optional
+	JWTPrevKid         string // optional
+
+	GoogleOAuth secondary.GoogleOAuthConfig
+	Postbox     secondary.PostboxConfig
+	CORS        middleware.CORSConfig
+	Logger      telemetry.LoggerConfig
+	Trace       telemetry.TracerConfig
 }
 
 // Load читает переменные окружения и возвращает заполненный Config.
-// Все обязательные поля проверяются; отсутствие любого -- ошибка.
+// Отсутствие любого обязательного поля -- ошибка.
 func Load() (*Config, error) {
 	cfg := &Config{}
 	var missing []string
 
-	// --- infrastructure -----------------------------------------------------
+	// --- infrastructure ------------------------------------------------------
 	cfg.HTTPAddr = envOr("HTTP_ADDR", ":8080")
 
-	if v := os.Getenv("DATABASE_URL"); v != "" {
-		cfg.DatabaseURL = v
-	} else {
-		missing = append(missing, "DATABASE_URL")
+	require := func(key string, dst *string) {
+		if v := os.Getenv(key); v != "" {
+			*dst = v
+		} else {
+			missing = append(missing, key)
+		}
 	}
 
-	if v := os.Getenv("REDIS_URL"); v != "" {
-		cfg.RedisURL = v
-	} else {
-		missing = append(missing, "REDIS_URL")
-	}
+	require("POSTGRES_DSN", &cfg.PostbresDSN)
+	require("REDIS_URL", &cfg.RedisURL)
+	require("REDIS_BLACKLIST_ADDR", &cfg.RedisBlacklistAddr)
+	require("REDIS_BLACKLIST_PASSWORD", &cfg.RedisBlacklistPassword)
+	require("JWT_PRIVATE_KEY_PATH", &cfg.JWTPrivateKeyPath)
+	require("JWT_PUBLIC_KEY_PATH", &cfg.JWTPublicKeyPath)
+	require("JWT_KID", &cfg.JWTKid)
 
-	if v := os.Getenv("RSA_KEY_PATH"); v != "" {
-		cfg.RSAKeyPath = v
-	} else {
-		missing = append(missing, "RSA_KEY_PATH")
-	}
+	// optional -- предыдущий ключ при rotation overlap
+	cfg.JWTPrevPublicKey = os.Getenv("JWT_PREV_PUBLIC_KEY_PATH")
+	cfg.JWTPrevKid = os.Getenv("JWT_PREV_KID")
 
-	if v := os.Getenv("JWKS_PATH"); v != "" {
-		cfg.JWKSPath = v
-	} else {
-		missing = append(missing, "JWKS_PATH")
-	}
+	cfg.OTelEndpoint = envOr("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
 
-	cfg.OTelEndpoint = envOr("OTEL_ENDPOINT", "localhost:4317")
-
-	// --- telemetry ----------------------------------------------------------
+	// --- telemetry -----------------------------------------------------------
 	serviceName := envOr("SERVICE_NAME", "identity-service")
 	serviceVersion := envOr("SERVICE_VERSION", "dev")
 	environment := envOr("ENVIRONMENT", "development")
@@ -106,42 +109,18 @@ func Load() (*Config, error) {
 		ServiceVersion: serviceVersion,
 		Environment:    environment,
 		JaegerEndpoint: cfg.OTelEndpoint,
-		// ConnectTimeout: 0 -- telemetry.NewTracer использует дефолт 5s.
 	}
 
-	// --- google oauth -------------------------------------------------------
-	if v := os.Getenv("GOOGLE_CLIENT_ID"); v != "" {
-		cfg.GoogleOAuth.ClientID = v
-	} else {
-		missing = append(missing, "GOOGLE_CLIENT_ID")
-	}
+	// --- google oauth --------------------------------------------------------
+	require("GOOGLE_CLIENT_ID", &cfg.GoogleOAuth.ClientID)
+	require("GOOGLE_CLIENT_SECRET", &cfg.GoogleOAuth.ClientSecret)
+	require("GOOGLE_REDIRECT_URI", &cfg.GoogleOAuth.RedirectURI)
 
-	if v := os.Getenv("GOOGLE_CLIENT_SECRET"); v != "" {
-		cfg.GoogleOAuth.ClientSecret = v
-	} else {
-		missing = append(missing, "GOOGLE_CLIENT_SECRET")
-	}
+	// --- postbox -------------------------------------------------------------
+	require("POSTBOX_IAM_TOKEN", &cfg.Postbox.IAMToken)
+	require("POSTBOX_FROM_ADDRESS", &cfg.Postbox.FromAddress)
 
-	if v := os.Getenv("GOOGLE_REDIRECT_URI"); v != "" {
-		cfg.GoogleOAuth.RedirectURI = v
-	} else {
-		missing = append(missing, "GOOGLE_REDIRECT_URI")
-	}
-
-	// --- postbox ------------------------------------------------------------
-	if v := os.Getenv("POSTBOX_IAM_TOKEN"); v != "" {
-		cfg.Postbox.IAMToken = v
-	} else {
-		missing = append(missing, "POSTBOX_IAM_TOKEN")
-	}
-
-	if v := os.Getenv("POSTBOX_FROM_ADDRESS"); v != "" {
-		cfg.Postbox.FromAddress = v
-	} else {
-		missing = append(missing, "POSTBOX_FROM_ADDRESS")
-	}
-
-	// --- cors ---------------------------------------------------------------
+	// --- cors ----------------------------------------------------------------
 	cfg.CORS = middleware.CORSConfig{
 		AllowedOrigins:   splitCSV(os.Getenv("CORS_ALLOWED_ORIGINS")),
 		AllowedMethods:   splitCSVOr("CORS_ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS"),
@@ -151,12 +130,21 @@ func Load() (*Config, error) {
 		MaxAge:           parseInt(os.Getenv("CORS_MAX_AGE"), 600),
 	}
 
-	// --- validate -----------------------------------------------------------
+	// --- validate ------------------------------------------------------------
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("config: missing required env vars: %s", strings.Join(missing, ", "))
 	}
 
 	return cfg, nil
+}
+
+// OTelConnectTimeout возвращает OTEL_CONNECT_TIMEOUT_SECONDS или 0 (дефолт 5s в tracer).
+func (c *Config) OTelConnectTimeout() time.Duration {
+	v := parseInt(os.Getenv("OTEL_CONNECT_TIMEOUT_SECONDS"), 0)
+	if v <= 0 {
+		return 0
+	}
+	return time.Duration(v) * time.Second
 }
 
 // ---------------------------------------------------------------------------
@@ -218,20 +206,7 @@ func parseLogLevel(s string) zapcore.Level {
 		return zapcore.WarnLevel
 	case "error":
 		return zapcore.ErrorLevel
-	case "dpanic":
-		return zapcore.DPanicLevel
 	default:
-		// "info" и всё неизвестное -> InfoLevel (prod-safe default)
 		return zapcore.InfoLevel
 	}
-}
-
-// OTelConnectTimeout возвращает TracerConfig.ConnectTimeout из переменной
-// OTEL_CONNECT_TIMEOUT_SECONDS. Используется если стандартный дефолт 5s недостаточен.
-func (c *Config) OTelConnectTimeout() time.Duration {
-	v := parseInt(os.Getenv("OTEL_CONNECT_TIMEOUT_SECONDS"), 0)
-	if v <= 0 {
-		return 0 // telemetry.NewTracer применит дефолт 5s
-	}
-	return time.Duration(v) * time.Second
 }

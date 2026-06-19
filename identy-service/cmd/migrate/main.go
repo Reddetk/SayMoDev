@@ -1,20 +1,21 @@
 // Package main -- утилита миграций БД identity-service.
 //
+// Отдельный бинарник -- не зависит от пакетов core/ или adapter/.
+// Единственная внешняя зависимость: golang-migrate/v4.
+//
 // Порядок загрузки env:
-//  1. Реальное окружение процесса (Docker env_file, Kubernetes Secrets)
-//  2. Файл .env.${ENV} если ENV установлен (local / test)
-//  3. Файл .env.local как fallback для локальной разработки
+//  1. Реальное окружение процесса (Docker environment:, K8s Secrets)
+//  2. .env.${ENV} если ENV установлен
+//  3. .env.local как fallback
+//
+// Обязательные переменные:
+//   POSTGRES_DSN      -- postgres://user:pass@host:5432/db?sslmode=disable
+//   MIGRATIONS_PATH   -- путь к директории с *.up.sql / *.down.sql (default: ./migrations)
 //
 // Флаги:
-//
-//	-action up     -- применить все pending миграции
-//	-action down   -- откатить последнюю миграцию
-//	-action force  -- принудительно выставить версию (требует -version N)
-//
-// Переменные окружения:
-//
-//	POSTGRES_DSN     -- DSN вида postgres://user:pass@host:port/db?sslmode=disable
-//	MIGRATIONS_PATH  -- путь к директории миграций (по умолчанию ./migrations)
+//   -action up              применить все pending миграции
+//   -action down            откатить последнюю миграцию
+//   -action force -version N  выставить версию принудительно (фикс dirty state)
 package main
 
 import (
@@ -29,7 +30,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"go.uber.org/zap"
 
-	"github.com/Reddetk/SayMoDev/identy-service/cmd/config"
+	"github.com/Reddetk/SayMoDev/identy-service/internal/dotenv"
 )
 
 func main() {
@@ -45,26 +46,27 @@ func main() {
 func run(logger *zap.Logger) error {
 	// --- env loading -----------------------------------------------------------
 	// Приоритет: реальное окружение > .env.${ENV} > .env.local
-	// LoadDotEnv не перезаписывает уже установленные переменные.
-	env := os.Getenv("ENV")
-	if env != "" {
+	// dotenv.Load не перезаписывает уже установленные переменные.
+	if env := os.Getenv("ENV"); env != "" {
 		envFile := fmt.Sprintf(".env.%s", env)
-		if err := config.LoadDotEnv(envFile); err != nil && !os.IsNotExist(err) {
+		if err := dotenv.Load(envFile); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("load %s: %w", envFile, err)
 		}
 	}
-	// Fallback для локальной разработки без ENV.
-	if err := config.LoadDotEnv(".env.local"); err != nil && !os.IsNotExist(err) {
+	if err := dotenv.Load(".env.local"); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("load .env.local: %w", err)
 	}
 
 	// --- flags -----------------------------------------------------------------
-	action := flag.String("action", "up", "Migration action: up | down | force")
-	version := flag.Int("version", 0, "Target version for -action force")
+	action := flag.String("action", "up", "up | down | force")
+	version := flag.Int("version", 0, "target version for -action force")
 	flag.Parse()
 
 	// --- config ----------------------------------------------------------------
-	dsn := requireEnv("POSTGRES_DSN")
+	dsn, err := requireEnv("POSTGRES_DSN")
+	if err != nil {
+		return err
+	}
 
 	migrationsPath := os.Getenv("MIGRATIONS_PATH")
 	if migrationsPath == "" {
@@ -73,9 +75,8 @@ func run(logger *zap.Logger) error {
 
 	abs, err := filepath.Abs(migrationsPath)
 	if err != nil {
-		return fmt.Errorf("migrations path abs: %w", err)
+		return fmt.Errorf("migrations path: %w", err)
 	}
-
 	if _, err := os.Stat(abs); os.IsNotExist(err) {
 		return fmt.Errorf("migrations directory not found: %s", abs)
 	}
@@ -95,10 +96,10 @@ func run(logger *zap.Logger) error {
 	defer func() {
 		srcErr, dbErr := m.Close()
 		if srcErr != nil {
-			logger.Warn("migrate: source close error", zap.Error(srcErr))
+			logger.Warn("migrate: source close", zap.Error(srcErr))
 		}
 		if dbErr != nil {
-			logger.Warn("migrate: db close error", zap.Error(dbErr))
+			logger.Warn("migrate: db close", zap.Error(dbErr))
 		}
 	}()
 
@@ -129,7 +130,7 @@ func run(logger *zap.Logger) error {
 
 	case "force":
 		if *version == 0 {
-			return fmt.Errorf("-version is required for action=force and must be > 0")
+			return fmt.Errorf("-version required for force and must be > 0")
 		}
 		if err := m.Force(*version); err != nil {
 			return fmt.Errorf("migrate force: %w", err)
@@ -143,13 +144,10 @@ func run(logger *zap.Logger) error {
 	return nil
 }
 
-// requireEnv читает обязательную переменную окружения.
-// Возвращает ошибку вместо паники -- migrate завершится через os.Exit(1) в main.
-func requireEnv(key string) string {
+func requireEnv(key string) (string, error) {
 	v := os.Getenv(key)
 	if v == "" {
-		fmt.Fprintf(os.Stderr, "migrate: required env variable %q is not set\n", key)
-		os.Exit(1)
+		return "", fmt.Errorf("required env variable %q is not set", key)
 	}
-	return v
+	return v, nil
 }
