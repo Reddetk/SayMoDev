@@ -17,10 +17,7 @@ services:
       POSTGRES_USER:     ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    # pg_cron НЕ включается в postgres:16-alpine по умолчанию.
-    # cleanup задач (verification_codes, jwt_blacklist) выполняется application-слоем.
-    # В managed Postgres (Yandex Cloud) pg_cron доступен как расширение.
+      - "${POSTGRES_PORT}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -30,14 +27,14 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
   # ---------------------------------------------------------------------------
-  # Redis -- собственный L2-кэш identity-service (JWKS-кэш, сессии)
+  # Redis -- L2-кэш identity-service (JWKS, сессии)
   # ---------------------------------------------------------------------------
   redis-bc1:
     image: redis:7-alpine
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD}
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
@@ -45,15 +42,15 @@ services:
       retries: 10
 
   # ---------------------------------------------------------------------------
-  # Redis Blacklist -- shared инстанс (jti blacklist + account rev)
-  # Владелец: identity-service. BC#3 и BC#4 подключаются через external network.
+  # Redis Blacklist -- shared (jti blacklist + account rev)
+  # Владелец: identity-service. BC#3 и BC#4 -- external network.
   # ---------------------------------------------------------------------------
   redis-blacklist:
     image: redis:7-alpine
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_BLACKLIST_PASSWORD}
     ports:
-      - "${REDIS_BLACKLIST_PORT:-6380}:6379"
+      - "${REDIS_BLACKLIST_PORT}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_BLACKLIST_PASSWORD}", "ping"]
       interval: 5s
@@ -64,18 +61,19 @@ services:
       - saymo-blacklist
 
   # ---------------------------------------------------------------------------
-  # Migrate -- запускает миграции и завершается
+  # migrate-init -- применяет миграции и завершается.
+  # depends_on service_healthy гарантирует что postgres готов принимать соединения.
   # ---------------------------------------------------------------------------
-  migrate:
+  migrate-init:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.migrate
     environment:
       POSTGRES_DSN: ${POSTGRES_DSN}
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["-action", "up"]
+    restart: "no"
 
   # ---------------------------------------------------------------------------
   # Server -- основной бинарник сервиса
@@ -85,19 +83,19 @@ services:
       context: .
       dockerfile: Dockerfile.server
     environment:
-      POSTGRES_DSN:            ${POSTGRES_DSN}
-      REDIS_URL:               ${REDIS_URL}
-      REDIS_BLACKLIST_ADDR:    ${REDIS_BLACKLIST_ADDR}
+      POSTGRES_DSN:             ${POSTGRES_DSN}
+      REDIS_URL:                ${REDIS_URL}
+      REDIS_BLACKLIST_ADDR:     ${REDIS_BLACKLIST_ADDR}
       REDIS_BLACKLIST_PASSWORD: ${REDIS_BLACKLIST_PASSWORD}
-      JWT_PRIVATE_KEY_PATH:    ${JWT_PRIVATE_KEY_PATH}
-      JWT_PUBLIC_KEY_PATH:     ${JWT_PUBLIC_KEY_PATH}
-      JWT_KID:                 ${JWT_KID}
-      GOOGLE_CLIENT_ID:        ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET:    ${GOOGLE_CLIENT_SECRET}
-      GOOGLE_REDIRECT_URI:     ${GOOGLE_REDIRECT_URI}
-      HTTP_ADDR:               ${HTTP_ADDR:-:8080}
+      JWT_PRIVATE_KEY_PATH:     ${JWT_PRIVATE_KEY_PATH}
+      JWT_PUBLIC_KEY_PATH:      ${JWT_PUBLIC_KEY_PATH}
+      JWT_KID:                  ${JWT_KID}
+      GOOGLE_CLIENT_ID:         ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET:     ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI:      ${GOOGLE_REDIRECT_URI}
+      HTTP_ADDR:                ${HTTP_ADDR}
     ports:
-      - "${SERVER_PORT:-8080}:8080"
+      - "${SERVER_PORT}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,7 +103,7 @@ services:
         condition: service_healthy
       redis-blacklist:
         condition: service_healthy
-      migrate:
+      migrate-init:
         condition: service_completed_successfully
     networks:
       - default
@@ -118,3 +116,4 @@ networks:
   default:
   saymo-blacklist:
     driver: bridge
+    # BC#3 и BC#4 подключаются с external: true в своих compose-файлах
