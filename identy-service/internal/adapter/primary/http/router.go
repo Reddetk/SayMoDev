@@ -24,7 +24,8 @@ package http
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
-
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/Reddetk/SayMoDev/identy-service/internal/adapter/primary/http/middleware"
 	"github.com/Reddetk/SayMoDev/identy-service/internal/logger"
@@ -76,7 +77,7 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 	//  Public endpoints (no JWT)
 	public := router.Group("/")
 	{
-		public.GET("/swagger/*any", )
+		public.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 		public.GET("iam/.well-known/jwks.json", handleGetJWKS(deps.TokenOperator))
 
 		auth := public.Group("/iam/auth")
