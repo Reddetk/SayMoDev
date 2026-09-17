@@ -22,9 +22,9 @@ import (
 // в одном trace дереве (Observability.md Trace Context Propagation).
 var authTracer = otel.Tracer("identity-service")
 
-// 
+//
 // Request / response types (never exported beyond this package)
-// 
+//
 
 type registerVerifyReq struct {
 	Email string `json:"email" binding:"required,email"`
@@ -60,17 +60,17 @@ type passwordResetConfirmReq struct {
 	NewPassword string `json:"newPassword" binding:"required,min=8,max=72"`
 }
 
-// 
+//
 // OAuth state cookie
-// 
+//
 
 // oauthStateCookieName stores PKCE state between initiate and callback.
 // Format: "csrfToken:codeVerifier"  both opaque, no PII.
 const oauthStateCookieName = "oauth_state"
 
-// 
+//
 // Password hashing
-// 
+//
 
 // hashPassword wraps bcrypt at DefaultCost.
 // port/in contracts require a hash, not plain-text.
@@ -82,11 +82,11 @@ func hashPassword(plain string) (string, error) {
 	return string(b), nil
 }
 
-// 
+//
 // Error classification helpers.
 // Each helper covers a semantic group of coreErrors sentinels.
 // All sentinel names are verified against core/coreErrors/businesErrors.go.
-// 
+//
 
 // isOTPError covers all bad/expired/used OTP conditions.
 // Spec 7: "generic response  never distinguish wrong / expired / not found".
@@ -152,10 +152,9 @@ func isInfraError(err error) bool {
 		err == corerr.ErrEmailDeliveryFailed
 }
 
-// 
+//
 // GET /iam/.well-known/jwks.json  public, no auth
-// 
-
+//
 func handleGetJWKS(op inport.TokenOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -174,13 +173,12 @@ func handleGetJWKS(op inport.TokenOperator) gin.HandlerFunc {
 	}
 }
 
-// 
+//
 // POST /iam/auth/register/verify
 // Body: { email }
 // Response: 200 { message }
 // Anti-enumeration: respond 200 regardless of email existence.
-// 
-
+//
 func handleRegisterVerify(otp inport.OTPIssuer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req registerVerifyReq
@@ -208,8 +206,7 @@ func handleRegisterVerify(otp inport.OTPIssuer) gin.HandlerFunc {
 // POST /iam/auth/register
 // Body: { email, verifyCode, password, role, fingerprint, classifier }
 // Response: 201
-// 
-
+//
 func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := loggerFromCtx(c)
@@ -297,8 +294,7 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 // POST /iam/auth/login
 // Body: { email, password, fingerprint }
 // Response: 200 { access_token, session_id }
-// 
-
+//
 func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := loggerFromCtx(c)
@@ -390,12 +386,11 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 	}
 }
 
-// 
+//
 // POST /iam/auth/logout
 // Headers: Authorization: Bearer <JWT>
 // Response: 204 No Content
-// 
-
+//
 func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := loggerFromCtx(c)
@@ -455,13 +450,12 @@ func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gi
 	}
 }
 
-// 
+//
 // POST /iam/auth/password-reset
 // Body: { email }
 // Response: 200 { message }
 // Anti-enumeration: identical response regardless of email existence.
-// 
-
+//
 func handlePasswordResetRequest(otp inport.OTPIssuer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req passwordResetReq
@@ -475,12 +469,11 @@ func handlePasswordResetRequest(otp inport.OTPIssuer) gin.HandlerFunc {
 	}
 }
 
-// 
+//
 // POST /iam/auth/password-reset/confirm
 // Body: { email, code, newPassword }
 // Response: 200 { message }
-// 
-
+//
 func handlePasswordResetConfirm(pwdOp inport.PasswordOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := loggerFromCtx(c)
@@ -540,11 +533,10 @@ func handlePasswordResetConfirm(pwdOp inport.PasswordOperator) gin.HandlerFunc {
 	}
 }
 
-// 
+//
 // GET /iam/auth/oauth/google
 // Response: 302 redirect to Google Authorization URL
-// 
-
+//
 func handleOAuthGoogleInitiate(auth inport.AccountAuthenticator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		redirectURL, state, err := auth.InitiateGoogleOAuth(c.Request.Context(), c.ClientIP())
@@ -565,11 +557,10 @@ func handleOAuthGoogleInitiate(auth inport.AccountAuthenticator) gin.HandlerFunc
 	}
 }
 
-// 
+//
 // GET /iam/auth/oauth/google/callback
 // Response: 200 { access_token, session_id }
-// 
-
+//
 func handleOAuthGoogleCallback(auth inport.AccountAuthenticator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := loggerFromCtx(c)

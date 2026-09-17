@@ -10,19 +10,6 @@ definitions:
     - aphasiaType
     - difficulty
     type: object
-  http.loginReq:
-    properties:
-      email:
-        type: string
-      fingerprint:
-        type: string
-      password:
-        type: string
-    required:
-    - email
-    - fingerprint
-    - password
-    type: object
   http.registerReq:
     properties:
       classifier:
@@ -53,41 +40,6 @@ info:
   title: SayMo Identity Service API
   version: "1.0"
 paths:
-  /iam/auth/login:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Login payload
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/http.loginReq'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Login with email and password
-      tags:
-      - Auth
   /iam/auth/register:
     post:
       consumes:

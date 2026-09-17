@@ -33,12 +33,11 @@ type changePasswordReq struct {
 	NewPassword     string `json:"newPassword"     binding:"required,min=8,max=72"`
 }
 
-// 
+//
 // GET /iam/accounts/:accountId
 // Response: 200 AccountDTO
 // Guard: OwnershipOrAdmin middleware (applied at router group level)
-// 
-
+//
 func handleGetAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accountID := c.Param("accountId")
@@ -70,14 +69,13 @@ func handleGetAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	}
 }
 
-// 
+//
 // PATCH /iam/accounts/:accountId
 // Body: { role?, personalInfo? }
 // Response: 200 AccountDTO
 // Guard: OwnershipOrAdmin middleware (applied at router group level)
 // Business rule: role change is administrator-only (checked here, not in middleware)
-// 
-
+//
 func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ac := middleware.MustGetAuthContext(c)
@@ -143,13 +141,12 @@ func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	}
 }
 
-// 
+//
 // DELETE /iam/accounts/:accountId
 // Response: 204 No Content
 // Guard: RequireRole(administrator) middleware (applied at router route level)
 // Side effects: T4 mass-revoke, AccountDeleted event -> BC#2, BC#4 cascade.
-// 
-
+//
 func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ac := middleware.MustGetAuthContext(c)
@@ -175,12 +172,11 @@ func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	}
 }
 
-// 
+//
 // GET /iam/accounts/:accountId/sessions
 // Response: 200 [SessionDTO]
 // Guard: OwnershipOrAdmin middleware (applied at router group level)
-// 
-
+//
 func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accountID := c.Param("accountId")
@@ -204,14 +200,13 @@ func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
 	}
 }
 
-// 
+//
 // DELETE /iam/accounts/:accountId/sessions/:sessionId
 // Response: 204 No Content
 // Guard: OwnershipOrAdmin middleware (applied at router group level)
 // Business logic: administrator uses AdminTerminateSession (audit trail),
 // owner uses Logout (self-service path). Branching is intentional here.
-// 
-
+//
 func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := loggerFromCtx(c)
@@ -268,7 +263,7 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 	}
 }
 
-// 
+//
 // POST /iam/accounts/:accountId/password
 // Body: { currentPassword, newPassword }
 // Response: 204 No Content
@@ -284,8 +279,7 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 //
 // NOTE: missing spec  whether administrator may bypass currentPassword check
 // is not defined in BC#1. Until resolved, currentPassword is always required.
-// 
-
+//
 func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := loggerFromCtx(c)
@@ -386,14 +380,13 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 	}
 }
 
-// 
+//
 // POST /iam/accounts/:accountId/lock
 // Body: { locked_until?: int64 | null }
 // Response: 200 { status, locked_until }
 // Guard: RequireRole(administrator) middleware (applied at router route level)
 // Side effects: §6 Lock Semantics  rev++, all jti blacklisted, sessions deleted atomically.
-// 
-
+//
 func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := loggerFromCtx(c)
@@ -438,12 +431,11 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	}
 }
 
-// 
+//
 // POST /iam/accounts/:accountId/unlock
 // Response: 200 { status }
 // Guard: RequireRole(administrator) middleware (applied at router route level)
-// 
-
+//
 func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := loggerFromCtx(c)
