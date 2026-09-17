@@ -14,13 +14,13 @@ package mocks
 import (
 	"context"
 
-	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
-	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/internal/core/coreErrors"
+	"github.com/Reddetk/SayMoDev/identy-service/internal/core/entity"
 	"github.com/stretchr/testify/mock"
 )
 
 // MockAccountRepository is a testify mock for out.AccountRepository.
-// It intentionally does not embed a default implementation -- every
+// It intentionally does not embed a default implementation  every
 // method call must be explicitly configured with On(...).Return(...)
 // so missing expectations cause test failures, not silent panics.
 type MockAccountRepository struct {
@@ -143,7 +143,7 @@ func (m *MockAccountRepository) DeleteSessionWithTx(
 }
 
 // FindByGoogleUID loads the Account aggregate by google_uid (Google claim sub).
-// Priority lookup for OAuth flow -- stable across Google email changes.
+// Priority lookup for OAuth flow  stable across Google email changes.
 //
 // Happy path:  Return(account, nil)
 // Error path:  Return(nil, corerr.ErrAccountNotFound)

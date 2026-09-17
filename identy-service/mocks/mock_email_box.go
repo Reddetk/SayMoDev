@@ -3,12 +3,12 @@ package mocks
 import (
 	"context"
 
-	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
-	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/internal/core/coreErrors"
+	valobj "github.com/Reddetk/SayMoDev/identy-service/internal/core/valObj"
 	"github.com/stretchr/testify/mock"
 )
 
-// ErrEmailServiceUnavailable -- SMTP/SES infrastructure unreachable before send.
+// ErrEmailServiceUnavailable  SMTP/SES infrastructure unreachable before send.
 // Distinct from ErrEmailDeliveryFailed (transport accepted but delivery failed).
 var ErrEmailServiceUnavailable = corerr.ErrEmailServiceUnavailable
 

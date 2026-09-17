@@ -9,12 +9,12 @@ import (
 
 	"go.uber.org/zap/zapcore"
 
-	"github.com/Reddetk/SayMoDev/identy-service/adapter/primary/http/middleware"
-	"github.com/Reddetk/SayMoDev/identy-service/adapter/secondary"
-	"github.com/Reddetk/SayMoDev/identy-service/adapter/telemetry"
+	"github.com/Reddetk/SayMoDev/identy-service/internal/adapter/primary/http/middleware"
+	"github.com/Reddetk/SayMoDev/identy-service/internal/adapter/secondary"
+	"github.com/Reddetk/SayMoDev/identy-service/internal/adapter/telemetry"
 )
 
-// Config -- агрегированная конфигурация identity-service.
+// Config  агрегированная конфигурация identity-service.
 // Имена переменных согласованы с cmd/main.go (источник правды).
 //
 // Обязательные переменные:
@@ -66,7 +66,7 @@ type Config struct {
 }
 
 // Load читает переменные окружения и возвращает заполненный Config.
-// Отсутствие любого обязательного поля -- ошибка.
+// Отсутствие любого обязательного поля  ошибка.
 func Load() (*Config, error) {
 	cfg := &Config{}
 	var missing []string
@@ -79,7 +79,7 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// --- infrastructure ------------------------------------------------------
+	//  infrastructure 
 	cfg.HTTPAddr = envOr("HTTP_ADDR", ":8080")
 	cfg.OTelEndpoint = envOr("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
 
@@ -88,7 +88,7 @@ func Load() (*Config, error) {
 	require("REDIS_BLACKLIST_ADDR", &cfg.RedisBlacklistAddr)
 	require("REDIS_BLACKLIST_PASSWORD", &cfg.RedisBlacklistPassword)
 
-	// --- JWT -----------------------------------------------------------------
+	//  JWT -
 	require("JWT_PRIVATE_KEY_PATH", &cfg.JWTPrivateKeyPath)
 	require("JWT_PUBLIC_KEY_PATH", &cfg.JWTPublicKeyPath)
 	require("JWT_KID", &cfg.JWTKid)
@@ -97,7 +97,7 @@ func Load() (*Config, error) {
 	cfg.JWTPrevPublicKey = os.Getenv("JWT_PREV_PUBLIC_KEY_PATH")
 	cfg.JWTPrevKid = os.Getenv("JWT_PREV_KID")
 
-	// --- telemetry -----------------------------------------------------------
+	//  telemetry -
 	serviceName := envOr("SERVICE_NAME", "identity-service")
 	serviceVersion := envOr("SERVICE_VERSION", "dev")
 	environment := envOr("ENVIRONMENT", "development")
@@ -116,16 +116,16 @@ func Load() (*Config, error) {
 		JaegerEndpoint: cfg.OTelEndpoint,
 	}
 
-	// --- google oauth --------------------------------------------------------
+	//  google oauth 
 	require("GOOGLE_CLIENT_ID", &cfg.GoogleOAuth.ClientID)
 	require("GOOGLE_CLIENT_SECRET", &cfg.GoogleOAuth.ClientSecret)
 	require("GOOGLE_REDIRECT_URI", &cfg.GoogleOAuth.RedirectURI)
 
-	// --- postbox -------------------------------------------------------------
+	//  postbox -
 	require("POSTBOX_IAM_TOKEN", &cfg.Postbox.IAMToken)
 	require("POSTBOX_FROM_ADDRESS", &cfg.Postbox.FromAddress)
 
-	// --- cors ----------------------------------------------------------------
+	//  cors 
 	cfg.CORS = middleware.CORSConfig{
 		AllowedOrigins:   splitCSV(os.Getenv("CORS_ALLOWED_ORIGINS")),
 		AllowedMethods:   splitCSVOr("CORS_ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS"),
@@ -135,7 +135,7 @@ func Load() (*Config, error) {
 		MaxAge:           parseInt(os.Getenv("CORS_MAX_AGE"), 600),
 	}
 
-	// --- validate ------------------------------------------------------------
+	//  validate 
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("config: missing required env vars: %s", strings.Join(missing, ", "))
 	}
@@ -152,9 +152,9 @@ func (c *Config) OTelConnectTimeout() time.Duration {
 	return time.Duration(v) * time.Second
 }
 
-// ---------------------------------------------------------------------------
+// 
 // helpers
-// ---------------------------------------------------------------------------
+// 
 
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

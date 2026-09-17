@@ -1,8 +1,8 @@
-# Dockerfile.migrate -- сборка бинарника миграций (multi-stage).
+# Dockerfile.migrate  сборка бинарника миграций (multi-stage).
 # Используется сервисом migrate-init в docker-compose.yml.
-# Копирует файлы миграций внутрь образа -- MIGRATIONS_PATH не нужно передавать вручную.
+# Копирует файлы миграций внутрь образа  MIGRATIONS_PATH не нужно передавать вручную.
 
-# ---- Stage 1: builder -------------------------------------------------------
+#  Stage 1: builder -
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
@@ -17,16 +17,16 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /bin/migrate \
     ./cmd/migrate/main.go
 
-# ---- Stage 2: runtime -------------------------------------------------------
+#  Stage 2: runtime -
 # distroless/static: нет shell, нет пакетного менеджера, минимальный attack surface.
 FROM gcr.io/distroless/static-debian12
 
 WORKDIR /app
 
-COPY --from=builder /bin/migrate    ./migrate
-COPY --from=builder /app/migrations ./migrations
+COPY from=builder /bin/migrate    ./migrate
+COPY from=builder /app/migrations ./migrations
 
-# migrations внутри образа -- MIGRATIONS_PATH не нужен в окружении контейнера.
+# migrations внутри образа  MIGRATIONS_PATH не нужен в окружении контейнера.
 ENV MIGRATIONS_PATH=./migrations
 
 ENTRYPOINT ["./migrate"]

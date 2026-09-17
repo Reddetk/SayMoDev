@@ -1,9 +1,9 @@
-// cmd/postboxmock/main.go -- локальный mock Yandex Cloud Postbox для разработки.
+// cmd/postboxmock/main.go  локальный mock Yandex Cloud Postbox для разработки.
 //
 // Запуск: task postbox:mock  (port :9025)
 //
 // WARNING: dev-only. Никогда не включать в prod-образ.
-// OTP-коды печатаются в stdout -- только для локальной отладки.
+// OTP-коды печатаются в stdout  только для локальной отладки.
 package main
 
 import (
@@ -38,7 +38,7 @@ var (
 	inbox []email
 )
 
-// sesv2 структуры -- минимальный subset для парсинга.
+// sesv2 структуры  минимальный subset для парсинга.
 type sesv2Body struct {
 	FromEmailAddress string `json:"FromEmailAddress"`
 	Destination      struct {
@@ -112,12 +112,12 @@ func handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 	mu.Unlock()
 
-	// stdout -- dev visibility. OTP виден здесь намеренно (dev-only).
-	fmt.Printf("\n[postbox-mock] ---\n")
+	// stdout  dev visibility. OTP виден здесь намеренно (dev-only).
+	fmt.Printf("\n[postbox-mock] -\n")
 	fmt.Printf("  TO:      %s\n", to)
 	fmt.Printf("  SUBJECT: %s\n", subject)
 	fmt.Printf("  BODY:    %s\n", text)
-	fmt.Printf("[postbox-mock] ---\n")
+	fmt.Printf("[postbox-mock] -\n")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

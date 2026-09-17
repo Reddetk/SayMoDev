@@ -25,10 +25,10 @@ var ErrRedisUnavailable = errors.New("redis is unavailable")
 // GetAccountRev has two distinct error-adjacent scenarios that produce
 // different behaviour in TokenService (spec BC#1 Step 3):
 //
-//	// L2 miss -- key absent in Redis; TokenService continues (not a failure)
+//	// L2 miss  key absent in Redis; TokenService continues (not a failure)
 //	bl.On("GetAccountRev", mock.Anything, "acc-id").Return(int64(0), nil)
 //
-//	// Redis down -- TokenService must return ErrTokenRevoked (fail-closed)
+//	// Redis down  TokenService must return ErrTokenRevoked (fail-closed)
 //	bl.On("GetAccountRev", mock.Anything, "acc-id").Return(int64(0), mocks.ErrRedisUnavailable)
 //
 // These two cases MUST be covered by separate test functions.
@@ -65,9 +65,9 @@ func (m *MockTokenBlacklist) Contains(
 
 // GetAccountRev returns the rev stored in Redis L2 for the given accountID.
 //
-// L2 miss (key absent):  Return(int64(0), nil)    -- not a failure
+// L2 miss (key absent):  Return(int64(0), nil)     not a failure
 // Rev set:               Return(int64(5), nil)
-// Redis down:            Return(int64(0), mocks.ErrRedisUnavailable) -- fail-closed
+// Redis down:            Return(int64(0), mocks.ErrRedisUnavailable)  fail-closed
 func (m *MockTokenBlacklist) GetAccountRev(
 	ctx context.Context,
 	accountID string,

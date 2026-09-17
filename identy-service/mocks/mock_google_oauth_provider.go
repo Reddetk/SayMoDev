@@ -3,8 +3,8 @@ package mocks
 import (
 	"context"
 
-	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
-	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/internal/core/coreErrors"
+	valobj "github.com/Reddetk/SayMoDev/identy-service/internal/core/valObj"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -14,14 +14,14 @@ var (
 	// Name aligned to mock API: ValidateState returns "mismatch" on CSRF failure.
 	ErrOAuthStateMismatch = corerr.ErrOAuthStateCSRFMismatch
 
-	// ErrOAuthStateExpired -- OAuthState TTL exceeded in callback.
+	// ErrOAuthStateExpired  OAuthState TTL exceeded in callback.
 	// Same sentinel used by NewOAuthState for expiresAt <= 0 construction guard.
 	ErrOAuthStateExpired = corerr.ErrOAuthStateExpired
 
-	// ErrOAuthJWKSUnavailable -- Google JWKS endpoint unreachable (BuildAuthURL / ExchangeCode).
+	// ErrOAuthJWKSUnavailable  Google JWKS endpoint unreachable (BuildAuthURL / ExchangeCode).
 	ErrOAuthJWKSUnavailable = corerr.ErrOAuthJWKSUnavailable
 
-	// ErrOAuthEmailNotVerified -- email_verified claim is false.
+	// ErrOAuthEmailNotVerified  email_verified claim is false.
 	ErrOAuthEmailNotVerified = corerr.ErrOAuthEmailNotVerified
 )
 
@@ -64,8 +64,8 @@ func (m *MockGoogleOAuthProvider) BuildAuthURL(
 // ExchangeCode performs server-to-server code exchange and ID token verification.
 //
 // Happy path:  Return(valobj.GoogleClaims{Sub: "google-uid-123", Email: "user@gmail.com", EmailVerified: true}, nil)
-// Error path 1 -- JWKS down:        Return(valobj.GoogleClaims{}, mocks.ErrOAuthJWKSUnavailable)
-// Error path 2 -- email unverified: Return(valobj.GoogleClaims{}, mocks.ErrOAuthEmailNotVerified)
+// Error path 1  JWKS down:        Return(valobj.GoogleClaims{}, mocks.ErrOAuthJWKSUnavailable)
+// Error path 2  email unverified: Return(valobj.GoogleClaims{}, mocks.ErrOAuthEmailNotVerified)
 func (m *MockGoogleOAuthProvider) ExchangeCode(
 	ctx context.Context,
 	code string,
@@ -78,8 +78,8 @@ func (m *MockGoogleOAuthProvider) ExchangeCode(
 // ValidateState verifies CSRF token from callback against stored state.
 //
 // Happy path:  Return(nil)
-// Error path 1 -- mismatch: Return(mocks.ErrOAuthStateMismatch)
-// Error path 2 -- expired:  Return(mocks.ErrOAuthStateExpired)
+// Error path 1  mismatch: Return(mocks.ErrOAuthStateMismatch)
+// Error path 2  expired:  Return(mocks.ErrOAuthStateExpired)
 func (m *MockGoogleOAuthProvider) ValidateState(
 	ctx context.Context,
 	receivedCSRF string,

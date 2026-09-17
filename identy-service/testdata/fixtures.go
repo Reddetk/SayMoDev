@@ -6,8 +6,8 @@ package testdata
 import (
 	"time"
 
-	"github.com/Reddetk/SayMoDev/identy-service/core/entity"
-	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	"github.com/Reddetk/SayMoDev/identy-service/internal/core/entity"
+	valobj "github.com/Reddetk/SayMoDev/identy-service/internal/core/valObj"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -49,7 +49,7 @@ const (
 )
 
 // NewActiveAccount returns a restored active patient Account with a password hash
-// and one active session. Safe to call in parallel tests -- returns a new pointer each time.
+// and one active session. Safe to call in parallel tests  returns a new pointer each time.
 func NewActiveAccount() *entity.Account {
 	now := time.Now().UnixMilli()
 	meta, _ := valobj.NewMetadata(now, now)

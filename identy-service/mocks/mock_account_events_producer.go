@@ -3,13 +3,13 @@ package mocks
 import (
 	"context"
 
-	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
-	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/internal/core/coreErrors"
+	valobj "github.com/Reddetk/SayMoDev/identy-service/internal/core/valObj"
 	"github.com/stretchr/testify/mock"
 )
 
 // MockAccountEventsProducer is a testify mock for out.AccountEventsProducer.
-// Kafka/outbox is never started in unit tests -- this mock replaces it entirely.
+// Kafka/outbox is never started in unit tests  this mock replaces it entirely.
 //
 // Two scenarios per method:
 //
@@ -134,7 +134,7 @@ func (m *MockAccountEventsProducer) SessionTerminated(
 }
 
 // SessionTerminatedByAdmin fires on admin-initiated session termination.
-// Carries adminID for audit trail -- separate from SessionTerminated per ADR-001.
+// Carries adminID for audit trail  separate from SessionTerminated per ADR-001.
 //
 // Happy path: Return(nil)
 // Error path:  Return(mocks.ErrOutboxUnavailable)

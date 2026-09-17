@@ -8,10 +8,10 @@ dotenv: ['.env.{{.ENV}}']
 
 tasks:
 
-  # ---------------------------------------------------------------------------
+  # -
   # RSA keys
-  # Генерация через Go -- не требует openssl в PATH. Идемпотентно.
-  # ---------------------------------------------------------------------------
+  # Генерация через Go  не требует openssl в PATH. Идемпотентно.
+  # -
 
   gen-rsa:
     desc: "Generate RSA-2048 key pair in testdata/keys/ (no openssl required)"
@@ -21,9 +21,9 @@ tasks:
       - testdata/keys/private.pem
       - testdata/keys/public.pem
 
-  # ---------------------------------------------------------------------------
+  # -
   # Infrastructure
-  # ---------------------------------------------------------------------------
+  # -
 
   infra:up:
     desc: "Start postgres + redis (detached). Postgres healthcheck managed by docker compose."
@@ -46,9 +46,9 @@ tasks:
     cmds:
       - docker compose logs -f postgres redis-bc1 redis-blacklist
 
-  # ---------------------------------------------------------------------------
+  # -
   # Migrations
-  # ---------------------------------------------------------------------------
+  # -
 
   migrate:up:
     desc: "Apply all pending migrations"
@@ -67,20 +67,20 @@ tasks:
     requires:
       vars: [VERSION]
 
-  # ---------------------------------------------------------------------------
+  # -
   # Postbox mock (dev-only)
   # Запускай в отдельном терминале рядом с task run.
   # Инбокс: http://localhost:9025
-  # ---------------------------------------------------------------------------
+  # -
 
   postbox:mock:
     desc: "Run local Postbox mock on :9025 (dev-only, never use in prod)"
     cmds:
       - go run ./cmd/postboxmock/main.go
 
-  # ---------------------------------------------------------------------------
+  # -
   # Server
-  # ---------------------------------------------------------------------------
+  # -
 
   run:
     desc: "Run identity-service locally"
@@ -97,14 +97,14 @@ tasks:
     cmds:
       - go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate/main.go
 
-  # ---------------------------------------------------------------------------
+  # -
   # Docker full stack
-  # ---------------------------------------------------------------------------
+  # -
 
   docker:up:
     desc: "Build and start full stack via docker compose (includes migrate-init)"
     cmds:
-      - docker compose up --build -d
+      - docker compose up build -d
       - docker compose ps
 
   docker:down:
@@ -117,11 +117,11 @@ tasks:
     cmds:
       - docker compose logs -f server
 
-  # ---------------------------------------------------------------------------
+  # -
   # Dev
   # Первый запуск: task gen-rsa && task dev
   # В отдельном терминале: task postbox:mock
-  # ---------------------------------------------------------------------------
+  # -
 
   dev:
     desc: "Start infra then run migrate + server locally"
@@ -130,9 +130,9 @@ tasks:
       - task: migrate:up
       - task: run
 
-  # ---------------------------------------------------------------------------
+  # -
   # Helpers
-  # ---------------------------------------------------------------------------
+  # -
 
   tidy:
     desc: "go mod tidy"

@@ -1,4 +1,4 @@
-// cmd/genrsa/main.go -- генерация RSA-2048 ключей без зависимости от openssl.
+// cmd/genrsa/main.go  генерация RSA-2048 ключей без зависимости от openssl.
 // Используется только для локальной разработки. Прод-ключи хранятся в Yandex Cloud KMS.
 package main
 
@@ -33,7 +33,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// private key -- PKCS#8 PEM
+	// private key  PKCS#8 PEM
 	privDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "marshal private: %v\n", err)
@@ -44,7 +44,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// public key -- PKIX PEM
+	// public key  PKIX PEM
 	pubDER, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "marshal public: %v\n", err)

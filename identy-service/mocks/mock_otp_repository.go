@@ -3,17 +3,17 @@ package mocks
 import (
 	"context"
 
-	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
-	valobj "github.com/Reddetk/SayMoDev/identy-service/core/valObj"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/internal/core/coreErrors"
+	valobj "github.com/Reddetk/SayMoDev/identy-service/internal/core/valObj"
 	"github.com/stretchr/testify/mock"
 )
 
 // Re-exported sentinels for use in test files without importing corerr directly.
 var (
-	// ErrOTPNotFound -- OTP record absent; Find returns nothing for this (email, purpose).
+	// ErrOTPNotFound  OTP record absent; Find returns nothing for this (email, purpose).
 	ErrOTPNotFound = corerr.ErrOTPNotFound
 
-	// ErrDBUnavailable -- DB infrastructure unreachable (Upsert/CleanUp/Immulate).
+	// ErrDBUnavailable  DB infrastructure unreachable (Upsert/CleanUp/Immulate).
 	ErrDBUnavailable = corerr.ErrDBUnavailable
 )
 
@@ -21,11 +21,11 @@ var (
 //
 // Find has two happy-path scenarios reflecting domain lifecycle:
 //
-//	// Scenario 1: fresh OTP -- IsExpired() == false; domain proceeds
+//	// Scenario 1: fresh OTP  IsExpired() == false; domain proceeds
 //	repo.On("Find", mock.Anything, "user@example.com", valobj.OTPPurposeRegistration).
 //	    Return(testdata.NewFreshVerificationCode(), nil)
 //
-//	// Scenario 2: expired OTP -- IsExpired() == true; domain rejects it
+//	// Scenario 2: expired OTP  IsExpired() == true; domain rejects it
 //	repo.On("Find", mock.Anything, "user@example.com", valobj.OTPPurposeRegistration).
 //	    Return(testdata.NewExpiredVerificationCode(), nil)
 //
@@ -49,7 +49,7 @@ func (m *MockOtpRepository) Upsert(
 }
 
 // Find loads a VerificationCode by email and purpose.
-// Returns a record even if expired -- domain calls IsExpired() to decide.
+// Returns a record even if expired  domain calls IsExpired() to decide.
 //
 // Happy path (fresh):   Return(testdata.NewFreshVerificationCode(), nil)
 // Happy path (expired): Return(testdata.NewExpiredVerificationCode(), nil)

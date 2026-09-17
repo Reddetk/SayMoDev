@@ -3,7 +3,7 @@ package mocks
 import (
 	"context"
 
-	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/internal/core/coreErrors"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -14,7 +14,7 @@ import (
 //
 //	rl.On("RecordFailure", mock.Anything, "1.2.3.4", "").
 //	    Return(mocks.ErrRedisUnavailable)
-//	// AuthService must log WARN and continue -- assert no error propagation.
+//	// AuthService must log WARN and continue  assert no error propagation.
 type MockRateLimiter struct {
 	mock.Mock
 }

@@ -1,6 +1,6 @@
-// Package main -- утилита миграций БД identity-service.
+// Package main  утилита миграций БД identity-service.
 //
-// Отдельный бинарник -- не зависит от пакетов core/ или adapter/.
+// Отдельный бинарник  не зависит от пакетов core/ или adapter/.
 // Единственная внешняя зависимость: golang-migrate/v4.
 //
 // Порядок загрузки env:
@@ -9,13 +9,15 @@
 //  3. .env.local как fallback
 //
 // Обязательные переменные:
-//   POSTGRES_DSN      -- postgres://user:pass@host:5432/db?sslmode=disable
-//   MIGRATIONS_PATH   -- путь к директории с *.up.sql / *.down.sql (default: ./migrations)
+//
+//	POSTGRES_DSN       postgres://user:pass@host:5432/db?sslmode=disable
+//	MIGRATIONS_PATH    путь к директории с *.up.sql / *.down.sql (default: ./migrations)
 //
 // Флаги:
-//   -action up              применить все pending миграции
-//   -action down            откатить последнюю миграцию
-//   -action force -version N  выставить версию принудительно (фикс dirty state)
+//
+//	--action up              применить все pending миграции
+//	--action down            откатить последнюю миграцию
+//	--action force -version N  выставить версию принудительно (фикс dirty state)
 package main
 
 import (
@@ -30,7 +32,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"go.uber.org/zap"
 
-	"github.com/Reddetk/SayMoDev/identy-service/internal/dotenv"
+	dotenv "github.com/Reddetk/SayMoDev/identy-service/cmd/config"
 )
 
 func main() {
@@ -44,25 +46,25 @@ func main() {
 }
 
 func run(logger *zap.Logger) error {
-	// --- env loading -----------------------------------------------------------
+	//  env loading -
 	// Приоритет: реальное окружение > .env.${ENV} > .env.local
 	// dotenv.Load не перезаписывает уже установленные переменные.
 	if env := os.Getenv("ENV"); env != "" {
 		envFile := fmt.Sprintf(".env.%s", env)
-		if err := dotenv.Load(envFile); err != nil && !os.IsNotExist(err) {
+		if err := dotenv.ENVLoad(envFile); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("load %s: %w", envFile, err)
 		}
 	}
-	if err := dotenv.Load(".env.local"); err != nil && !os.IsNotExist(err) {
+	if err := dotenv.ENVLoad(".env.local"); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("load .env.local: %w", err)
 	}
 
-	// --- flags -----------------------------------------------------------------
+	//  flags -
 	action := flag.String("action", "up", "up | down | force")
 	version := flag.Int("version", 0, "target version for -action force")
 	flag.Parse()
 
-	// --- config ----------------------------------------------------------------
+	//  config
 	dsn, err := requireEnv("POSTGRES_DSN")
 	if err != nil {
 		return err
@@ -88,7 +90,7 @@ func run(logger *zap.Logger) error {
 		zap.String("migrations", abs),
 	)
 
-	// --- migrate ---------------------------------------------------------------
+	//  migrate -
 	m, err := migrate.New(sourceURL, dsn)
 	if err != nil {
 		return fmt.Errorf("migrate.New: %w", err)

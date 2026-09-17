@@ -3,7 +3,7 @@ package mocks
 import (
 	"context"
 
-	corerr "github.com/Reddetk/SayMoDev/identy-service/core/coreErrors"
+	corerr "github.com/Reddetk/SayMoDev/identy-service/internal/core/coreErrors"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -45,8 +45,8 @@ func (m *MockTokenIssuer) Issue(
 // Verify validates RS256 signature and returns flat claims.
 //
 // Happy path:  Return("acc-uuid", "patient", "sess-uuid", "jti-uuid", int64(1), expAt, nil)
-// Error path 1 -- expired/revoked: Return("", "", "", "", int64(0), int64(0), mocks.ErrTokenRevoked)
-// Error path 2 -- JWKS empty:      Return("", "", "", "", int64(0), int64(0), mocks.ErrJWKSKeysEmpty)
+// Error path 1  expired/revoked: Return("", "", "", "", int64(0), int64(0), mocks.ErrTokenRevoked)
+// Error path 2  JWKS empty:      Return("", "", "", "", int64(0), int64(0), mocks.ErrJWKSKeysEmpty)
 func (m *MockTokenIssuer) Verify(
 	ctx context.Context,
 	rawToken string,
