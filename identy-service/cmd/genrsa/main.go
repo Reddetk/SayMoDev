@@ -22,10 +22,10 @@ func main() {
 	privatePath := filepath.Join(dir, "private.pem")
 	publicPath := filepath.Join(dir, "public.pem")
 
-	if _, err := os.Stat(privatePath); err == nil {
-		fmt.Println("keys already exist, skipping generation")
-		os.Exit(0)
-	}
+	// if _, err := os.Stat(privatePath); err == nil {
+	// 	fmt.Println("keys already exist, skipping generation")
+	// 	os.Exit(0)
+	// }
 
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

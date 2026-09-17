@@ -4,7 +4,7 @@ import "context"
 
 // RateLimiter  out-port для rate limiting аутентификации
 //
-// Порядок проверок в AuthService.Login строго фиксирован (§5 Auth Invariants):
+// Порядок проверок в AuthService.Login строго фиксирован (5 Auth Invariants):
 //   [1] CheckIP  до любого обращения к БД (anti-scraping)
 //   [4] CheckAccount  после успешного lookup, до bcrypt
 //   [5] RecordFailure  после провала bcrypt.Compare

@@ -12,14 +12,14 @@ package core
 // POST //admin/accounts/:id/unlock      UnlockAccount: restore active status
 // DELETE //admin/accounts/:id           SoftDelete: T4 mass-revoke -> mark deleted
 //
-// Invariants enforced here (see spec §):
-//   §1  Anti-enumeration: Register and ConfrimPasswordReset return identical response shape regardless of email existence
-//   §2  Password policy: bcrypt hash length/format validated in entity;
+// Invariants enforced here (see spec ):
+//   1  Anti-enumeration: Register and ConfrimPasswordReset return identical response shape regardless of email existence
+//   2  Password policy: bcrypt hash length/format validated in entity;
 //       history reuse checked here via PasswordEntry.MatchesPlaintext (O(5) bcrypt.Compare)
-//   §3  Token lifecycle: rev++ is performed by entity.ChangePassword/Lock/SoftDelete; revokedJTIs passed to port
-//   §6  Lock semantics: both LockAccount and ConfrimPasswordReset perform T4 mass-revoke (rev++ + sessions cleared)
-//   §7  OTP security: constant-time comparison in checkOTP; generic error on mismatch; OTP plaintext never logged
-//   §G9 Revocation write order: after each *Tx commit, SetAccountRev writes new rev to Redis L2 (non-fatal on error)
+//   3  Token lifecycle: rev++ is performed by entity.ChangePassword/Lock/SoftDelete; revokedJTIs passed to port
+//   6  Lock semantics: both LockAccount and ConfrimPasswordReset perform T4 mass-revoke (rev++ + sessions cleared)
+//   7  OTP security: constant-time comparison in checkOTP; generic error on mismatch; OTP plaintext never logged
+//   G9 Revocation write order: after each *Tx commit, SetAccountRev writes new rev to Redis L2 (non-fatal on error)
 //
 // Event publishing:
 //   AccountRegistered, AccountEmailVerified      via outbox inside CreateAccountWithTx (repository layer)
@@ -133,7 +133,7 @@ func (a *AccountService) Register(
 		return corerr.ErrAccountRepository
 	}
 
-	// §1 Anti-enumeration
+	// 1 Anti-enumeration
 	if emailExists {
 		log.Debug("account.register: email already exists, simulating (anti-enumeration)")
 		if err := a.otpRep.Immulate(ctx); err != nil {

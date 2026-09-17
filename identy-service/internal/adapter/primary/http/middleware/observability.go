@@ -159,7 +159,7 @@ func (m *observabilityMiddleware) handle(c *gin.Context) {
 	)
 	c.Set(ContextKeyLogger, requestLogger)
 
-	//  2. CORS preflight counter -
+	//  2. CORS preflight counter
 	origin := c.Request.Header.Get("Origin")
 	if c.Request.Method == http.MethodOptions {
 		m.corsPreflightTotal.WithLabelValues(origin).Inc()
@@ -168,10 +168,10 @@ func (m *observabilityMiddleware) handle(c *gin.Context) {
 		m.corsRequestsTotal.WithLabelValues(origin, c.Request.Method).Inc()
 	}
 
-	//  3. Process request -
+	//  3. Process request
 	c.Next()
 
-	//  4. Post-request: record latency + log -
+	//  4. Post-request: record latency + log
 	latency := time.Since(start)
 	status := c.Writer.Status()
 

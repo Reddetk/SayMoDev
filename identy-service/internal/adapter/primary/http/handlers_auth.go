@@ -19,7 +19,7 @@ import (
 
 // authTracer  tracer для auth handler spans.
 // Имя совпадает с именем в ObservabilityMiddleware чтобы spans оказались
-// в одном trace дереве (Observability.md §Trace Context Propagation).
+// в одном trace дереве (Observability.md Trace Context Propagation).
 var authTracer = otel.Tracer("identity-service")
 
 // 
@@ -89,7 +89,7 @@ func hashPassword(plain string) (string, error) {
 // 
 
 // isOTPError covers all bad/expired/used OTP conditions.
-// Spec §7: "generic response  never distinguish wrong / expired / not found".
+// Spec 7: "generic response  never distinguish wrong / expired / not found".
 func isOTPError(err error) bool {
 	return err == corerr.ErrUserOTPisNotCorrect ||
 		err == corerr.ErrUserOTPisNotValid ||
@@ -195,7 +195,16 @@ func handleRegisterVerify(otp inport.OTPIssuer) gin.HandlerFunc {
 	}
 }
 
-// 
+// @Summary Register a new account
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body registerReq true "Registration payload"
+// @Success 201 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Router /iam/auth/register [post]
+//
 // POST /iam/auth/register
 // Body: { email, verifyCode, password, role, fingerprint, classifier }
 // Response: 201
@@ -212,7 +221,7 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 			return
 		}
 
-		// span: register.validate_input (Observability.md §Registration)
+		// span: register.validate_input (Observability.md Registration)
 		ctx, spanValidate := authTracer.Start(c.Request.Context(), "register.validate_input")
 		spanValidate.SetAttributes(attribute.String("register.method", "email"))
 
@@ -230,7 +239,7 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 			AphasiaType: req.Classifier.AphasiaType,
 		}
 
-		// span: register.check_email_uniqueness (Observability.md §Registration)
+		// span: register.check_email_uniqueness (Observability.md Registration)
 		ctx, spanCheck := authTracer.Start(ctx, "register.check_email_uniqueness")
 
 		if err := reg.Register(
@@ -265,7 +274,7 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 		}
 		spanCheck.End()
 
-		// Observability.md §Logs: account_registered INFO
+		// Observability.md Logs: account_registered INFO
 		logger.Info("account_registered",
 			zap.String("trace_id", traceID),
 			zap.String("method", "email"),
@@ -275,7 +284,16 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 	}
 }
 
-// 
+// @Summary Login with email and password
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body loginReq true "Login payload"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Router /iam/auth/login [post]
+//
 // POST /iam/auth/login
 // Body: { email, password, fingerprint }
 // Response: 200 { access_token, session_id }
@@ -299,7 +317,7 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 			return
 		}
 
-		// span: auth.verify_password (Observability.md §Authentication)
+		// span: auth.verify_password (Observability.md Authentication)
 		// bcrypt.Compare ожидается ~100-300ms при cost 12  span показывает реальное время.
 		ctx, spanAuth := authTracer.Start(c.Request.Context(), "auth.verify_password",
 			trace.WithAttributes(attribute.String("auth.method", "email")),
@@ -317,11 +335,11 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 			spanAuth.End()
 
 			switch {
-			// Spec Login §: "401 generic always" для всех credential/lock/deleted случаев.
+			// Spec Login : "401 generic always" для всех credential/lock/deleted случаев.
 			// Не раскрываем причину отказа.
 			case err == corerr.ErrInvalidCredentials ||
 				err == corerr.ErrAccountNotFound:
-				// Observability.md §Logs: jwt_validation_failed WARN
+				// Observability.md Logs: jwt_validation_failed WARN
 				// account_id намеренно опущен  anti-enumeration.
 				logger.Warn("jwt_validation_failed",
 					zap.String("trace_id", traceID),
@@ -357,7 +375,7 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 		}
 		spanAuth.End()
 
-		// Observability.md §Logs: session_created INFO
+		// Observability.md Logs: session_created INFO
 		logger.Info("session_created",
 			zap.String("trace_id", traceID),
 			zap.String("account_id", result.AccountID),
@@ -402,7 +420,7 @@ func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gi
 			return
 		}
 
-		// span: auth.update_session (Observability.md §Authentication)
+		// span: auth.update_session (Observability.md Authentication)
 		ctx, spanSession := authTracer.Start(c.Request.Context(), "auth.update_session")
 
 		// Step 1: destroy session.
@@ -425,7 +443,7 @@ func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gi
 		// is extended with JTI and ExpiresAt fields (port/in change required).
 		_ = token
 
-		// Observability.md §Logs: session_terminated INFO
+		// Observability.md Logs: session_terminated INFO
 		logger.Info("session_terminated",
 			zap.String("trace_id", traceID),
 			zap.String("account_id", ac.AccountID),
@@ -474,7 +492,7 @@ func handlePasswordResetConfirm(pwdOp inport.PasswordOperator) gin.HandlerFunc {
 			return
 		}
 
-		// span: password.bcrypt_hash (Observability.md §Password operations)
+		// span: password.bcrypt_hash (Observability.md Password operations)
 		ctx, spanHash := authTracer.Start(c.Request.Context(), "password.bcrypt_hash",
 			trace.WithAttributes(attribute.String("password.operation", "hash")),
 		)
@@ -498,7 +516,7 @@ func handlePasswordResetConfirm(pwdOp inport.PasswordOperator) gin.HandlerFunc {
 			newPasswordHash,
 		); err != nil {
 			switch {
-			// Spec §7: generic response  never distinguish wrong / expired / not found.
+			// Spec 7: generic response  never distinguish wrong / expired / not found.
 			case isOTPError(err):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or expired code"})
 			case err == corerr.ErrAccountNotFound:
@@ -512,7 +530,7 @@ func handlePasswordResetConfirm(pwdOp inport.PasswordOperator) gin.HandlerFunc {
 			return
 		}
 
-		// Observability.md §Logs: password_changed INFO
+		// Observability.md Logs: password_changed INFO
 		logger.Info("password_changed",
 			zap.String("trace_id", traceID),
 			zap.String("initiator", "user"),
@@ -585,7 +603,7 @@ func handleOAuthGoogleCallback(auth inport.AccountAuthenticator) gin.HandlerFunc
 		// full client-hints fingerprint недоступен в redirect context.
 		fingerprint := c.GetHeader("User-Agent")
 
-		// span: auth.verify_password (oauth path)  Observability.md §Authentication
+		// span: auth.verify_password (oauth path)  Observability.md Authentication
 		ctx, spanOAuth := authTracer.Start(c.Request.Context(), "auth.verify_password",
 			trace.WithAttributes(attribute.String("auth.method", "oauth2")),
 		)
@@ -613,7 +631,7 @@ func handleOAuthGoogleCallback(auth inport.AccountAuthenticator) gin.HandlerFunc
 		}
 		spanOAuth.End()
 
-		// Observability.md §Logs: session_created INFO
+		// Observability.md Logs: session_created INFO
 		logger.Info("session_created",
 			zap.String("trace_id", traceID),
 			zap.String("account_id", result.AccountID),

@@ -3,8 +3,9 @@
 // Маршрутизация соответствует спецификации endpoints.md (BC#1).
 //
 // Группы маршрутов:
-//   - public:    без JWT (JWKS, login, register, password-reset, OAuth)
-//   - protected: JWT required (logout, account CRUD, sessions, password change, lock/unlock)
+//
+//	public:    без JWT (JWKS, login, register, password-reset, OAuth)
+//	- protected: JWT required (logout, account CRUD, sessions, password change, lock/unlock)
 //
 // Middleware порядок выполнения на каждом маршруте:
 //
@@ -23,6 +24,7 @@ package http
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
+
 
 	"github.com/Reddetk/SayMoDev/identy-service/internal/adapter/primary/http/middleware"
 	"github.com/Reddetk/SayMoDev/identy-service/internal/logger"
@@ -71,9 +73,10 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 	rbacMW := middleware.NewRBACMiddleware(deps.Logger)
 	ownershipMW := middleware.NewOwnershipMiddleware(deps.Logger)
 
-	//  Public endpoints (no JWT) -
+	//  Public endpoints (no JWT)
 	public := router.Group("/")
 	{
+		public.GET("/swagger/*any", )
 		public.GET("iam/.well-known/jwks.json", handleGetJWKS(deps.TokenOperator))
 
 		auth := public.Group("/iam/auth")
@@ -88,7 +91,7 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 		}
 	}
 
-	//  Protected endpoints (JWT required) -
+	//  Protected endpoints (JWT required)
 	protected := router.Group("/", jwtMW.Handle())
 	{
 		protected.POST("/iam/auth/logout", handleLogout(deps.SessionOperator, deps.TokenOperator))

@@ -1,0 +1,17 @@
+basePath: /
+info:
+  contact: {}
+  description: HTTP API для управления идентификацией и доступом SayMo.
+  title: SayMo Identity Service API
+  version: "1.0"
+paths: {}
+schemes:
+- http
+- https
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT access token. Формат: Bearer {token}.'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

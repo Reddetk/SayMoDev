@@ -6,9 +6,9 @@ import (
 
 // GoogleClaims - Value Object, extracted from a verified Google ID token.
 // All fields are immutable after construction.
-// email_verified MUST be true before this VO is constructed (invariant §6 OAuth).
+// email_verified MUST be true before this VO is constructed (invariant 6 OAuth).
 //
-// Spec: IAM §Registration — OAuth2 (Google), step [6]:
+// Spec: IAM Registration — OAuth2 (Google), step [6]:
 //   "email_verified: true — ОБЯЗАТЕЛЬНАЯ проверка до создания/входа в account"
 type GoogleClaims struct {
 	// sub is the google_uid: stable Google account identifier.

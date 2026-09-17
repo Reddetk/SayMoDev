@@ -270,7 +270,7 @@ func (a *Account) oldestSessionIndex() int {
 //   - ErrAccountDeleted   cannot lock a deleted account
 //   - ErrAccountAlreadyLocked  idempotency guard; prevents silent rev++ on double-lock
 //
-// Returns revokedJTIs for blacklist propagation (§6).
+// Returns revokedJTIs for blacklist propagation (6).
 func (a *Account) Lock(until *int64) (revokedJTIs []string, err error) {
 	if a.status == valobj.StatusDeleted {
 		return nil, corerr.ErrAccountDeleted

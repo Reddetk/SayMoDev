@@ -9,10 +9,10 @@ type AccountOperator interface {
 
 	// LockAccount — POST //admin/accounts/:id/lock
 	//
-	// §6 Lock Semantics: rev++ + all jti blacklisted + sessions deleted atomically.
+	// 6 Lock Semantics: rev++ + all jti blacklisted + sessions deleted atomically.
 	// Both brute-force auto-lock and admin-lock must follow the same T4 mass-revoke procedure.
 	// RBAC (administrator role check) is enforced by the HTTP handler / middleware before reaching this method.
-	// actorID is taken from JWT claims (token.sub), never from the request body (§ Audit).
+	// actorID is taken from JWT claims (token.sub), never from the request body ( Audit).
 	LockAccount(
 		ctx context.Context,
 		accountID string,

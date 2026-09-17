@@ -16,7 +16,7 @@ const (
 	MaxEmailLength        = 254
 	MaxPersonalInfoLen    = 10000 // 10KB for personal info
 	MinPasswordLength     = 8
-	MaxPasswordBytes      = 72 // bcrypt hard limit — inputs exceeding this MUST be rejected (§2 Password Policy)
+	MaxPasswordBytes      = 72 // bcrypt hard limit — inputs exceeding this MUST be rejected (2 Password Policy)
 	MaxFingerprintLen     = 500
 	MaxSessionIDLen       = 36 // UUID v4 string length
 	MaxJTILen             = 36 // UUID v4 string length
@@ -30,7 +30,7 @@ const (
 // 
 const (
 	RolePatient       = "patient"
-	RoleRelative      = "relative" // placeholder — no current functional use (BC#1 §Ubiquitous Language)
+	RoleRelative      = "relative" // placeholder — no current functional use (BC#1 Ubiquitous Language)
 	RoleAdministrator = "administrator"
 )
 
@@ -67,7 +67,7 @@ const (
 )
 
 // 
-// Rate limiting — Spec §5 Rate Limiting Invariant
+// Rate limiting — Spec 5 Rate Limiting Invariant
 // 
 const (
 	// MaxFailedLoginAttemptsPerDay is the threshold after which an account
@@ -85,7 +85,7 @@ const (
 )
 
 // 
-// JWT token — Spec §3 Token Model and Lifecycle Invariant
+// JWT token — Spec 3 Token Model and Lifecycle Invariant
 // 
 const (
 	// JWTExpirySeconds is the fixed token lifetime: 30 days.
@@ -104,7 +104,7 @@ const (
 )
 
 // 
-// PKCE — Spec §Registration — OAuth2, Ubiquitous Language
+// PKCE — Spec Registration — OAuth2, Ubiquitous Language
 // 
 const (
 	// PKCECodeVerifierMinLen is the minimum code_verifier length per RFC 7636.
@@ -118,7 +118,7 @@ const (
 )
 
 // 
-// OAuth2 — Google — Spec §Registration — OAuth2 (Google)
+// OAuth2 — Google — Spec Registration — OAuth2 (Google)
 // 
 const (
 	// GoogleTokenEndpoint is the URL for server-to-server authorization code exchange.
@@ -152,7 +152,7 @@ const (
 )
 
 // 
-// Timing safety — Spec §Login
+// Timing safety — Spec Login
 // 
 const (
 	// DummyPasswordHash is a valid bcrypt hash of a random value.
@@ -168,7 +168,7 @@ const (
 )
 
 // 
-// JWKS cache — Spec §Token Validation Flow
+// JWKS cache — Spec Token Validation Flow
 // 
 const (
 	// JWKSCacheTTLSeconds is the local JWKS cache TTL.

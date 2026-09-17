@@ -46,7 +46,7 @@ func main() {
 }
 
 func run(logger *zap.Logger) error {
-	//  env loading -
+	//  env loading
 	// Приоритет: реальное окружение > .env.${ENV} > .env.local
 	// dotenv.Load не перезаписывает уже установленные переменные.
 	if env := os.Getenv("ENV"); env != "" {
@@ -59,7 +59,7 @@ func run(logger *zap.Logger) error {
 		return fmt.Errorf("load .env.local: %w", err)
 	}
 
-	//  flags -
+	//  flags
 	action := flag.String("action", "up", "up | down | force")
 	version := flag.Int("version", 0, "target version for -action force")
 	flag.Parse()
@@ -90,7 +90,7 @@ func run(logger *zap.Logger) error {
 		zap.String("migrations", abs),
 	)
 
-	//  migrate -
+	//  migrate
 	m, err := migrate.New(sourceURL, dsn)
 	if err != nil {
 		return fmt.Errorf("migrate.New: %w", err)

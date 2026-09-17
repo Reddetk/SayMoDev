@@ -24,7 +24,7 @@ type GoogleOAuthProvider interface {
 	// state сохраняется адаптером в signed cookie (httpOnly, Secure, Max-Age=600s)
 	// или server-side store с привязкой к fingerprint.
 	//
-	// Spec: IAM §OAuth2 flow, шаги [1]–[2].
+	// Spec: IAM OAuth2 flow, шаги [1]–[2].
 	BuildAuthURL(ctx context.Context) (redirectURL string, state valobj.OAuthState, err error)
 
 	// ExchangeCode выполняет server-to-server code exchange и верификацию Google ID token.
@@ -39,7 +39,7 @@ type GoogleOAuthProvider interface {
 	// Возвращает ErrOAuthJWKSUnavailable если JWKS недоступен (fail-closed).
 	// Возвращает ErrOAuthEmailNotVerified если email_verified != true.
 	//
-	// Spec: IAM §OAuth2 flow, шаги [5]–[6].
+	// Spec: IAM OAuth2 flow, шаги [5]–[6].
 	ExchangeCode(
 		ctx context.Context,
 		code string,
@@ -51,6 +51,6 @@ type GoogleOAuthProvider interface {
 	// Возвращает ErrOAuthStateMismatch если токены не совпадают.
 	// Возвращает ErrOAuthStateExpired если state истёк (TTL 10 мин).
 	//
-	// Spec: IAM §OAuth2 flow, шаг [5a].
+	// Spec: IAM OAuth2 flow, шаг [5a].
 	ValidateState(ctx context.Context, receivedCSRF string, storedState valobj.OAuthState) error
 }

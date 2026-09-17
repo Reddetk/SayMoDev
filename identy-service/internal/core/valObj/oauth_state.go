@@ -11,7 +11,7 @@ import (
 // Lifecycle: created in GET /iam/auth/oauth/google, stored server-side
 // (signed cookie or server session), verified in callback.
 //
-// Spec: IAM §Registration — OAuth2 (Google):
+// Spec: IAM Registration — OAuth2 (Google):
 //   [1] "Frontend генерирует code_verifier"
 //   [2] "state=<CSRF_token> ← случайный, хранится в сессии или cookie"
 //   [5a] "Проверяет state (CSRF protection)"

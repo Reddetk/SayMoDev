@@ -45,7 +45,7 @@ func (p PasswordEntry) Equals(other PasswordEntry) bool {
 
 // MatchesPlaintext reports whether plain matches the stored bcrypt hash.
 //
-// Used by AccountService.checkPasswordReuse to enforce §2 (password history reuse policy).
+// Used by AccountService.checkPasswordReuse to enforce 2 (password history reuse policy).
 // bcrypt.CompareHashAndPassword is the only correct comparison  byte equality is always
 // false for valid passwords because each bcrypt hash embeds a unique random salt.
 func (p PasswordEntry) MatchesPlaintext(plain string) bool {

@@ -9,6 +9,16 @@
 //  6. Core services
 //  7. HTTP router (primary adapter)
 //  8. Graceful shutdown
+//
+// @title SayMo Identity Service API
+// @version 1.0
+// @description HTTP API для управления идентификацией и доступом SayMo.
+// @BasePath /
+// @schemes http https
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT access token. Формат: Bearer {token}.
 package main
 
 import (
@@ -23,6 +33,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	_ "github.com/Reddetk/SayMoDev/identy-service/docs"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
@@ -60,7 +72,7 @@ func run(logger logger.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	//  1. OTel tracing -
+	//  1. OTel tracing
 	shutdownTracer, err := initTracer(ctx)
 	if err != nil {
 		logger.Warn("otel tracer init failed, continuing without tracing", zap.Error(err))
@@ -74,7 +86,7 @@ func run(logger logger.Logger) error {
 		}()
 	}
 
-	//  2. PostgreSQL pool 
+	//  2. PostgreSQL pool
 	dsn := requireEnv("POSTGRES_DSN")
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
@@ -87,7 +99,7 @@ func run(logger logger.Logger) error {
 	}
 	logger.Info("postgres connected")
 
-	//  3. Redis client -
+	//  3. Redis client
 	redisOpt, err := redis.ParseURL(requireEnv("REDIS_URL"))
 	if err != nil {
 		return fmt.Errorf("redis.ParseURL: %w", err)
@@ -104,7 +116,7 @@ func run(logger logger.Logger) error {
 	}
 	logger.Info("redis connected")
 
-	//  4. Secondary adapters -
+	//  4. Secondary adapters
 
 	otpRep := postgres.NewPostgresOtpRepository(pool, logger)
 
@@ -171,7 +183,7 @@ func run(logger logger.Logger) error {
 		return fmt.Errorf("NewPostboxEmailAdapter: %w", err)
 	}
 
-	//  5. Core services 
+	//  5. Core services
 	authService := core.NewAuthService(
 		repo,
 		tokenIssuer,
@@ -187,7 +199,7 @@ func run(logger logger.Logger) error {
 	sessionService := core.NewSessionService(repo, blacklist, eventsProducer, logger)
 	otpService := core.NewOTPService(otpRep, repo, emailBox, logger)
 
-	//  6. Primary adapter (HTTP) -
+	//  6. Primary adapter (HTTP)
 	router := primary.NewGinRouter(primary.RouterDeps{
 		Logger:           logger,
 		TokenValidator:   tokenService,
@@ -210,7 +222,7 @@ func run(logger logger.Logger) error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	//  7. Graceful shutdown 
+	//  7. Graceful shutdown
 	serverErr := make(chan error, 1)
 	go func() {
 		logger.Info("identity-service starting", zap.String("addr", addr))
@@ -237,9 +249,9 @@ func run(logger logger.Logger) error {
 	return nil
 }
 
-// 
+//
 // RSA key loaders
-// 
+//
 
 func loadRSAPrivateKey(path string) (*rsa.PrivateKey, error) {
 	data, err := os.ReadFile(path)
@@ -295,9 +307,9 @@ func loadRSAPublicKey(path string) (*rsa.PublicKey, error) {
 	}
 }
 
-// 
+//
 // OTel
-// 
+//
 
 func initTracer(ctx context.Context) (func(context.Context) error, error) {
 	endpoint := getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
@@ -328,9 +340,9 @@ func initTracer(ctx context.Context) (func(context.Context) error, error) {
 	return tp.Shutdown, nil
 }
 
-// 
+//
 // Env helpers
-// 
+//
 
 func requireEnv(key string) string {
 	v := os.Getenv(key)

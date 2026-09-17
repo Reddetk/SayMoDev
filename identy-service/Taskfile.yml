@@ -144,6 +144,16 @@ tasks:
     cmds:
       - golangci-lint run ./...
 
+  swagger:install:
+    desc: "Install swag CLI"
+    cmds:
+      - go install github.com/swaggo/swag/cmd/swag@latest
+
+  swagger:gen:
+    desc: "Generate Swagger docs from annotations"
+    cmds:
+      - swag init -g ./cmd/main.go -o ./docs --parseDependency --parseInternal
+
   test:
     desc: "Run unit tests"
     cmds:
