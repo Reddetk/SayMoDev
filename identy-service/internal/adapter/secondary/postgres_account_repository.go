@@ -197,7 +197,7 @@ func (r *PostgresAccountRepository) loadSessions(
 			sessionID    string
 			jti          string
 			fingerprint  string
-			lastActivity int64
+			lastActivity time.Time
 			createdAt    time.Time
 		)
 		if err := rows.Scan(&sessionID, &jti, &fingerprint, &lastActivity, &createdAt); err != nil {
@@ -207,7 +207,7 @@ func (r *PostgresAccountRepository) loadSessions(
 		if err != nil {
 			return nil, err
 		}
-		s, err := entity.RestoreSession(sessionID, jti, fingerprint, lastActivity, meta)
+		s, err := entity.RestoreSession(sessionID, jti, fingerprint, lastActivity.Unix(), meta)
 		if err != nil {
 			return nil, fmt.Errorf("loadSessions RestoreSession: %w", err)
 		}
