@@ -98,7 +98,7 @@ func repoOutboxInsert(
 	ctx context.Context,
 	tx pgx.Tx,
 	eventType string,
-	partitionKey string,
+	aggregateID string,
 	payload map[string]any,
 ) error {
 	data, err := json.Marshal(payload)
@@ -106,9 +106,9 @@ func repoOutboxInsert(
 		return fmt.Errorf("repoOutboxInsert marshal %s: %w", eventType, err)
 	}
 	const sql = `
-		INSERT INTO outbox (id, event_type, payload, partition_key, created_at)
-		VALUES ($1, $2, $3, $4, NOW())`
-	_, err = tx.Exec(ctx, sql, uuid.New().String(), eventType, data, partitionKey)
+        INSERT INTO outbox (id, aggregate_id, event_type, payload, created_at)
+        VALUES ($1, $2, $3, $4, NOW())`
+	_, err = tx.Exec(ctx, sql, uuid.New().String(), aggregateID, eventType, data)
 	return err
 }
 
@@ -300,11 +300,11 @@ func (r *PostgresAccountRepository) findForUpdate(
 	tx pgx.Tx,
 ) (*entity.Account, error) {
 	const sql = `
-		SELECT uuid, email, personal_info, role, status,
+		SELECT id, email, personal_info, role, status,
 		       google_uid, password_hash, rev, locked_until,
 		       created_at, updated_at
 		FROM accounts
-		WHERE uuid = $1
+		WHERE id = $1
 		FOR UPDATE`
 
 	row := tx.QueryRow(ctx, sql, accountID)
@@ -348,7 +348,7 @@ func (r *PostgresAccountRepository) EmailExist(ctx context.Context, email string
 //
 
 const findByEmailSQL = `
-	SELECT uuid, email, personal_info, role, status,
+	SELECT id, email, personal_info, role, status,
 	       google_uid, password_hash, rev, locked_until,
 	       created_at, updated_at
 	FROM accounts WHERE email = $1`
@@ -380,10 +380,10 @@ func (r *PostgresAccountRepository) FindByAccountID(
 	defer span.End()
 
 	const sql = `
-		SELECT uuid, email, personal_info, role, status,
+		SELECT id, email, personal_info, role, status,
 		       google_uid, password_hash, rev, locked_until,
 		       created_at, updated_at
-		FROM accounts WHERE uuid = $1`
+		FROM accounts WHERE id = $1`
 
 	acc, err := r.findAndHydrate(ctx, sql, accountID)
 	if err != nil {
@@ -411,7 +411,7 @@ func (r *PostgresAccountRepository) FindByGoogleUID(
 	defer span.End()
 
 	const sql = `
-		SELECT uuid, email, personal_info, role, status,
+		SELECT id, email, personal_info, role, status,
 		       google_uid, password_hash, rev, locked_until,
 		       created_at, updated_at
 		FROM accounts WHERE google_uid = $1`
@@ -450,7 +450,7 @@ func (r *PostgresAccountRepository) CreateAccountWithTx(
 	// 1. INSERT accounts
 	const insertAccountSQL = `
 		INSERT INTO accounts
-			(uuid, email, personal_info, role, google_uid, password_hash, rev, status, created_at, updated_at)
+			(id, email, personal_info, role, google_uid, password_hash, rev, status, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, NULL, $5, 1, 'active', NOW(), NOW())`
 
 	_, err = tx.Exec(ctx, insertAccountSQL,
@@ -552,7 +552,7 @@ func (r *PostgresAccountRepository) SaveSessionWithTx(
 	for _, s := range account.Sessions() {
 		if _, err = tx.Exec(ctx, insertSession,
 			s.SessionID(), account.UUID(), s.JTI(),
-			s.Fingerprint(), s.LastActivity(), s.Metadata().CreatedAt(),
+			s.Fingerprint(), time.UnixMilli(s.LastActivity()), time.UnixMilli(s.Metadata().CreatedAt()),
 		); err != nil {
 			span.RecordError(err)
 			return fmt.Errorf("SaveSessionWithTx insert session %s: %w", s.SessionID(), err)
@@ -574,7 +574,7 @@ func (r *PostgresAccountRepository) SaveSessionWithTx(
 	}
 
 	// 4. Touch account metadata
-	const touchAccount = `UPDATE accounts SET updated_at = NOW() WHERE uuid = $1`
+	const touchAccount = `UPDATE accounts SET updated_at = NOW() WHERE id = $1`
 	if _, err = tx.Exec(ctx, touchAccount, account.UUID()); err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("SaveSessionWithTx touch account: %w", err)
@@ -631,7 +631,7 @@ func (r *PostgresAccountRepository) DeleteSessionWithTx(
 	}
 
 	// 3. Touch account metadata
-	const touchSQL = `UPDATE accounts SET updated_at = NOW() WHERE uuid = $1`
+	const touchSQL = `UPDATE accounts SET updated_at = NOW() WHERE id = $1`
 	if _, err = tx.Exec(ctx, touchSQL, account.UUID()); err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("DeleteSessionWithTx touch: %w", err)
@@ -683,7 +683,7 @@ func (r *PostgresAccountRepository) UpdateAccountStatusTx(
 	const updateSQL = `
 		UPDATE accounts
 		SET status = $1, locked_until = $2, rev = $3, updated_at = NOW()
-		WHERE uuid = $4`
+		WHERE id = $4`
 	if _, err = tx.Exec(ctx, updateSQL,
 		account.Status().String(), account.LockedUntil(),
 		account.Revision(), account.UUID(),
@@ -760,7 +760,7 @@ func (r *PostgresAccountRepository) ResetPassword(
 	const updateSQL = `
 		UPDATE accounts
 		SET password_hash = $1, rev = rev + 1, updated_at = NOW()
-		WHERE uuid = $2`
+		WHERE id = $2`
 	if _, err = tx.Exec(ctx, updateSQL, newPasswordHash, account.UUID()); err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("ResetPassword update account: %w", err)
@@ -861,7 +861,7 @@ func (r *PostgresAccountRepository) LinkGoogleUID(
 
 	const sql = `
 		UPDATE accounts SET google_uid = $1
-		WHERE uuid = $2 AND google_uid IS NULL`
+		WHERE id = $2 AND google_uid IS NULL`
 
 	tag, err := r.pool.Exec(ctx, sql, googleUID, accountID)
 	if err != nil {
@@ -905,7 +905,7 @@ func (r *PostgresAccountRepository) CreateOAuthAccountWithTx(
 
 	const insertSQL = `
 		INSERT INTO accounts
-			(uuid, email, personal_info, role, google_uid, password_hash, rev, status, created_at, updated_at)
+			(id, email, personal_info, role, google_uid, password_hash, rev, status, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, NULL, 1, 'active', NOW(), NOW())`
 
 	_, err = tx.Exec(ctx, insertSQL,
@@ -959,7 +959,7 @@ func (r *PostgresAccountRepository) ChangeAccountData(
 	const sql = `
 		UPDATE accounts
 		SET personal_info = $1, role = $2, updated_at = NOW()
-		WHERE uuid = $3`
+		WHERE id = $3`
 
 	_, err := r.pool.Exec(ctx, sql,
 		account.PersonalInfo(), account.Role().String(), account.UUID(),

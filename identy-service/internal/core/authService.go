@@ -57,7 +57,7 @@ func NewAuthService(
 func (s *AuthService) Login(
 	ctx context.Context,
 	email string,
-	passwordHash string,
+	password string,
 	fingerprint string,
 	clientIP string,
 ) (in.LoginResult, error) {
@@ -75,7 +75,7 @@ func (s *AuthService) Login(
 
 	account, err := s.accRep.FindByEmail(ctx, email)
 	if err != nil {
-		_ = bcrypt.CompareHashAndPassword([]byte(consts.DummyPasswordHash), []byte(passwordHash))
+		_ = bcrypt.CompareHashAndPassword([]byte(consts.DummyPasswordHash), []byte(password))
 		span.RecordError(corerr.ErrInvalidCredentials)
 		span.SetAttributes(attribute.Bool("auth.account_found", false))
 		span.SetStatus(codes.Error, "invalid credentials")
@@ -100,7 +100,7 @@ func (s *AuthService) Login(
 
 	if err := bcrypt.CompareHashAndPassword(
 		[]byte(*account.PasswordHash()),
-		[]byte(passwordHash),
+		[]byte(password),
 	); err != nil {
 		if rfErr := s.rateLimiter.RecordFailure(ctx, clientIP, account.UUID()); rfErr != nil {
 			span.RecordError(rfErr)
@@ -108,7 +108,7 @@ func (s *AuthService) Login(
 		}
 		span.RecordError(corerr.ErrInvalidCredentials)
 		span.SetStatus(codes.Error, "invalid credentials")
-		log.Debug("auth.login: bcrypt mismatch", logger.String("account_id", account.UUID()))
+		log.Debug("auth.login: bcrypt mismatch", logger.String("account_id", account.UUID()), logger.String("password", password))
 		return in.LoginResult{}, corerr.ErrInvalidCredentials
 	}
 

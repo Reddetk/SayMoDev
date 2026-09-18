@@ -153,7 +153,12 @@ func isInfraError(err error) bool {
 }
 
 //
-// GET /iam/.well-known/jwks.json  public, no auth
+// @Summary Get JWKS public key set
+// @Description Возвращает набор публичных ключей для верификации подписи JWT.
+// @Tags Auth
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /iam/.well-known/jwks.json [get]
 //
 func handleGetJWKS(op inport.TokenOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -174,10 +179,15 @@ func handleGetJWKS(op inport.TokenOperator) gin.HandlerFunc {
 }
 
 //
-// POST /iam/auth/register/verify
-// Body: { email }
-// Response: 200 { message }
-// Anti-enumeration: respond 200 regardless of email existence.
+// @Summary Request email verification code for registration
+// @Description Anti-enumeration: всегда возвращает 200 независимо от существования email.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body registerVerifyReq true "Email для отправки verify-кода"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Router /iam/auth/register/verify [post]
 //
 func handleRegisterVerify(otp inport.OTPIssuer) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -191,6 +201,10 @@ func handleRegisterVerify(otp inport.OTPIssuer) gin.HandlerFunc {
 		_ = otp.IssueRegistrationOTP(c.Request.Context(), req.Email)
 		c.JSON(http.StatusOK, gin.H{"message": "Verification code sent to email"})
 	}
+}
+
+func defaultPersonalInfo() string {
+	return "{}"
 }
 
 // @Summary Register a new account
@@ -243,7 +257,7 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 			ctx,
 			req.Email,
 			req.VerifyCode,
-			"",
+			defaultPersonalInfo(),
 			passwordHash,
 			req.Role,
 			classifier,
@@ -290,11 +304,6 @@ func handleRegister(reg inport.AccountRegistrator) gin.HandlerFunc {
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
 // @Router /iam/auth/login [post]
-//
-// POST /iam/auth/login
-// Body: { email, password, fingerprint }
-// Response: 200 { access_token, session_id }
-//
 func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := loggerFromCtx(c)
@@ -307,12 +316,6 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 			return
 		}
 
-		passwordHash, err := hashPassword(req.Password)
-		if err != nil {
-			respondInternalErr(c)
-			return
-		}
-
 		// span: auth.verify_password (Observability.md Authentication)
 		// bcrypt.Compare ожидается ~100-300ms при cost 12  span показывает реальное время.
 		ctx, spanAuth := authTracer.Start(c.Request.Context(), "auth.verify_password",
@@ -322,7 +325,7 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 		result, err := auth.Login(
 			ctx,
 			req.Email,
-			passwordHash,
+			req.Password,
 			req.Fingerprint,
 			c.ClientIP(),
 		)
@@ -387,9 +390,14 @@ func handleLogin(auth inport.AccountAuthenticator) gin.HandlerFunc {
 }
 
 //
-// POST /iam/auth/logout
-// Headers: Authorization: Bearer <JWT>
-// Response: 204 No Content
+// @Summary Logout and terminate session
+// @Description Требует Authorization: Bearer <JWT>.
+// @Tags Auth
+// @Produce json
+// @Security BearerAuth
+// @Success 204 "No Content"
+// @Failure 401 {object} map[string]string
+// @Router /iam/auth/logout [post]
 //
 func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {

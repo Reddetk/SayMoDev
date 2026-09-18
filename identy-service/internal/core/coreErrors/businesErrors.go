@@ -14,9 +14,9 @@ var (
 	ErrEmailAlreadyExists            = errors.New("email already exists")
 )
 
-// 
+//
 // Adapter errors
-// 
+//
 var (
 	// ErrEmailDeliveryFailed is returned when the email transport accepts the
 	// request but delivery to the recipient fails (bounce, rejection, timeout
@@ -49,10 +49,12 @@ var (
 	ErrOutboxUnavailable = errors.New("outbox not unavaible")
 )
 
-// 
+//
 // Validation errors
-// 
+//
 var (
+	ErrPersonalInfoRequired                     = errors.New("personal info is required")
+	ErrPersonalInfoFormat                       = errors.New("personal info invalid format")
 	ErrSessionNotFound                          = errors.New("session not found")
 	ErrInvalidEmail                             = errors.New("invalid email format")
 	ErrEmailTooLong                             = errors.New("email too long")
@@ -67,7 +69,6 @@ var (
 	ErrInvalidLockedUntil                       = errors.New("locked until cannot be in the past for active accounts")
 	ErrEmptyPersonalInfo                        = errors.New("personal info cannot be empty")
 	ErrPersonalInfoTooLong                      = errors.New("personal info is too long")
-	ErrPersonalInfoRequired                     = errors.New("personal info is required")
 	ErrInvalidClassifier                        = errors.New("invalid classifier")
 	ErrInvalidSessionID                         = errors.New("invalid session ID")
 	ErrInvalidJTI                               = errors.New("invalid JTI format")
@@ -106,16 +107,16 @@ var (
 	ErrVerificationCodeIDRequired = errors.New("verf code id req")
 )
 
-// 
+//
 // OTP purpose errors
-// 
+//
 var (
 	ErrInvalidOTPPurpose = errors.New("invalid otp purose")
 )
 
-// 
+//
 // Classifier errors
-// 
+//
 var (
 	ErrClassifierDifficultyRequired = errors.New("classifier: difficulty is required")
 	ErrClassifierDifficultyInvalid  = errors.New("classifier: invalid difficulty value")
@@ -123,35 +124,35 @@ var (
 	ErrClassifierAphasiaInvalid     = errors.New("classifier: invalid aphasia type")
 )
 
-// 
+//
 // Metadata entity errors
-// 
+//
 var (
 	ErrMetadataUpdatedBeforeCreated = errors.New("metadata updated before created")
 	ErrMetadataUpdatedAtNegative    = errors.New("metadata updated negativly")
 	ErrMetadataCreatedAtNegative    = errors.New("metadata created negativly")
 )
 
-// 
+//
 // Password entity errors
-// 
+//
 var (
 	ErrPasswordHashInvalidFormat = errors.New("pasword hash invalid")
 	ErrPasswordHashInvalidLength = errors.New("pasword hash invalid length")
 	ErrPasswordHashRequired      = errors.New("pasword hash req")
 )
 
-// 
+//
 // OTP validation errors
-// 
+//
 var (
 	ErrOTPValNotCorrectLen = errors.New("otp len not correct")
 	ErrOTPValNotNumeric    = errors.New("opt contain only nums")
 )
 
-// 
+//
 // Session validation errors
-// 
+//
 var (
 	ErrSessionIDRequired = errors.New("session ID is required")
 	ErrSessionIDTooLong  = errors.New("session ID is too long")
@@ -171,12 +172,12 @@ var (
 	ErrAccountIDInvalid  = errors.New("invalid account ID")
 )
 
-// 
+//
 // Authentication errors — Login flow
 // Spec: IAM §Login — "401 generic always; 429 on rate limit"
 // All auth errors return a GENERIC message to the client. Internal
 // sentinel values exist only for service-layer branching.
-// 
+//
 var (
 	// ErrInvalidCredentials is returned when email or password do not match.
 	// Mapped to HTTP 401 with a generic body.
@@ -202,9 +203,9 @@ var (
 	ErrPasswordReused = errors.New("password was recently used")
 )
 
-// 
+//
 // OAuth2 / Google errors — Spec §Registration — OAuth2 (Google)
-// 
+//
 var (
 	// ErrOAuthEmailNotVerified is returned when email_verified claim is false.
 	// Spec: "email_verified: true — ОБЯЗАТЕЛЬНАЯ проверка до создания/входа в account"
@@ -251,9 +252,9 @@ var (
 	ErrOAuthGoogleUIDConflict = errors.New("google uid does not match stored value for this account")
 )
 
-// 
+//
 // PKCE errors — Spec §Ubiquitous Language (code_verifier, code_challenge)
-// 
+//
 var (
 	// ErrPKCECodeVerifierInvalidLength is returned when the code_verifier length
 	// is outside the RFC 7636 range [43, 128].
@@ -263,9 +264,9 @@ var (
 	ErrPKCECodeChallengeEmpty = errors.New("PKCE code_challenge is empty")
 )
 
-// 
+//
 // LoginResult VO construction errors
-// 
+//
 var (
 	ErrLoginResultAccessTokenEmpty = errors.New("login result: access token is empty")
 	ErrLoginResultAccountIDEmpty   = errors.New("login result: account ID is empty")
@@ -273,16 +274,16 @@ var (
 	ErrLoginResultSessionIDEmpty   = errors.New("login result: session ID is empty")
 )
 
-// 
+//
 // RegistrationMethod VO errors
-// 
+//
 var (
 	ErrInvalidRegistrationMethod = errors.New("invalid registration method: must be 'email' or 'oauth2'")
 )
 
-// 
+//
 // Token domain errors — Spec §Token Model and Lifecycle Invariant
-// 
+//
 var (
 	// ErrJTIGenerationFailed is returned by TokenIssuer.Issue when all
 	// consts.JTIMaxRetries UUID v4 generation attempts produce a colliding jti.
@@ -304,9 +305,9 @@ var (
 	ErrJWKSKeysEmpty = errors.New("no active JWKS keys found")
 )
 
-// 
+//
 // JWKS Key VO construction errors — RFC 7517
-// 
+//
 var (
 	// ErrJWKSKeyIDEmpty is returned by NewJWKSKey when kid is blank.
 	// kid must match the kid header in the signed JWT.

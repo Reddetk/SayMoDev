@@ -6,7 +6,10 @@
 // that prevent magic numbers and strings from appearing in domain code.
 package consts
 
-import "regexp"
+import (
+	"regexp"
+	"time"
+)
 
 //
 // Validation constants
@@ -25,27 +28,27 @@ const (
 	SHA256HexLen          = 64
 )
 
-// 
+//
 // Role values
-// 
+//
 const (
 	RolePatient       = "patient"
 	RoleRelative      = "relative" // placeholder — no current functional use (BC#1 Ubiquitous Language)
 	RoleAdministrator = "administrator"
 )
 
-// 
+//
 // Status values
-// 
+//
 const (
 	StatusActive  = "active"
 	StatusBlocked = "blocked"
 	StatusDeleted = "deleted"
 )
 
-// 
+//
 // Difficulty values for Classifier
-// 
+//
 const (
 	DifficultyEasy   = "easy"
 	DifficultyMedium = "medium"
@@ -57,18 +60,18 @@ const (
 	AphasiaTypeMotor = "motor_aphasia"
 )
 
-// 
+//
 // Default / timing values
-// 
+//
 const (
 	DefaultRevision   = int64(1)
 	SessionDurationMS = 30 * 24 * 60 * 60 * 1000 // 30 days in milliseconds
-	OTPTTL            = 3 * 60 * 60 * 1000       // 3h in milliseconds
+	OTPTTL            = 3 * time.Hour            // 3h in milliseconds
 )
 
-// 
+//
 // Rate limiting — Spec 5 Rate Limiting Invariant
-// 
+//
 const (
 	// MaxFailedLoginAttemptsPerDay is the threshold after which an account
 	// is automatically locked for 24 hours.
@@ -84,9 +87,9 @@ const (
 	AccountLockDurationSeconds = int64(24 * 60 * 60)
 )
 
-// 
+//
 // JWT token — Spec 3 Token Model and Lifecycle Invariant
-// 
+//
 const (
 	// JWTExpirySeconds is the fixed token lifetime: 30 days.
 	// exp = iat + JWTExpirySeconds. Immutable after signing.
@@ -103,9 +106,9 @@ const (
 	JTIMaxRetries = 3
 )
 
-// 
+//
 // PKCE — Spec Registration — OAuth2, Ubiquitous Language
-// 
+//
 const (
 	// PKCECodeVerifierMinLen is the minimum code_verifier length per RFC 7636.
 	PKCECodeVerifierMinLen = 43
@@ -117,9 +120,9 @@ const (
 	PKCEMethod = "S256"
 )
 
-// 
+//
 // OAuth2 — Google — Spec Registration — OAuth2 (Google)
-// 
+//
 const (
 	// GoogleTokenEndpoint is the URL for server-to-server authorization code exchange.
 	// Spec step [5b]: POST https://oauth2.googleapis.com/token
@@ -151,9 +154,9 @@ const (
 	OAuthStateExpirySeconds = int64(10 * 60) // 10 minutes
 )
 
-// 
+//
 // Timing safety — Spec Login
-// 
+//
 const (
 	// DummyPasswordHash is a valid bcrypt hash of a random value.
 	// Used when a login attempt targets a non-existent email so that
@@ -167,9 +170,9 @@ const (
 	DummyPasswordHash = "$2a$12$dummyhashfortimingequalityXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 )
 
-// 
+//
 // JWKS cache — Spec Token Validation Flow
-// 
+//
 const (
 	// JWKSCacheTTLSeconds is the local JWKS cache TTL.
 	// Spec: "Resolve RS256 public key from local JWKS cache (TTL 1h)"
@@ -180,9 +183,9 @@ const (
 	JWKSFetchTimeoutSeconds = 2
 )
 
-// 
+//
 // Regex
-// 
+//
 var (
 	EmailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	// BcryptHashRegex validates bcrypt hash format.

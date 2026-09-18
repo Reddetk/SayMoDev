@@ -173,7 +173,7 @@ func RestoreAccount(
 	}, nil
 }
 
-//  Domain methods 
+//  Domain methods
 
 // OpenSession  единственная точка создания сессии (G5: eviction, max 5)
 // Возвращает evictedJTI для немедленного занесения в blacklist (G9).
@@ -351,7 +351,7 @@ func (a *Account) IsLocked() bool {
 	return time.Now().UnixMilli() < *a.lockedUntil
 }
 
-//  Getters 
+//  Getters
 
 func (a *Account) UUID() string                 { return a.uuid }
 func (a *Account) Email() string                { return a.email }

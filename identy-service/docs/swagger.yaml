@@ -47,12 +47,33 @@ definitions:
     - role
     - verifyCode
     type: object
+  http.registerVerifyReq:
+    properties:
+      email:
+        type: string
+    required:
+    - email
+    type: object
 info:
   contact: {}
   description: HTTP API для управления идентификацией и доступом SayMo.
   title: SayMo Identity Service API
   version: "1.0"
 paths:
+  /iam/.well-known/jwks.json:
+    get:
+      description: Возвращает набор публичных ключей для верификации подписи JWT.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get JWKS public key set
+      tags:
+      - Auth
   /iam/auth/login:
     post:
       consumes:
@@ -88,6 +109,25 @@ paths:
       summary: Login with email and password
       tags:
       - Auth
+  /iam/auth/logout:
+    post:
+      description: 'Требует Authorization: Bearer <JWT>.'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Logout and terminate session
+      tags:
+      - Auth
   /iam/auth/register:
     post:
       consumes:
@@ -121,6 +161,37 @@ paths:
               type: string
             type: object
       summary: Register a new account
+      tags:
+      - Auth
+  /iam/auth/register/verify:
+    post:
+      consumes:
+      - application/json
+      description: 'Anti-enumeration: всегда возвращает 200 независимо от существования
+        email.'
+      parameters:
+      - description: Email для отправки verify-кода
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.registerVerifyReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Request email verification code for registration
       tags:
       - Auth
 schemes:
