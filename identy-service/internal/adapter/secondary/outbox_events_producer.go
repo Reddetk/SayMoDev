@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,8 +26,8 @@ import (
 
 const (
 	outboxInsertSQL = `
-		INSERT INTO outbox (id, event_type, payload, partition_key, created_at)
-		VALUES ($1, $2, $3, $4, NOW())`
+		INSERT INTO outbox (aggregate_id, event_type, payload, created_at)
+		VALUES ($1, $2, $3, NOW())`
 
 	tracerName = "identy-service/adapter/outbox"
 )
@@ -50,9 +49,9 @@ const (
 	evtAccountDeleted                = "account.deleted"
 )
 
-// 
+//
 // OutboxEventsProducer
-// 
+//
 
 // OutboxEventsProducer implements port/out.AccountEventsProducer.
 //
@@ -82,9 +81,9 @@ func NewOutboxEventsProducer(pool *pgxpool.Pool, logger logger.Logger) (*OutboxE
 	}, nil
 }
 
-// 
+//
 // Registration events
-// 
+//
 
 // AccountRegistered inserts account.registered into outbox.
 //
@@ -152,9 +151,9 @@ func (p *OutboxEventsProducer) AccountEmailVerified(
 	return p.insertWithLogging(ctx, span, evtAccountEmailVerified, accountID, payload)
 }
 
-// 
+//
 // Account locking events
-// 
+//
 
 // AccountLockedByFailedAttempts inserts account.locked.failed_attempts into outbox.
 // lockedUntil is nil for permanent locks.
@@ -218,9 +217,9 @@ func (p *OutboxEventsProducer) AccountUnlocked(
 	return p.insertWithLogging(ctx, span, evtAccountUnlocked, accountID, payload)
 }
 
-// 
+//
 // Token / session events
-// 
+//
 
 // AccessTokenRevoked inserts token.revoked into outbox.
 // reason examples: "password_changed", "account_locked", "admin_revoke".
@@ -322,9 +321,9 @@ func (p *OutboxEventsProducer) SessionTerminatedByAdmin(
 	return p.insertWithLogging(ctx, span, evtSessionTerminatedByAdmin, accountID, payload)
 }
 
-// 
+//
 // Password events
-// 
+//
 
 // AccountPasswordChanged inserts account.password_changed into outbox.
 func (p *OutboxEventsProducer) AccountPasswordChanged(
@@ -365,9 +364,9 @@ func (p *OutboxEventsProducer) AccountPasswordResetCompleted(
 	return p.insertWithLogging(ctx, span, evtAccountPasswordResetCompleted, accountID, payload)
 }
 
-// 
+//
 // Profile events
-// 
+//
 
 // AccountPersonalDataUpdated inserts account.data_updated into outbox.
 // changedFields is a slice of field names; actorID is accountID or adminID of initiator.
@@ -393,9 +392,9 @@ func (p *OutboxEventsProducer) AccountPersonalDataUpdated(
 	return p.insertWithLogging(ctx, span, evtAccountPersonalDataUpdated, accountID, payload)
 }
 
-// 
+//
 // Account deletion
-// 
+//
 
 // AccountDeleted inserts account.deleted into outbox.
 // Mandatory for financial and medical data compliance (GDPR cascade).
@@ -420,9 +419,9 @@ func (p *OutboxEventsProducer) AccountDeleted(
 	return p.insertWithLogging(ctx, span, evtAccountDeleted, accountID, payload)
 }
 
-// 
+//
 // Core insert logic
-// 
+//
 
 // insert executes the outbox INSERT using a transaction from ctx (if present)
 // or the pool directly.
@@ -433,20 +432,18 @@ func (p *OutboxEventsProducer) AccountDeleted(
 func (p *OutboxEventsProducer) insert(
 	ctx context.Context,
 	eventType string,
-	partitionKey string,
+	agregatID string,
 	payload map[string]any,
 ) error {
 	rawPayload, err := json.Marshal(payload)
 	if err != nil {
 		// json.Marshal on map[string]any fails only on non-serialisable types
 		// (channels, functions). That is a programmer error, not a runtime fault.
-		return fmt.Errorf("outbox: marshal payload for %s: %w", eventType, err)
+		return fmt.Errorf("outbox: marshal payload for %s: %w", agregatID, err)
 	}
 
-	eventID := uuid.New().String()
-
 	querier := p.querier(ctx)
-	_, err = querier.Exec(ctx, outboxInsertSQL, eventID, eventType, rawPayload, partitionKey)
+	_, err = querier.Exec(ctx, outboxInsertSQL, agregatID, eventType, rawPayload)
 	return err
 }
 
@@ -479,9 +476,9 @@ func (p *OutboxEventsProducer) insertWithLogging(
 	return nil
 }
 
-// 
+//
 // Transaction extraction
-// 
+//
 
 // outboxQuerier is the minimal interface satisfied by both pgx.Tx and *pgxpool.Pool.
 type outboxQuerier interface {
@@ -507,9 +504,9 @@ func (p *OutboxEventsProducer) querier(ctx context.Context) outboxQuerier {
 	return p.pool
 }
 
-// 
+//
 // Compile-time interface check
-// 
+//
 
 var _ interface {
 	AccountRegistered(ctx context.Context, accountID string, role valobj.Role, classifier valobj.Classifier, registrationMethod string) error

@@ -27,10 +27,14 @@ var authTracer = otel.Tracer("identity-service")
 //
 
 type registerVerifyReq struct {
+// @Description Email для отправки verify-кода
+// @Example user@example.com
 	Email string `json:"email" binding:"required,email"`
 }
 
 type registerReq struct {
+// @Description Registration payload
+// @Example {"email":"user@example.com","verifyCode":"123456","password":"StrongPass123","role":"user","fingerprint":"fp","classifier":{"difficulty":"hard","aphasiaType":"none"}}
 	Email       string            `json:"email"       binding:"required,email"`
 	VerifyCode  string            `json:"verifyCode"  binding:"required"`
 	Password    string            `json:"password"    binding:"required,min=8,max=72"`
@@ -40,21 +44,29 @@ type registerReq struct {
 }
 
 type classifierReqBody struct {
+// @Description Classifier validation payload
+// @Example {"difficulty":"hard","aphasiaType":"none"}
 	Difficulty  string `json:"difficulty"  binding:"required"`
 	AphasiaType string `json:"aphasiaType" binding:"required"`
 }
 
 type loginReq struct {
+// @Description Login payload
+// @Example {"email":"user@example.com","password":"secret","fingerprint":"fp"}
 	Email       string `json:"email"       binding:"required,email"`
 	Password    string `json:"password"    binding:"required"`
 	Fingerprint string `json:"fingerprint" binding:"required"`
 }
 
 type passwordResetReq struct {
+// @Description Email for password reset
+// @Example user@example.com
 	Email string `json:"email" binding:"required,email"`
 }
 
 type passwordResetConfirmReq struct {
+// @Description Password reset confirmation payload
+// @Example {"email":"user@example.com","code":"123456","newPassword":"StrongPass123"}
 	Email       string `json:"email"       binding:"required,email"`
 	Code        string `json:"code"        binding:"required"`
 	NewPassword string `json:"newPassword" binding:"required,min=8,max=72"`
@@ -181,6 +193,16 @@ func handleGetJWKS(op inport.TokenOperator) gin.HandlerFunc {
 //
 // @Summary Request email verification code for registration
 // @Description Anti-enumeration: всегда возвращает 200 независимо от существования email.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body registerVerifyReq true "Email для отправки verify-кода"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Router /iam/auth/register/verify [post]
+//
+// @Summary Request verification code for registration
+// @Description Anti-enumeration: всегда возвращает 200 независимо от существования email
 // @Tags Auth
 // @Accept json
 // @Produce json
@@ -464,6 +486,16 @@ func handleLogout(session inport.SessionOperator, token inport.TokenOperator) gi
 // Response: 200 { message }
 // Anti-enumeration: identical response regardless of email existence.
 //
+// @Summary Request password reset code
+// @Description Anti-enumeration: идентичный ответ независимо от существования email
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body passwordResetReq true "Email для отправки кода reset"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Router /iam/auth/password-reset [post]
+//
 func handlePasswordResetRequest(otp inport.OTPIssuer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req passwordResetReq
@@ -544,6 +576,13 @@ func handlePasswordResetConfirm(pwdOp inport.PasswordOperator) gin.HandlerFunc {
 //
 // GET /iam/auth/oauth/google
 // Response: 302 redirect to Google Authorization URL
+//
+// @Summary Initiate Google OAuth flow
+// @Description Начало процесса аутентификации через Google
+// @Tags Auth
+// @Produce json
+// @Security BearerAuth
+// @Router /iam/auth/oauth/google [get]
 //
 func handleOAuthGoogleInitiate(auth inport.AccountAuthenticator) gin.HandlerFunc {
 	return func(c *gin.Context) {

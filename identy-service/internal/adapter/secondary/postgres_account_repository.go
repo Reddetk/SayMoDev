@@ -159,7 +159,7 @@ func (r *PostgresAccountRepository) scanAccount(row pgx.Row) (*entity.Account, e
 	if err != nil {
 		return nil, fmt.Errorf("scanAccount: invalid status %q: %w", statusStr, err)
 	}
-	meta, err := valobj.NewMetadata(createdAt.Unix(), updatedAt.Unix())
+	meta, err := valobj.NewMetadata(createdAt.UnixMilli(), updatedAt.UnixMilli())
 	if err != nil {
 		return nil, err
 	}
@@ -203,11 +203,11 @@ func (r *PostgresAccountRepository) loadSessions(
 		if err := rows.Scan(&sessionID, &jti, &fingerprint, &lastActivity, &createdAt); err != nil {
 			return nil, fmt.Errorf("loadSessions scan: %w", err)
 		}
-		meta, err := valobj.NewMetadata(createdAt.Unix(), createdAt.Unix())
+		meta, err := valobj.NewMetadata(createdAt.UnixMilli(), createdAt.UnixMilli())
 		if err != nil {
 			return nil, err
 		}
-		s, err := entity.RestoreSession(sessionID, jti, fingerprint, lastActivity.Unix(), meta)
+		s, err := entity.RestoreSession(sessionID, jti, fingerprint, lastActivity.UnixMilli(), meta)
 		if err != nil {
 			return nil, fmt.Errorf("loadSessions RestoreSession: %w", err)
 		}

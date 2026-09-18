@@ -60,9 +60,9 @@ type GoogleOAuthConfig struct {
 	NowFunc func() time.Time
 }
 
-// 
+//
 // JWKS cache types
-// 
+//
 
 type jwksKey struct {
 	Kid string `json:"kid"`
@@ -83,9 +83,9 @@ type jwksCache struct {
 	expiresAt time.Time
 }
 
-// 
+//
 // Adapter
-// 
+//
 
 // GoogleOAuthAdapter implements port/out.GoogleOAuthProvider.
 type GoogleOAuthAdapter struct {
@@ -131,9 +131,9 @@ func NewGoogleOAuthAdapter(cfg GoogleOAuthConfig) (*GoogleOAuthAdapter, error) {
 	}, nil
 }
 
-// 
+//
 // BuildAuthURL
-// 
+//
 
 // BuildAuthURL implements GoogleOAuthProvider.
 // Generates PKCE parameters and a CSRF token, then assembles the Google
@@ -154,7 +154,7 @@ func (a *GoogleOAuthAdapter) BuildAuthURL(ctx context.Context) (string, valobj.O
 	// CSRF state token: UUID v4.
 	csrfToken := uuid.New().String()
 
-	expiresAt := a.now().Add(oauthStateTTL).Unix()
+	expiresAt := a.now().Add(oauthStateTTL).UnixMilli()
 	state, err := valobj.NewOAuthState(csrfToken, codeVerifier, codeChallenge, expiresAt)
 	if err != nil {
 		a.logger.Error("google oauth: failed to construct OAuthState", zap.Error(err))
@@ -175,9 +175,9 @@ func (a *GoogleOAuthAdapter) BuildAuthURL(ctx context.Context) (string, valobj.O
 	return redirectURL, state, nil
 }
 
-// 
+//
 // ExchangeCode
-// 
+//
 
 // googleTokenResponse mirrors the fields we care about from Google token endpoint.
 type googleTokenResponse struct {
@@ -326,7 +326,7 @@ func (a *GoogleOAuthAdapter) verifyIDToken(ctx context.Context, idToken string) 
 	}
 
 	// Validate claims.
-	now := a.now().Unix()
+	now := a.now().UnixMilli()
 	if claims.Exp < now {
 		a.logger.Error("google oauth: id_token expired")
 		return nil, corerr.ErrOAuthIDTokenInvalid
@@ -346,9 +346,9 @@ func (a *GoogleOAuthAdapter) verifyIDToken(ctx context.Context, idToken string) 
 	return &claims, nil
 }
 
-// 
+//
 // JWKS cache
-// 
+//
 
 // getPublicKey returns the RSA public key for the given kid, using the cache.
 // Fail-closed: returns ErrOAuthJWKSUnavailable if JWKS cannot be fetched.
@@ -441,9 +441,9 @@ func (a *GoogleOAuthAdapter) refreshJWKS(ctx context.Context, kid string) (*rsa.
 	return key, nil
 }
 
-// 
+//
 // ValidateState
-// 
+//
 
 // ValidateState implements GoogleOAuthProvider.
 func (a *GoogleOAuthAdapter) ValidateState(
@@ -451,7 +451,7 @@ func (a *GoogleOAuthAdapter) ValidateState(
 	receivedCSRF string,
 	storedState valobj.OAuthState,
 ) error {
-	if storedState.IsExpired(a.now().Unix()) {
+	if storedState.IsExpired(a.now().UnixMilli()) {
 		return corerr.ErrOAuthStateExpired
 	}
 	// Constant-time comparison to prevent timing attacks.
@@ -461,9 +461,9 @@ func (a *GoogleOAuthAdapter) ValidateState(
 	return nil
 }
 
-// 
+//
 // Helpers
-// 
+//
 
 // hmacEqual is a constant-time bytes comparison (same semantics as hmac.Equal).
 func hmacEqual(a, b []byte) bool {

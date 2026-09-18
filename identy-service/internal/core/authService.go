@@ -370,7 +370,7 @@ func (s *AuthService) openSessionAndIssueToken(
 		account.UUID(),
 		session.SessionID(),
 		fingerprint,
-		time.Now().Unix(),
+		time.Now().UnixMilli(),
 	); evErr != nil {
 		span.RecordError(evErr)
 		log.Warn("auth.openSession: SessionCreated event failed (non-fatal)", logger.Error(evErr))

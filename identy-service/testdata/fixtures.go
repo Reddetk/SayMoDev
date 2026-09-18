@@ -134,7 +134,7 @@ func NewExpiredVerificationCode() *valobj.VerificationCode {
 
 // NewOAuthState returns a valid OAuthState fixture for OAuth2 flow tests.
 func NewOAuthState() valobj.OAuthState {
-	futureUnix := time.Now().Add(10 * time.Minute).Unix()
+	futureUnix := time.Now().Add(10 * time.Minute).UnixMilli()
 	state, _ := valobj.NewOAuthState(
 		FixtureCSRFToken,
 		FixtureCodeVerifier,

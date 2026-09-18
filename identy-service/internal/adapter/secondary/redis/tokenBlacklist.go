@@ -96,7 +96,7 @@ func (a *TokenBlacklistAdapter) Add(ctx context.Context, jti string, expiresAtUn
 	)
 	defer span.End()
 
-	ttl := time.Duration(expiresAtUnix-time.Now().Unix()) * time.Second
+	ttl := time.Duration(expiresAtUnix-time.Now().UnixMilli()) * time.Second
 	if ttl <= 0 {
 		span.SetStatus(codes.Ok, "token already expired, skip")
 		return nil

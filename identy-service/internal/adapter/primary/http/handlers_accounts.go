@@ -38,6 +38,13 @@ type changePasswordReq struct {
 // Response: 200 AccountDTO
 // Guard: OwnershipOrAdmin middleware (applied at router group level)
 //
+// @Summary Get account by ID
+// @Description Получение данных аккаунта по ID
+// @Tags Accounts
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /iam/accounts/{accountId} [get]
+//
 func handleGetAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accountID := c.Param("accountId")
@@ -75,6 +82,15 @@ func handleGetAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 // Response: 200 AccountDTO
 // Guard: OwnershipOrAdmin middleware (applied at router group level)
 // Business rule: role change is administrator-only (checked here, not in middleware)
+//
+// @Summary Patch account by ID
+// @Description Частичное обновление данных аккаунта
+// @Tags Accounts
+// @Accept json
+// @Produce json
+// @Param request body patchAccountReq false "Доля.role и/или personalInfo"
+// @Success 200 {object} map[string]interface{}
+// @Router /iam/accounts/{accountId} [patch]
 //
 func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -147,6 +163,12 @@ func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 // Guard: RequireRole(administrator) middleware (applied at router route level)
 // Side effects: T4 mass-revoke, AccountDeleted event -> BC#2, BC#4 cascade.
 //
+// @Summary Soft delete account
+// @Description Мягкое удаление аккаунта
+// @Tags Accounts
+// @Produce json
+// @Router /iam/accounts/{accountId} [delete]
+//
 func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ac := middleware.MustGetAuthContext(c)
@@ -177,6 +199,12 @@ func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 // Response: 200 [SessionDTO]
 // Guard: OwnershipOrAdmin middleware (applied at router group level)
 //
+// @Summary List sessions for account
+// @Description Получение списка сессий аккаунта
+// @Tags Accounts
+// @Produce json
+// @Router /iam/accounts/{accountId}/sessions [get]
+//
 func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accountID := c.Param("accountId")
@@ -206,6 +234,12 @@ func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
 // Guard: OwnershipOrAdmin middleware (applied at router group level)
 // Business logic: administrator uses AdminTerminateSession (audit trail),
 // owner uses Logout (self-service path). Branching is intentional here.
+//
+// @Summary Terminate session
+// @Description Завершение сессии (для админа или владельца)
+// @Tags Accounts
+// @Produce json
+// @Router /iam/accounts/{accountId}/sessions/{sessionId} [delete]
 //
 func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -279,6 +313,17 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 //
 // NOTE: missing spec  whether administrator may bypass currentPassword check
 // is not defined in BC#1. Until resolved, currentPassword is always required.
+//
+// @Summary Change password
+// @Description Смена пароля для аккаунта
+// @Tags Accounts
+// @Accept json
+// @Produce json
+// @Param request body changePasswordReq true "Текущий и новый пароль"
+// @Success 204 "No Content"
+// @Failure 401 {object} map[string]string "invalid current password"
+// @Failure 400 {object} map[string]string "password policy violation"
+// @Router /iam/accounts/{accountId}/password [post]
 //
 func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -387,6 +432,15 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 // Guard: RequireRole(administrator) middleware (applied at router route level)
 // Side effects: §6 Lock Semantics  rev++, all jti blacklisted, sessions deleted atomically.
 //
+// @Summary Lock account
+// @Description Блокировка аккаунта администратором
+// @Tags Accounts
+// @Accept json
+// @Produce json
+// @Param request body lockAccountReq false "locked_until (Unix timestamp, null for indefinite)"
+// @Success 200 {object} map[string]interface{}
+// @Router /iam/accounts/{accountId}/lock [post]
+//
 func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger := loggerFromCtx(c)
@@ -435,6 +489,12 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 // POST /iam/accounts/:accountId/unlock
 // Response: 200 { status }
 // Guard: RequireRole(administrator) middleware (applied at router route level)
+//
+// @Summary Unlock account
+// @Description Разблокировка аккаунта администратором
+// @Tags Accounts
+// @Produce json
+// @Router /iam/accounts/{accountId}/unlock [post]
 //
 func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 	return func(c *gin.Context) {

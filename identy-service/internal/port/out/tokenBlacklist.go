@@ -15,7 +15,7 @@ import "context"
 type TokenBlacklist interface {
 	// Add записывает jti в Redis blacklist
 	// expiresAtUnix  unix timestamp истечения токена (exp claim)
-	// TTL в Redis вычисляется адаптером как expiresAtUnix - time.Now().Unix()
+	// TTL в Redis вычисляется адаптером как expiresAtUnix - time.Now().UnixMilli()
 	// Если TTL <= 0  Add является no-op (токен уже истёк)
 	Add(ctx context.Context, jti string, expiresAtUnix int64) error
 

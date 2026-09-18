@@ -216,7 +216,7 @@ func (r *RSATokenIssuer) Verify(
 
 	var expUnix int64
 	if c.ExpiresAt != nil {
-		expUnix = c.ExpiresAt.Unix()
+		expUnix = c.ExpiresAt.UnixMilli()
 	}
 
 	return c.Subject, c.Role, c.SessionID, c.ID, c.Rev, expUnix, nil
