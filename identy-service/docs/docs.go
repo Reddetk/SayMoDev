@@ -38,6 +38,11 @@ const docTemplate = `{
         },
         "/iam/accounts/{accountId}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Получение данных аккаунта по ID",
                 "produces": [
                     "application/json"
@@ -66,6 +71,11 @@ const docTemplate = `{
                 }
             },
             "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Мягкое удаление аккаунта",
                 "produces": [
                     "application/json"
@@ -86,6 +96,11 @@ const docTemplate = `{
                 "responses": {}
             },
             "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Частичное обновление данных аккаунта",
                 "consumes": [
                     "application/json"
@@ -127,6 +142,11 @@ const docTemplate = `{
         },
         "/iam/accounts/{accountId}/lock": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Блокировка аккаунта администратором",
                 "consumes": [
                     "application/json"
@@ -168,6 +188,11 @@ const docTemplate = `{
         },
         "/iam/accounts/{accountId}/password": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Смена пароля для аккаунта",
                 "consumes": [
                     "application/json"
@@ -224,6 +249,11 @@ const docTemplate = `{
         },
         "/iam/accounts/{accountId}/sessions": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Получение списка сессий аккаунта",
                 "produces": [
                     "application/json"
@@ -246,6 +276,11 @@ const docTemplate = `{
         },
         "/iam/accounts/{accountId}/sessions/{sessionId}": {
             "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Завершение сессии (для админа или владельца)",
                 "produces": [
                     "application/json"
@@ -275,6 +310,11 @@ const docTemplate = `{
         },
         "/iam/accounts/{accountId}/unlock": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Разблокировка аккаунта администратором",
                 "produces": [
                     "application/json"

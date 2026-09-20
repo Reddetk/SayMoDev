@@ -140,6 +140,8 @@ paths:
       produces:
       - application/json
       responses: {}
+      security:
+      - BearerAuth: []
       summary: Soft delete account
       tags:
       - Accounts
@@ -159,6 +161,8 @@ paths:
           schema:
             additionalProperties: true
             type: object
+      security:
+      - BearerAuth: []
       summary: Get account by ID
       tags:
       - Accounts
@@ -185,6 +189,8 @@ paths:
           schema:
             additionalProperties: true
             type: object
+      security:
+      - BearerAuth: []
       summary: Patch account by ID
       tags:
       - Accounts
@@ -212,6 +218,8 @@ paths:
           schema:
             additionalProperties: true
             type: object
+      security:
+      - BearerAuth: []
       summary: Lock account
       tags:
       - Accounts
@@ -249,6 +257,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Change password
       tags:
       - Accounts
@@ -264,6 +274,8 @@ paths:
       produces:
       - application/json
       responses: {}
+      security:
+      - BearerAuth: []
       summary: List sessions for account
       tags:
       - Accounts
@@ -284,6 +296,8 @@ paths:
       produces:
       - application/json
       responses: {}
+      security:
+      - BearerAuth: []
       summary: Terminate session
       tags:
       - Accounts
@@ -304,6 +318,8 @@ paths:
           schema:
             additionalProperties: true
             type: object
+      security:
+      - BearerAuth: []
       summary: Unlock account
       tags:
       - Accounts

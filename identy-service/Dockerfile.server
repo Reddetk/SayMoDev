@@ -24,7 +24,7 @@ WORKDIR /app
 
 COPY from=builder /app/bin/server ./server
 
-# RSA ключи монтируются снаружи через volume или secrets.
+# RSA ключи монтируются снаружи через secrets.
 # JWT_PRIVATE_KEY_PATH и JWT_PUBLIC_KEY_PATH в env указывают путь внутри контейнера.
 
 EXPOSE 8080

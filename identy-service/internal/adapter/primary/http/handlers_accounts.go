@@ -42,6 +42,9 @@ type changePasswordReq struct {
 //	@Description	Получение данных аккаунта по ID
 //	@Tags			Accounts
 //	@Produce		json
+//
+//	@Security		BearerAuth
+//
 //	@Param			accountId	path		string	true	"Account ID"
 //	@Success		200			{object}	map[string]interface{}
 //	@Router			/iam/accounts/{accountId} [get]
@@ -88,6 +91,9 @@ func handleGetAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 //	@Tags			Accounts
 //	@Accept			json
 //	@Produce		json
+//
+//	@Security		BearerAuth
+//
 //	@Param			accountId	path		string			true	"Account ID"
 //	@Param			request		body		patchAccountReq	false	"Доля.role и/или personalInfo"
 //	@Success		200			{object}	map[string]interface{}
@@ -167,6 +173,9 @@ func handlePatchAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 //	@Description	Мягкое удаление аккаунта
 //	@Tags			Accounts
 //	@Produce		json
+//
+//	@Security		BearerAuth
+//
 //	@Param			accountId	path	string	true	"Account ID"
 //	@Router			/iam/accounts/{accountId} [delete]
 func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
@@ -203,6 +212,8 @@ func handleDeleteAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 //	@Description	Получение списка сессий аккаунта
 //	@Tags			Accounts
 //	@Produce		json
+//
+//	@Security		BearerAuth
 //	@Param			accountId	path	string	true	"Account ID"
 //	@Router			/iam/accounts/{accountId}/sessions [get]
 func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
@@ -239,6 +250,9 @@ func handleListSessions(sesOp inport.SessionOperator) gin.HandlerFunc {
 //	@Description	Завершение сессии (для админа или владельца)
 //	@Tags			Accounts
 //	@Produce		json
+//
+//	@Security		BearerAuth
+//
 //	@Param			accountId	path	string	true	"Account ID"
 //	@Param			sessionId	path	string	true	"Session ID"
 //	@Router			/iam/accounts/{accountId}/sessions/{sessionId} [delete]
@@ -320,6 +334,9 @@ func handleTerminateSession(sesOp inport.SessionOperator) gin.HandlerFunc {
 //	@Tags			Accounts
 //	@Accept			json
 //	@Produce		json
+//
+//	@Security		BearerAuth
+//
 //	@Param			request		body	changePasswordReq	true	"Текущий и новый пароль"
 //	@Param			accountId	path	string				true	"Account ID"
 //	@Success		204			"No Content"
@@ -437,6 +454,9 @@ func handleChangePassword(accOp inport.AccountOperator, passOp inport.PasswordOp
 //	@Tags			Accounts
 //	@Accept			json
 //	@Produce		json
+//
+//	@Security		BearerAuth
+//
 //	@Param			request		body		lockAccountReq	false	"locked_until (Unix timestamp, null for indefinite)"
 //	@Param			accountId	path		string			true	"Account ID"
 //	@Success		200			{object}	map[string]interface{}
@@ -492,7 +512,10 @@ func handleLockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
 //	@Description	Разблокировка аккаунта администратором
 //	@Tags			Accounts
 //	@Produce		json
-//	@Param			accountId	path		string			true	"Account ID"
+//
+//	@Security		BearerAuth
+//
+//	@Param			accountId	path		string	true	"Account ID"
 //	@Success		200			{object}	map[string]interface{}
 //	@Router			/iam/accounts/{accountId}/unlock [post]
 func handleUnlockAccount(accOp inport.AccountOperator) gin.HandlerFunc {
