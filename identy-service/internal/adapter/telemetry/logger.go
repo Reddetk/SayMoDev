@@ -11,8 +11,8 @@ import (
 // LoggerConfig  настройки логгера. Передаётся из cmd/api/main.go.
 // Приоритет переиспользования: каждый BC передаёт свои ServiceName / BC.
 type LoggerConfig struct {
-	ServiceName string       // "identity-service" | "billing-service" | ...
-	BC          string       // "bc1" | "bc2" | "bc3" | "bc4"
+	ServiceName string        // "identity-service" | "billing-service" | ...
+	BC          string        // "bc1" | "bc2" | "bc3" | "bc4"
 	Level       zapcore.Level // zap.InfoLevel в prod, zap.DebugLevel в dev
 	Development bool
 }

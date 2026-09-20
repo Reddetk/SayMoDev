@@ -8,7 +8,8 @@ import (
 // Used in the AccountRegistered event payload.
 //
 // Spec: IAM Event Contracts:
-//   "AccountRegistered — registrationMethod: email|oauth2"
+//
+//	"AccountRegistered — registrationMethod: email|oauth2"
 type RegistrationMethod string
 
 const (

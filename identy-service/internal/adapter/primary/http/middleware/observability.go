@@ -8,14 +8,14 @@
 //     и handlers.
 //
 //  2. Structured logging (ZAP)  пишет request-completion log entry с
-//     полями, предписанными Observability.md §Logs:
+//     полями, предписанными Observability.md Logs:
 //     timestamp, level, service, trace_id, span_id, method, path,
 //     status, latency_ms, ip, user_agent.
 //     Также сохраняет logger.Logger в gin.Context (ContextKeyLogger) чтобы
 //     handlers и respond.go могли писать domain log entries.
 //
 //  3. Metrics  инкрементирует cors_requests_total и cors_rejected_total
-//     counters (BC#1 §Metrics Security Counter) через переданный Registerer.
+//     counters (BC#1 Metrics Security Counter) через переданный Registerer.
 //     auth_duration_seconds histogram регистрируется здесь, но записывается
 //     в handler-ах через helper RecordAuthDuration.
 //

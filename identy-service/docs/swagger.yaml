@@ -1,18 +1,39 @@
 basePath: /
 definitions:
+  http.changePasswordReq:
+    properties:
+      currentPassword:
+        type: string
+      newPassword:
+        maxLength: 72
+        minLength: 8
+        type: string
+    required:
+    - currentPassword
+    - newPassword
+    type: object
   http.classifierReqBody:
     properties:
       aphasiaType:
         type: string
       difficulty:
+        description: "@Description\tClassifier validation payload\n\t@Example\t\t{\"difficulty\":\"hard\",\"aphasiaType\":\"none\"}"
         type: string
     required:
     - aphasiaType
     - difficulty
     type: object
+  http.lockAccountReq:
+    properties:
+      locked_until:
+        description: LockedUntil is a Unix timestamp (seconds). Null means indefinite
+          lock.
+        type: integer
+    type: object
   http.loginReq:
     properties:
       email:
+        description: "@Description\tLogin payload\n\t@Example\t\t{\"email\":\"user@example.com\",\"password\":\"secret\",\"fingerprint\":\"fp\"}"
         type: string
       fingerprint:
         type: string
@@ -23,11 +44,43 @@ definitions:
     - fingerprint
     - password
     type: object
+  http.passwordResetConfirmReq:
+    properties:
+      code:
+        type: string
+      email:
+        description: "@Description\tPassword reset confirmation payload\n\t@Example\t\t{\"email\":\"user@example.com\",\"code\":\"123456\",\"newPassword\":\"StrongPass123\"}"
+        type: string
+      newPassword:
+        maxLength: 72
+        minLength: 8
+        type: string
+    required:
+    - code
+    - email
+    - newPassword
+    type: object
+  http.passwordResetReq:
+    properties:
+      email:
+        description: "@Description\tEmail for password reset\n\t@Example\t\tuser@example.com"
+        type: string
+    required:
+    - email
+    type: object
+  http.patchAccountReq:
+    properties:
+      personalInfo:
+        type: string
+      role:
+        type: string
+    type: object
   http.registerReq:
     properties:
       classifier:
         $ref: '#/definitions/http.classifierReqBody'
       email:
+        description: "@Description\tRegistration payload\n\t@Example\t\t{\"email\":\"user@example.com\",\"verifyCode\":\"123456\",\"password\":\"StrongPass123\",\"role\":\"user\",\"fingerprint\":\"fp\",\"classifier\":{\"difficulty\":\"hard\",\"aphasiaType\":\"none\"}}"
         type: string
       fingerprint:
         type: string
@@ -50,6 +103,7 @@ definitions:
   http.registerVerifyReq:
     properties:
       email:
+        description: "@Description\tEmail для отправки verify-кода\n\t@Example\t\tuser@example.com"
         type: string
     required:
     - email
@@ -74,6 +128,185 @@ paths:
       summary: Get JWKS public key set
       tags:
       - Auth
+  /iam/accounts/{accountId}:
+    delete:
+      description: Мягкое удаление аккаунта
+      parameters:
+      - description: Account ID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      summary: Soft delete account
+      tags:
+      - Accounts
+    get:
+      description: Получение данных аккаунта по ID
+      parameters:
+      - description: Account ID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get account by ID
+      tags:
+      - Accounts
+    patch:
+      consumes:
+      - application/json
+      description: Частичное обновление данных аккаунта
+      parameters:
+      - description: Account ID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: Доля.role и/или personalInfo
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/http.patchAccountReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Patch account by ID
+      tags:
+      - Accounts
+  /iam/accounts/{accountId}/lock:
+    post:
+      consumes:
+      - application/json
+      description: Блокировка аккаунта администратором
+      parameters:
+      - description: locked_until (Unix timestamp, null for indefinite)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/http.lockAccountReq'
+      - description: Account ID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Lock account
+      tags:
+      - Accounts
+  /iam/accounts/{accountId}/password:
+    post:
+      consumes:
+      - application/json
+      description: Смена пароля для аккаунта
+      parameters:
+      - description: Текущий и новый пароль
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.changePasswordReq'
+      - description: Account ID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: password policy violation
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: invalid current password
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Change password
+      tags:
+      - Accounts
+  /iam/accounts/{accountId}/sessions:
+    get:
+      description: Получение списка сессий аккаунта
+      parameters:
+      - description: Account ID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      summary: List sessions for account
+      tags:
+      - Accounts
+  /iam/accounts/{accountId}/sessions/{sessionId}:
+    delete:
+      description: Завершение сессии (для админа или владельца)
+      parameters:
+      - description: Account ID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: sessionId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      summary: Terminate session
+      tags:
+      - Accounts
+  /iam/accounts/{accountId}/unlock:
+    post:
+      description: Разблокировка аккаунта администратором
+      parameters:
+      - description: Account ID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Unlock account
+      tags:
+      - Accounts
   /iam/auth/login:
     post:
       consumes:
@@ -126,6 +359,125 @@ paths:
       security:
       - BearerAuth: []
       summary: Logout and terminate session
+      tags:
+      - Auth
+  /iam/auth/oauth/google:
+    get:
+      description: Начало процесса аутентификации через Google
+      produces:
+      - application/json
+      responses: {}
+      security:
+      - BearerAuth: []
+      summary: Initiate Google OAuth flow
+      tags:
+      - Auth
+  /iam/auth/oauth/google/callback:
+    get:
+      consumes:
+      - application/json
+      description: Завершение процесса аутентификации через Google (возврат access_token
+        и session_id)
+      parameters:
+      - description: Authorization code
+        in: query
+        name: code
+        required: true
+        type: string
+      - description: OAuth state
+        in: query
+        name: state
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Google OAuth callback
+      tags:
+      - Auth
+  /iam/auth/password-reset:
+    post:
+      consumes:
+      - application/json
+      description: 'Anti-enumeration: идентичный ответ независимо от существования
+        email'
+      parameters:
+      - description: Email для отправки кода reset
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.passwordResetReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Request password reset code
+      tags:
+      - Auth
+  /iam/auth/password-reset/confirm:
+    post:
+      consumes:
+      - application/json
+      description: Подтверждает OTP и меняет пароль после сброса.
+      parameters:
+      - description: Email, код сброса и новый пароль
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/http.passwordResetConfirmReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Confirm password reset code
       tags:
       - Auth
   /iam/auth/register:

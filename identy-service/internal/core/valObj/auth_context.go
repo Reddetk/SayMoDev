@@ -55,7 +55,7 @@ func NewAuthContext(accountID string, role Role, sessionID string, rev int64) (A
 	}, nil
 }
 
-func MapAuthContext(authCtxVO AuthContext) (in.AuthContext) {
+func MapAuthContext(authCtxVO AuthContext) in.AuthContext {
 	return in.AuthContext{
 		AccountID: authCtxVO.AccountID(),
 		Role:      authCtxVO.Role().String(),

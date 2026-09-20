@@ -119,9 +119,10 @@ func (m *JWTMiddleware) Handle() gin.HandlerFunc {
 // per Observability.md Logs: jwt_validation_failed, jwt_blacklist_hit, jwt_rev_mismatch.
 //
 // Spec Token Validation Flow:
-//   Step 1  signature / kid errors
-//   Step 2  claims (exp, iss, aud)
-//   Step 3  revocation (jti blacklist, account rev)
+//
+//	Step 1  signature / kid errors
+//	Step 2  claims (exp, iss, aud)
+//	Step 3  revocation (jti blacklist, account rev)
 func (m *JWTMiddleware) handleValidationError(c *gin.Context, err error) {
 	sc := trace.SpanFromContext(c.Request.Context()).SpanContext()
 	traceID := sc.TraceID().String()

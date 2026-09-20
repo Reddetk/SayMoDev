@@ -21,16 +21,18 @@ import (
 // PostgresOtpRepository реализует порт out.OtpRepository.
 //
 // Таблица: verification_codes
-//   email      TEXT        NOT NULL
-//   purpose    TEXT        NOT NULL
-//   code_hash  TEXT        NOT NULL   SHA256 hex, хеширование выполняет доменный слой
-//   expires_at TIMESTAMPTZ NOT NULL
-//   created_at TIMESTAMPTZ NOT NULL
-//   PRIMARY KEY (email, purpose)   или UNIQUE(email, purpose)
+//
+//	email      TEXT        NOT NULL
+//	purpose    TEXT        NOT NULL
+//	code_hash  TEXT        NOT NULL   SHA256 hex, хеширование выполняет доменный слой
+//	expires_at TIMESTAMPTZ NOT NULL
+//	created_at TIMESTAMPTZ NOT NULL
+//	PRIMARY KEY (email, purpose)   или UNIQUE(email, purpose)
 //
 // Преобразование времени:
-//   VO хранит expiresAt как Unix milliseconds (int64).
-//   Для PostgreSQL: time.UnixMilli(ms).UTC() <-> t.UnixMilli().
+//
+//	VO хранит expiresAt как Unix milliseconds (int64).
+//	Для PostgreSQL: time.UnixMilli(ms).UTC() <-> t.UnixMilli().
 type PostgresOtpRepository struct {
 	pool   *pgxpool.Pool
 	logger logger.Logger
@@ -44,9 +46,9 @@ func NewPostgresOtpRepository(pool *pgxpool.Pool, logger logger.Logger) *Postgre
 	}
 }
 
-// 
+//
 // Upsert
-// 
+//
 
 // Upsert создаёт или заменяет запись OTP-кода в таблице.
 //
@@ -78,9 +80,9 @@ func (r *PostgresOtpRepository) Upsert(ctx context.Context, verCode *valobj.Veri
 	return nil
 }
 
-// 
+//
 // Find
-// 
+//
 
 // Find ищет актуальную (не истекшую) запись OTP-кода.
 //
@@ -135,9 +137,9 @@ func (r *PostgresOtpRepository) Find(ctx context.Context, email string, purpose 
 	return vc, nil
 }
 
-// 
+//
 // CleanUp
-// 
+//
 
 // CleanUp удаляет конкретную запись OTP-кода.
 //
@@ -159,9 +161,9 @@ func (r *PostgresOtpRepository) CleanUp(ctx context.Context, verCode *valobj.Ver
 	return nil
 }
 
-// 
+//
 // Immulate TODO
-// 
+//
 
 // Immulate удаляет все истекшие записи OTP-кодов.
 //
@@ -183,9 +185,9 @@ func (r *PostgresOtpRepository) Immulate(ctx context.Context) error {
 	return nil
 }
 
-// 
+//
 // Compile-time interface assertion
-// 
+//
 
 var _ interface {
 	Upsert(ctx context.Context, verCode *valobj.VerificationCode) error

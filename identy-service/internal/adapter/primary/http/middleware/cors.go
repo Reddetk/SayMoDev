@@ -14,15 +14,18 @@ import (
 // Zero value (CORSConfig{})  CORS disabled (all preflight -> 403).
 //
 // AllowedOrigins: list of allowed origins.
-//   Wildcard "*" is allowed only if AllowCredentials = false.
-//   Empty slice  blocks all cross-origin requests.
+//
+//	Wildcard "*" is allowed only if AllowCredentials = false.
+//	Empty slice  blocks all cross-origin requests.
 //
 // AllowCredentials: true required for Bearer tokens from the browser.
-//   With true, wildcard "*" in AllowedOrigins is not allowed  browser blocks.
+//
+//	With true, wildcard "*" in AllowedOrigins is not allowed  browser blocks.
 //
 // MaxAge: preflight response cache time in seconds.
-//   0  browser does not cache (each request sends OPTIONS).
-//   Recommended: 600 (10 min).
+//
+//	0  browser does not cache (each request sends OPTIONS).
+//	Recommended: 600 (10 min).
 //
 // Metrics: cors_requests_total, cors_rejected_total, cors_preflight_requests_total
 // записываются в ObservabilityMiddleware.handle (до c.Next()).

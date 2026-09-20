@@ -3,7 +3,8 @@ package telemetry
 // Metrics  заглушка до добавления github.com/prometheus/client_golang в go.mod.
 //
 // TODO: раскомментировать и реализовать после:
-//   go get github.com/prometheus/client_golang@latest
+//
+//	go get github.com/prometheus/client_golang@latest
 //
 // Полный список метрик BC#1 (счётчики, gauge, histogram) задокументирован
 // в Observability.md и согласован в design-сессии 2026-06-08.

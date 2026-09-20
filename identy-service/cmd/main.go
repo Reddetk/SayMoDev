@@ -1,24 +1,32 @@
 // Package main  точка запуска identity-service (BC#1).
 //
 // Порядок инициализации:
+//
 //  1. Logger (zap, JSON)
+//
 //  2. PostgreSQL pool (pgxpool)
+//
 //  3. Redis client
+//
 //  4. OTel tracing
+//
 //  5. Adapters (secondary)
+//
 //  6. Core services
+//
 //  7. HTTP router (primary adapter)
+//
 //  8. Graceful shutdown
 //
-// @title SayMo Identity Service API
-// @version 1.0
-// @description HTTP API для управления идентификацией и доступом SayMo.
-// @BasePath /
-// @schemes http https
-// @securityDefinitions.apikey BearerAuth
-// @in header
-// @name Authorization
-// @description JWT access token. Формат: Bearer {token}.
+//     @title						SayMo Identity Service API
+//     @version					1.0
+//     @description				HTTP API для управления идентификацией и доступом SayMo.
+//     @BasePath					/
+//     @schemes					http https
+//     @securityDefinitions.apikey	BearerAuth
+//     @in							header
+//     @name						Authorization
+//     @description				JWT access token. Формат: Bearer {token}.
 package main
 
 import (

@@ -12,9 +12,10 @@ import (
 // (signed cookie or server session), verified in callback.
 //
 // Spec: IAM Registration — OAuth2 (Google):
-//   [1] "Frontend генерирует code_verifier"
-//   [2] "state=<CSRF_token> ← случайный, хранится в сессии или cookie"
-//   [5a] "Проверяет state (CSRF protection)"
+//
+//	[1] "Frontend генерирует code_verifier"
+//	[2] "state=<CSRF_token> ← случайный, хранится в сессии или cookie"
+//	[5a] "Проверяет state (CSRF protection)"
 //
 // Invariants:
 //   - csrfToken must be non-empty

@@ -8,14 +8,14 @@ import (
 //
 // Покрывает два юз-кейса:
 //
-//	1. GET /iam/.well-known/jwks.json
-//	   Публикация активных RSA-публичных ключей для всех downstream BC.
-//	   Ответ кешируется адаптером TTL=consts.JWKSCacheTTLSeconds.
-//	   Fail-closed: ErrJWKSKeysEmpty → HTTP 503.
+//  1. GET /iam/.well-known/jwks.json
+//     Публикация активных RSA-публичных ключей для всех downstream BC.
+//     Ответ кешируется адаптером TTL=consts.JWKSCacheTTLSeconds.
+//     Fail-closed: ErrJWKSKeysEmpty → HTTP 503.
 //
-//	2. IssueToken / RevokeToken
-//	   Вызываются только из AuthService через прямой зависимость,
-//	   не через HTTP-хандлер. HTTP-адаптер вызывает только GetJWKS.
+//  2. IssueToken / RevokeToken
+//     Вызываются только из AuthService через прямой зависимость,
+//     не через HTTP-хандлер. HTTP-адаптер вызывает только GetJWKS.
 //
 // Инварианты:
 //   - JWT подписывается RS256; kid, jti, exp — ответственность адаптера

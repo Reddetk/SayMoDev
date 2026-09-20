@@ -31,8 +31,9 @@ func NewRBACMiddleware(logger logger.Logger) *RBACMiddleware {
 // роль аккаунта совпадает с одной из roles.
 //
 // Logging: ownership_violation WARN per Observability.md Logs:
-//   account_id, resource_id (FullPath), resource_type, attempted_operation,
-//   required_roles, actual_role, trace_id, span_id.
+//
+//	account_id, resource_id (FullPath), resource_type, attempted_operation,
+//	required_roles, actual_role, trace_id, span_id.
 //
 // Паникует если вызван без предшествующего JWTMiddleware (AuthContext отсутствует).
 // Это ошибка конфигурации роутера, не runtime-ошибка.

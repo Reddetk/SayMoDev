@@ -42,9 +42,9 @@ const (
 	rateLimiterTracerName = "identy-service/adapter/redis-rate-limiter"
 )
 
-// 
+//
 // in-process fallback счётчик
-// 
+//
 
 // fallbackCounter  атомарный счётчик с TTL для одного ключа.
 type fallbackCounter struct {
@@ -71,9 +71,9 @@ func (c *fallbackCounter) get() int64 {
 	return c.count.Load()
 }
 
-// 
+//
 // RateLimiterAdapter
-// 
+//
 
 // RateLimiterAdapter реализует порт out.RateLimiter.
 //
@@ -103,9 +103,9 @@ func NewRateLimiterAdapter(client redis.Cmdable, logger logger.Logger) *RateLimi
 	}
 }
 
-// 
+//
 // CheckIP
-// 
+//
 
 // CheckIP проверяет количество попыток с данного IP за последний час.
 //
@@ -144,9 +144,9 @@ func (a *RateLimiterAdapter) CheckIP(ctx context.Context, clientIP string) error
 	return nil
 }
 
-// 
+//
 // CheckAccount
-// 
+//
 
 // CheckAccount проверяет количество неудачных попыток для аккаунта за сутки.
 //
@@ -185,9 +185,9 @@ func (a *RateLimiterAdapter) CheckAccount(ctx context.Context, accountID string)
 	return nil
 }
 
-// 
+//
 // RecordFailure
-// 
+//
 
 // RecordFailure инкрементирует счётчики неудачных попыток для IP и (если задан) аккаунта.
 //
@@ -276,9 +276,9 @@ func (a *RateLimiterAdapter) RecordFailure(ctx context.Context, clientIP string,
 	return nil
 }
 
-// 
+//
 // getCounter  чтение Redis-счётчика
-// 
+//
 
 // getCounter читает целочисленное значение ключа из Redis.
 // Ключ отсутствует (redis.Nil): возвращает 0, nil.
@@ -294,9 +294,9 @@ func (a *RateLimiterAdapter) getCounter(ctx context.Context, key string) (int64,
 	return val, nil
 }
 
-// 
+//
 // Fallback in-process хелперы
-// 
+//
 
 func (a *RateLimiterAdapter) getFallbackIP(clientIP string) int64 {
 	v, _ := a.ipCounters.LoadOrStore(clientIP, &fallbackCounter{})
@@ -318,9 +318,9 @@ func (a *RateLimiterAdapter) incrementFallbackAccount(accountID string) int64 {
 	return v.(*fallbackCounter).increment(rlAccountTTL)
 }
 
-// 
+//
 // Compile-time interface assertion
-// 
+//
 
 var _ interface {
 	CheckIP(ctx context.Context, clientIP string) error

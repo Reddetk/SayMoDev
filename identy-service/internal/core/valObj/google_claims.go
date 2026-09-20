@@ -9,7 +9,8 @@ import (
 // email_verified MUST be true before this VO is constructed (invariant 6 OAuth).
 //
 // Spec: IAM Registration — OAuth2 (Google), step [6]:
-//   "email_verified: true — ОБЯЗАТЕЛЬНАЯ проверка до создания/входа в account"
+//
+//	"email_verified: true — ОБЯЗАТЕЛЬНАЯ проверка до создания/входа в account"
 type GoogleClaims struct {
 	// sub is the google_uid: stable Google account identifier.
 	// Must NOT be used as the only identifier — user may change their Google email.
@@ -53,8 +54,8 @@ func NewGoogleClaims(sub, email, name, picture string, emailVerified bool) (Goog
 	}, nil
 }
 
-func (g GoogleClaims) Sub() string           { return g.sub }
-func (g GoogleClaims) Email() string         { return g.email }
-func (g GoogleClaims) Name() string          { return g.name }
-func (g GoogleClaims) Picture() string       { return g.picture }
-func (g GoogleClaims) EmailVerified() bool   { return g.emailVerified }
+func (g GoogleClaims) Sub() string         { return g.sub }
+func (g GoogleClaims) Email() string       { return g.email }
+func (g GoogleClaims) Name() string        { return g.name }
+func (g GoogleClaims) Picture() string     { return g.picture }
+func (g GoogleClaims) EmailVerified() bool { return g.emailVerified }

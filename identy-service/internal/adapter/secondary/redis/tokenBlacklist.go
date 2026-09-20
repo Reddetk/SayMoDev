@@ -43,17 +43,17 @@ const (
 	blacklistTracerName = "identy-service/adapter/redis-token-blacklist"
 )
 
-// 
+//
 // L1 кеш: запись
-// 
+//
 
 type l1Entry struct {
 	expiresAt time.Time
 }
 
-// 
+//
 // TokenBlacklistAdapter
-// 
+//
 
 // TokenBlacklistAdapter реализует порт out.TokenBlacklist.
 //
@@ -84,9 +84,9 @@ func NewTokenBlacklistAdapter(client redis.Cmdable, logger logger.Logger) *Token
 	}
 }
 
-// 
+//
 // Add
-// 
+//
 
 // Add записывает jti в Redis blacklist (L2).
 // TTL = expiresAtUnix - now; если TTL <= 0  no-op (токен уже истёк).
@@ -117,9 +117,9 @@ func (a *TokenBlacklistAdapter) Add(ctx context.Context, jti string, expiresAtUn
 	return nil
 }
 
-// 
+//
 // Contains
-// 
+//
 
 // Contains проверяет наличие jti в blacklist: L1 -> L2.
 //
@@ -171,9 +171,9 @@ func (a *TokenBlacklistAdapter) Contains(ctx context.Context, jti string) (bool,
 	return false, nil
 }
 
-// 
+//
 // GetAccountRev
-// 
+//
 
 // GetAccountRev возвращает текущий rev аккаунта из Redis L2.
 // L2 miss: возвращает (0, nil)  mass-revoke не инициировался.
@@ -220,9 +220,9 @@ func (a *TokenBlacklistAdapter) GetAccountRev(ctx context.Context, accountID str
 	return rev, nil
 }
 
-// 
+//
 // SetAccountRev
-// 
+//
 
 // SetAccountRev записывает rev аккаунта в Redis L2.
 // Вызывается после mass-revoke (LockAccount, ChangePassword, SoftDelete).
@@ -253,9 +253,9 @@ func (a *TokenBlacklistAdapter) SetAccountRev(ctx context.Context, accountID str
 	return nil
 }
 
-// 
+//
 // internal: L1 helpers
-// 
+//
 
 func (a *TokenBlacklistAdapter) setL1(jti string) {
 	a.l1mu.Lock()
@@ -293,9 +293,9 @@ func safePrefix(s string) string {
 	return s
 }
 
-// 
+//
 // Compile-time interface assertion
-// 
+//
 
 var _ interface {
 	Add(ctx context.Context, jti string, expiresAtUnix int64) error

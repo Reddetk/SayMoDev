@@ -73,12 +73,12 @@ This file compiles high-signal guidance for future OpenCode sessions. Not every 
 
 - **History reuse check**: O(5) `PasswordEntry.MatchesPlaintext` against stored history (bcrypt.Compare, not byte equality).
 - **Password change** (authenticated) and **password reset** (unauthenticated/OTP-gated): both perform T4 mass-revoke — `rev++`, all sessions cleared, `AccessTokenRevoked` published for every revoked JTI.
-- A locked/reset account must not leave valid 30-day tokens outstanding — mass-revoke is mandatory (§6).
+- A locked/reset account must not leave valid 30-day tokens outstanding — mass-revoke is mandatory (6).
 - Password history limited to 5 entries; 6th entry evicts the oldest.
 
 ## Session management (G5)
 
-- **Max 5 sessions per account** (§5). New session → oldest evicted → evictedJTI added to blacklist (G9).
+- **Max 5 sessions per account** (5). New session → oldest evicted → evictedJTI added to blacklist (G9).
 - `OpenSession` is the **single** point of session creation; it handles eviction and returns the evicted JTI.
 - Sessions have 30-day lifetime (JWT expiry constant `JWTExpirySeconds = 30 * 24 * 60 * 60`).
 

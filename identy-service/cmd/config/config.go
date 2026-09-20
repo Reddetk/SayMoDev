@@ -18,30 +18,32 @@ import (
 // Имена переменных согласованы с cmd/main.go (источник правды).
 //
 // Обязательные переменные:
-//   POSTGRES_DSN                 postgres://user:pass@host:5432/db?sslmode=disable
-//   REDIS_URL                    redis://:pass@host:6379/0
-//   REDIS_BLACKLIST_ADDR         host:6380
-//   REDIS_BLACKLIST_PASSWORD     ...
-//   JWT_PRIVATE_KEY_PATH         /run/secrets/private.pem
-//   JWT_PUBLIC_KEY_PATH          /run/secrets/public.pem
-//   JWT_KID                      key-v1
-//   GOOGLE_CLIENT_ID             ...
-//   GOOGLE_CLIENT_SECRET         ...
-//   GOOGLE_REDIRECT_URI          https://...
-//   POSTBOX_IAM_TOKEN            ...
-//   POSTBOX_FROM_ADDRESS         noreply@saymo.ru
+//
+//	POSTGRES_DSN                 postgres://user:pass@host:5432/db?sslmode=disable
+//	REDIS_URL                    redis://:pass@host:6379/0
+//	REDIS_BLACKLIST_ADDR         host:6380
+//	REDIS_BLACKLIST_PASSWORD     ...
+//	JWT_PRIVATE_KEY_PATH         /run/secrets/private.pem
+//	JWT_PUBLIC_KEY_PATH          /run/secrets/public.pem
+//	JWT_KID                      key-v1
+//	GOOGLE_CLIENT_ID             ...
+//	GOOGLE_CLIENT_SECRET         ...
+//	GOOGLE_REDIRECT_URI          https://...
+//	POSTBOX_IAM_TOKEN            ...
+//	POSTBOX_FROM_ADDRESS         noreply@saymo.ru
 //
 // Опциональные:
-//   HTTP_ADDR                    :8080  (default)
-//   JWT_PREV_PUBLIC_KEY_PATH     /run/secrets/prev_public.pem
-//   JWT_PREV_KID                 key-v0
-//   OTEL_EXPORTER_OTLP_ENDPOINT  localhost:4317  (default)
-//   SERVICE_NAME                 identity-service  (default)
-//   SERVICE_VERSION              dev  (default)
-//   ENVIRONMENT                  development  (default)
-//   LOG_LEVEL                    info  (default)
-//   LOG_DEVELOPMENT              false  (default)
-//   CORS_ALLOWED_ORIGINS         http://localhost:3000,...
+//
+//	HTTP_ADDR                    :8080  (default)
+//	JWT_PREV_PUBLIC_KEY_PATH     /run/secrets/prev_public.pem
+//	JWT_PREV_KID                 key-v0
+//	OTEL_EXPORTER_OTLP_ENDPOINT  localhost:4317  (default)
+//	SERVICE_NAME                 identity-service  (default)
+//	SERVICE_VERSION              dev  (default)
+//	ENVIRONMENT                  development  (default)
+//	LOG_LEVEL                    info  (default)
+//	LOG_DEVELOPMENT              false  (default)
+//	CORS_ALLOWED_ORIGINS         http://localhost:3000,...
 type Config struct {
 	HTTPAddr    string
 	PostgresDSN string

@@ -36,9 +36,9 @@ var (
 	Any      = zap.Any
 )
 
-// 
+//
 // zapLogger  внутренняя реализация Logger поверх *zap.Logger.
-// 
+//
 
 type zapLogger struct {
 	l *zap.Logger
@@ -59,11 +59,11 @@ func (z *zapLogger) With(fields ...Field) Logger {
 	return &zapLogger{l: z.l.With(fields...)}
 }
 
-// 
+//
 // New  конструктор для локальной разработки.
 // Читаемый console-формат с цветными уровнями и временем HH:MM:SS.
 // В prod используй NewZapLogger(zap.NewProduction()).
-// 
+//
 
 // New создаёт Logger с человекочитаемым console-форматом.
 // Уровень: Info. Stacktrace: только для Error и выше.

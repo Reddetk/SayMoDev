@@ -51,13 +51,24 @@ func (s *OTPService) issueOTP(ctx context.Context, email string, purpose valobj.
 	}
 
 	// Anti-enumeration: email not registered  simulate latency, no real OTP
-	if emailExists {
+	antienum := func() error {
 		log.Debug("otp.issue: email not found, simulating send (anti-enumeration)")
 		if err := s.otpRep.Immulate(ctx); err != nil {
 			log.Error("otp.issue: Immulate failed", logger.Error(err))
 			return corerr.ErrOTPRepository
 		}
 		return nil
+	}
+
+	switch purpose {
+	case valobj.OTPPurposePasswordReset:
+		if !emailExists {
+			return antienum()
+		}
+	case valobj.OTPPurposeRegistration:
+		if emailExists {
+			return antienum()
+		}
 	}
 
 	code, err := codeForOTPGen()

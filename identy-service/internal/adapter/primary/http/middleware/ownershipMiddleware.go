@@ -27,11 +27,12 @@ func NewOwnershipMiddleware(logger logger.Logger) *OwnershipMiddleware {
 // Handle возвращает gin.HandlerFunc.
 //
 // Пропускает запрос если:
-//   role == administrator (доступ ко всем аккаунтам)
-//   token.sub == accountId (владелец видит только свои данные)
+//
+//	role == administrator (доступ ко всем аккаунтам)
+//	token.sub == accountId (владелец видит только свои данные)
 //
 // IDOR prevention: не-владелец получает 404, не 403.
-// Spec §Token Validation Flow Step 4.
+// Spec Token Validation Flow Step 4.
 //
 // Logging: ownership_violation WARN per Observability.md при попытке
 // чужого аккаунта (fields: account_id, resource_id, attempted_operation,

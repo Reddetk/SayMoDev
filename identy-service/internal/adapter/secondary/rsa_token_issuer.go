@@ -32,11 +32,11 @@ type rsaClaims struct {
 	Rev       int64  `json:"rev"`
 }
 
-// 
+//
 // jwksKeyJSON — внутренняя структура для JSON-сериализации одного JWK-ключа.
 // Используется только внутри RSATokenIssuer.buildJWKSCache.
 // Поля соответствуют RFC 7517 / RFC 7518 для RSA публичных ключей.
-// 
+//
 
 type jwksKeyJSON struct {
 	Kid string `json:"kid"`
@@ -47,7 +47,7 @@ type jwksKeyJSON struct {
 	E   string `json:"e"`
 }
 
-// 
+//
 // RSATokenIssuer реализует порт out.TokenIssuer.
 //
 // Ответственности:
@@ -63,7 +63,7 @@ type jwksKeyJSON struct {
 //   - privateKey и publicKeys[0] — текущая пара; publicKeys[1] (если есть) — предыдущий ключ.
 //   - Verify использует ТОЛЬКО publicKeys для проверки подписи (приватный ключ недоступен).
 //   - jwksCache перестраивается при каждом истечении TTL или вызове invalidateCache.
-// 
+//
 
 type RSATokenIssuer struct {
 	privateKey  *rsa.PrivateKey
@@ -101,13 +101,13 @@ func NewRSATokenIssuer(
 	}
 }
 
-// 
+//
 // Issue подписывает JWT RS256 и возвращает (accessToken, jti, error).
 //
 // Генерация jti выполняется в цикле до consts.JTIMaxRetries раз.
 // При исчерпании попыток возвращается corerr.ErrJTIGenerationFailed.
 // Вероятность коллизии UUID v4 ~10^-18; исчерпание означает сбой UUID-источника.
-// 
+//
 
 func (r *RSATokenIssuer) Issue(
 	ctx context.Context,
@@ -159,7 +159,7 @@ func (r *RSATokenIssuer) Issue(
 	return signed, generatedJTI, nil
 }
 
-// 
+//
 // Verify верифицирует JWT и возвращает распарсенные claims как плоские примитивы.
 //
 // Порядок:
@@ -171,7 +171,7 @@ func (r *RSATokenIssuer) Issue(
 //   5. Вернуть плоские примитивы: accountID, role, sessionID, jti, rev, expiresAt.
 //
 // rev возвращается as-is из claim. Сравнение с account.rev  в TokenService.
-// 
+//
 
 func (r *RSATokenIssuer) Verify(
 	ctx context.Context,
@@ -222,13 +222,13 @@ func (r *RSATokenIssuer) Verify(
 	return c.Subject, c.Role, c.SessionID, c.ID, c.Rev, expUnix, nil
 }
 
-// 
+//
 // GetPublicKeys возвращает срез JSON-строк активных JWK (RFC 7517).
 //
 // Результат кешируется на consts.JWKSCacheTTLSeconds секунд.
 // Во время rotation overlap возвращает [current, previous].
 // Пустой срез (отсутствие активных ключей)  corerr.ErrJWKSKeysEmpty.
-// 
+//
 
 func (r *RSATokenIssuer) GetPublicKeys(ctx context.Context) ([]string, error) {
 	r.mu.RLock()
@@ -263,9 +263,9 @@ func (r *RSATokenIssuer) GetPublicKeys(ctx context.Context) ([]string, error) {
 	return result, nil
 }
 
-// 
+//
 // internal helpers
-// 
+//
 
 // buildJWKSCache сериализует активные publicKeys в JSON-строки JWK.
 // Вызывается только под write lock.

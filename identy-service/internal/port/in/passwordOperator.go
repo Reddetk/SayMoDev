@@ -21,7 +21,7 @@ type PasswordOperator interface {
 	// plainNewPassword: raw password from the request  used only for history reuse check (bcrypt.Compare).
 	//   It is never stored, logged, or forwarded beyond this service method.
 	// newPasswordHash: bcrypt hash produced by the HTTP handler  stored in the account.
-ConfrimPasswordReset(
+	ConfrimPasswordReset(
 		ctx context.Context,
 		email string,
 		otp string,

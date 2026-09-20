@@ -99,7 +99,7 @@ func NewGinRouter(deps RouterDeps) *gin.Engine {
 
 		// Группа /iam/accounts/:accountId
 		// OwnershipMiddleware: пациент видит только свои данные (404 на чужой accountId);
-		// administrator  любой. Spec §Token Validation Flow Step 4 (IDOR prevention).
+		// administrator  любой. Spec Token Validation Flow Step 4 (IDOR prevention).
 		accounts := protected.Group("/iam/accounts/:accountId", ownershipMW.Handle())
 		{
 			accounts.GET("", handleGetAccount(deps.AccountOpertator))

@@ -3,9 +3,7 @@ package corerr
 
 import "errors"
 
-//
 // Business errors
-//
 var (
 	// core/coreErrors/errors.go
 	ErrFederatedAccountHasNoPassword = errors.New("federated account has no password set")
@@ -14,9 +12,7 @@ var (
 	ErrEmailAlreadyExists            = errors.New("email already exists")
 )
 
-//
 // Adapter errors
-//
 var (
 	// ErrEmailDeliveryFailed is returned when the email transport accepts the
 	// request but delivery to the recipient fails (bounce, rejection, timeout
@@ -49,9 +45,7 @@ var (
 	ErrOutboxUnavailable = errors.New("outbox not unavaible")
 )
 
-//
 // Validation errors
-//
 var (
 	ErrPersonalInfoRequired                     = errors.New("personal info is required")
 	ErrPersonalInfoFormat                       = errors.New("personal info invalid format")
@@ -107,16 +101,12 @@ var (
 	ErrVerificationCodeIDRequired = errors.New("verf code id req")
 )
 
-//
 // OTP purpose errors
-//
 var (
 	ErrInvalidOTPPurpose = errors.New("invalid otp purose")
 )
 
-//
 // Classifier errors
-//
 var (
 	ErrClassifierDifficultyRequired = errors.New("classifier: difficulty is required")
 	ErrClassifierDifficultyInvalid  = errors.New("classifier: invalid difficulty value")
@@ -124,35 +114,27 @@ var (
 	ErrClassifierAphasiaInvalid     = errors.New("classifier: invalid aphasia type")
 )
 
-//
 // Metadata entity errors
-//
 var (
 	ErrMetadataUpdatedBeforeCreated = errors.New("metadata updated before created")
 	ErrMetadataUpdatedAtNegative    = errors.New("metadata updated negativly")
 	ErrMetadataCreatedAtNegative    = errors.New("metadata created negativly")
 )
 
-//
 // Password entity errors
-//
 var (
 	ErrPasswordHashInvalidFormat = errors.New("pasword hash invalid")
 	ErrPasswordHashInvalidLength = errors.New("pasword hash invalid length")
 	ErrPasswordHashRequired      = errors.New("pasword hash req")
 )
 
-//
 // OTP validation errors
-//
 var (
 	ErrOTPValNotCorrectLen = errors.New("otp len not correct")
 	ErrOTPValNotNumeric    = errors.New("opt contain only nums")
 )
 
-//
 // Session validation errors
-//
 var (
 	ErrSessionIDRequired = errors.New("session ID is required")
 	ErrSessionIDTooLong  = errors.New("session ID is too long")
@@ -172,12 +154,10 @@ var (
 	ErrAccountIDInvalid  = errors.New("invalid account ID")
 )
 
-//
 // Authentication errors — Login flow
-// Spec: IAM §Login — "401 generic always; 429 on rate limit"
+// Spec: IAM Login — "401 generic always; 429 on rate limit"
 // All auth errors return a GENERIC message to the client. Internal
 // sentinel values exist only for service-layer branching.
-//
 var (
 	// ErrInvalidCredentials is returned when email or password do not match.
 	// Mapped to HTTP 401 with a generic body.
@@ -199,13 +179,11 @@ var (
 	ErrRateLimitAccount = errors.New("rate limit exceeded for account")
 
 	// ErrPasswordReused is returned when the new password matches one of the last 5 stored hashes.
-	// Spec §2: "Password history: last 5 hashes; reuse rejected via bcrypt.Compare per stored hash"
+	// Spec 2: "Password history: last 5 hashes; reuse rejected via bcrypt.Compare per stored hash"
 	ErrPasswordReused = errors.New("password was recently used")
 )
 
-//
-// OAuth2 / Google errors — Spec §Registration — OAuth2 (Google)
-//
+// OAuth2 / Google errors — Spec Registration — OAuth2 (Google)
 var (
 	// ErrOAuthEmailNotVerified is returned when email_verified claim is false.
 	// Spec: "email_verified: true — ОБЯЗАТЕЛЬНАЯ проверка до создания/входа в account"
@@ -252,9 +230,7 @@ var (
 	ErrOAuthGoogleUIDConflict = errors.New("google uid does not match stored value for this account")
 )
 
-//
-// PKCE errors — Spec §Ubiquitous Language (code_verifier, code_challenge)
-//
+// PKCE errors — Spec Ubiquitous Language (code_verifier, code_challenge)
 var (
 	// ErrPKCECodeVerifierInvalidLength is returned when the code_verifier length
 	// is outside the RFC 7636 range [43, 128].
@@ -264,9 +240,7 @@ var (
 	ErrPKCECodeChallengeEmpty = errors.New("PKCE code_challenge is empty")
 )
 
-//
 // LoginResult VO construction errors
-//
 var (
 	ErrLoginResultAccessTokenEmpty = errors.New("login result: access token is empty")
 	ErrLoginResultAccountIDEmpty   = errors.New("login result: account ID is empty")
@@ -274,16 +248,12 @@ var (
 	ErrLoginResultSessionIDEmpty   = errors.New("login result: session ID is empty")
 )
 
-//
 // RegistrationMethod VO errors
-//
 var (
 	ErrInvalidRegistrationMethod = errors.New("invalid registration method: must be 'email' or 'oauth2'")
 )
 
-//
-// Token domain errors — Spec §Token Model and Lifecycle Invariant
-//
+// Token domain errors — Spec Token Model and Lifecycle Invariant
 var (
 	// ErrJTIGenerationFailed is returned by TokenIssuer.Issue when all
 	// consts.JTIMaxRetries UUID v4 generation attempts produce a colliding jti.
@@ -294,7 +264,7 @@ var (
 
 	// ErrTokenRevoked is returned by token validation middleware when
 	// TokenBlacklist.Contains returns true for the incoming jti.
-	// Spec §Blacklist: "L1 in-memory -> L2 Redis -> L3 PostgreSQL (source of truth)"
+	// Spec Blacklist: "L1 in-memory -> L2 Redis -> L3 PostgreSQL (source of truth)"
 	// Mapped to HTTP 401.
 	ErrTokenRevoked = errors.New("token has been revoked")
 
@@ -305,19 +275,17 @@ var (
 	ErrJWKSKeysEmpty = errors.New("no active JWKS keys found")
 )
 
-//
 // JWKS Key VO construction errors — RFC 7517
-//
 var (
 	// ErrJWKSKeyIDEmpty is returned by NewJWKSKey when kid is blank.
 	// kid must match the kid header in the signed JWT.
 	ErrJWKSKeyIDEmpty = errors.New("jwks key: kid is required")
 
 	// ErrJWKSKeyModulusEmpty is returned by NewJWKSKey when the RSA modulus (n) is blank.
-	// n is the base64url-encoded modulus of the RSA public key (RFC 7518 §6.3.1.1).
+	// n is the base64url-encoded modulus of the RSA public key (RFC 7518 6.3.1.1).
 	ErrJWKSKeyModulusEmpty = errors.New("jwks key: modulus (n) is required")
 
 	// ErrJWKSKeyExponentEmpty is returned by NewJWKSKey when the RSA exponent (e) is blank.
-	// e is the base64url-encoded public exponent of the RSA key (RFC 7518 §6.3.1.2).
+	// e is the base64url-encoded public exponent of the RSA key (RFC 7518 6.3.1.2).
 	ErrJWKSKeyExponentEmpty = errors.New("jwks key: exponent (e) is required")
 )
