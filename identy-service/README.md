@@ -1,5 +1,8 @@
 # SayMo Identity Service
 
+НЕ ПРОДУКТОВЫЙ КОД
+ВЕРСИЯ КОДА ДЛЯ ПРЕЗИНТАЦИИ
+
 Identity and Access Management (BC#1) для платформы SayMo — PWA для помощи людям после инсульта.
 
 Сервис отвечает за регистрацию, аутентификацию, управление сессиями и токенами доступа. Полная доменная спецификация: [saymo-documentation](https://github.com/Reddetk/saymo-documentation).
@@ -46,6 +49,7 @@ task --list
 \`\`\`
 
 Swagger UI после запуска доступен по адресу `/swagger/index.html`.
+Jager UI после запуска доступен по адресу `/{host}:{jagerport}/trace`
 
 ## Документация домена
 

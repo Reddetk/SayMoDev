@@ -1,3 +1,4 @@
+// Package telemetry is prodaction batch
 package telemetry
 
 import (
@@ -31,7 +32,7 @@ type TracerConfig struct {
 // ShutdownFunc  вызывается в graceful shutdown для дрейна spans.
 type ShutdownFunc func(ctx context.Context) error
 
-// NewTracer инициализирует OTel TracerProvider с OTLP gRPC экспортером
+// NewTracer v1 инициализирует OTel TracerProvider с OTLP gRPC экспортером
 // согласно Observability.md: W3C TraceContext + Baggage propagators.
 //
 // Возвращает ShutdownFunc  должна быть вызвана с таймаутом до закрытия процесса.

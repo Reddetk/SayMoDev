@@ -6,9 +6,9 @@
 
 services:
 
-  # -
+  # 
   # PostgreSQL
-  # -
+  # 
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -41,10 +41,10 @@ services:
       timeout: 5s
       retries: 10
 
-  # -
+  #
   # Redis Blacklist  shared (jti blacklist + account rev)
   # Владелец: identity-service. BC#3 и BC#4  external network.
-  # -
+  # 
   redis-blacklist:
     image: redis:7-alpine
     restart: unless-stopped
@@ -60,10 +60,10 @@ services:
       - default
       - saymo-blacklist
 
-  # -
+  # 
   # migrate-init  применяет миграции и завершается.
   # depends_on service_healthy гарантирует что postgres готов принимать соединения.
-  # -
+  # 
   migrate-init:
     build:
       context: .
@@ -75,9 +75,9 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # -
+  # 
   # Server  основной бинарник сервиса
-  # -
+  # 
   server:
     build:
       context: .
