@@ -1,0 +1,43 @@
+basePath: /
+host: localhost:8003
+info:
+  contact: {}
+  description: 'BC#3 Rehabilitation Content Management (SayMo). S1: health/readiness.'
+  title: SayMo Rehabilitation Content Service API
+  version: 0.1.0
+paths:
+  /health:
+    get:
+      description: Returns 200 while the process is alive.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Liveness probe
+      tags:
+      - health
+  /ready:
+    get:
+      description: Returns 200 only when postgres, redis, kafka and s3 are reachable;
+        otherwise 503.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Readiness probe
+      tags:
+      - health
+swagger: "2.0"

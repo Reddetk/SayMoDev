@@ -1,0 +1,7 @@
+case_id,method,path,expected_status,expected_body_contains,notes
+health_get_ok,GET,/health,200,status,Обычный опрос liveness — 200 и JSON с полем status
+health_head_ok,HEAD,/health,200,,HEAD без тела: проверяем только код ответа и заголовки
+health_post_rejected,POST,/health,405,,Метод не поддержан — 405 (тело не проверяем)
+health_unknown_path,GET,/healthz,404,,Похожий но несуществующий путь не должен матчиться в /health
+health_query_string,GET,/health?verbose=1,200,status,Query string игнорируется — ответ тот же
+health_repeat_call,GET,/health,200,status,Второй подряд вызов даёт тот же результат (нет состояния между запросами)

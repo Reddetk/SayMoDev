@@ -1,0 +1,8 @@
+case_id,postgres_available,redis_available,kafka_available,s3_available,expected_status,expected_body_contains,notes
+ready_all_dependencies_up,true,true,true,true,200,status,Все зависимости живы — только в этом случае ждём 200
+ready_postgres_down,false,true,true,true,503,postgres,postgres мёртв — 503 и в теле имя упавшей зависимости
+ready_redis_down,true,false,true,true,503,redis,redis мёртв — 503 независимо от остальных
+ready_kafka_down,true,true,false,true,503,kafka,kafka мёртв — 503
+ready_s3_down,true,true,true,false,503,s3,s3 мёртв — 503
+ready_redis_and_kafka_down,true,false,false,true,503,redis,Две зависимости мертвы — 503 и в теле обе (минимум проверяем redis)
+ready_all_down,false,false,false,false,503,status,"Всё мертво — 503 и status не ready, имя любой упавшей зависимости тоже подойдёт"

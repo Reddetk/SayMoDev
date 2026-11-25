@@ -1,0 +1,85 @@
+version: '3'
+
+vars:
+  ENV: '{{.ENV | default "local"}}'
+  SERVICE: rehabilitation-service
+
+dotenv: ['.env.{{.ENV}}']
+
+tasks:
+  default:
+    desc: Список задач
+    cmds:
+      - task --list
+
+  infra:up:
+    desc: Поднять зависимости стенда (postgres, redis-bc3, kafka, s3mock)
+    cmds:
+      - docker compose --env-file .env.{{.ENV}} up -d postgres redis-bc3 kafka s3mock s3init
+
+  infra:down:
+    desc: Остановить стенд
+    cmds:
+      - docker compose --env-file .env.{{.ENV}} down
+
+  stack:up:
+    desc: Полный стенд включая migrate и server
+    cmds:
+      - docker compose --env-file .env.{{.ENV}} up -d --build
+
+  migrate:up:
+    desc: Применить миграции
+    cmds:
+      - go run ./cmd/migrate/main.go -action up
+
+  migrate:down:
+    desc: Откатить последнюю миграцию
+    cmds:
+      - go run ./cmd/migrate/main.go -action down
+
+  migrate:force:
+    desc: Принудительно выставить версию (VERSION=N)
+    requires:
+      vars: [VERSION]
+    cmds:
+      - go run ./cmd/migrate/main.go -action force -version {{.VERSION}}
+
+  run:
+    desc: Запустить сервер локально
+    cmds:
+      - go run ./cmd/server/main.go
+
+  test:unit:
+    desc: Unit-тесты (без внешних зависимостей)
+    cmds:
+      - go test ./... -count=1 -race
+
+  test:integration:
+    desc: Integration-тесты (нужен infra:up + migrate:up)
+    cmds:
+      - go test -tags=integration ./... -count=1
+
+  test:e2e:
+    desc: E2E через HTTP (нужен запущенный сервис)
+    cmds:
+      - go test -tags=e2e ./test/e2e/... -count=1
+
+  build:
+    desc: Сборка бинарника
+    cmds:
+      - go build -o bin/server ./cmd/server
+
+  vet:
+    desc: go vet
+    cmds:
+      - go vet ./...
+
+  swagger:
+    desc: Перегенерировать swagger
+    cmds:
+      - swag init -g ./cmd/server/main.go -o ./docs --parseDependency --parseInternal
+
+  lint:
+    desc: golangci-lint (если установлен)
+    cmds:
+      - golangci-lint run ./...

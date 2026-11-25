@@ -1,0 +1,155 @@
+﻿# BC#3 rehabilitation-service — полный локальный стенд.
+#
+# Запуск: docker compose --env-file .env.local up -d
+# Переменные ENV/порты/пароли приходят из env_file .env.${ENV:-local}.
+# Владелец shared redis-blacklist — identy-service; здесь он не дублируется.
+
+name: rehabilitation-service
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-content_db}
+      POSTGRES_USER: ${POSTGRES_USER:-content}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    ports:
+      - "${POSTGRES_PORT:-5435}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis-bc3:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    ports:
+      - "${REDIS_PORT:-6381}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  kafka:
+    image: apache/kafka:3.9.0
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:${KAFKA_PORT:-9092}
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: saymo-bc3-local-cluster
+    ports:
+      - "${KAFKA_PORT:-9092}:29092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # S3-совместимый стенд. MinIO-образы недоступны из реестра на этой машине,
+  # поэтому локально используется adobe/s3mock (S3 API, path-style). В prod — Yandex Object Storage.
+  s3mock:
+    image: adobe/s3mock@sha256:ab01a6946750f451ca215a47e91030695b260e4003b8a5a6201d25029b8fca92
+    restart: unless-stopped
+    ports:
+      - "${MINIO_PORT:-9005}:9090"
+      - "${MINIO_CONSOLE_PORT:-9006}:9191"
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_REGION: ${S3_REGION:-ru-central1}
+
+  s3init:
+    image: amazon/aws-cli@sha256:271de464e935f765aa2afb6ec69881e9f4a9afd3e978214a2b5f5ddcbbc161b5
+    depends_on:
+      - s3mock
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      AWS_DEFAULT_REGION: ${S3_REGION:-ru-central1}
+    entrypoint: >
+      /bin/sh -c "
+      until aws --endpoint-url http://s3mock:9090 s3api head-bucket --bucket ${S3_BUCKET:-saymo-programs} >/dev/null 2>&1 || aws --endpoint-url http://s3mock:9090 s3 mb s3://${S3_BUCKET:-saymo-programs}; do sleep 2; done;
+      "
+    restart: "no"
+
+  jaeger:
+    image: jaegertracing/jaeger@sha256:3823829974ccfc2485d2e48b165579091f32295022ae80ca49704e2f4834116e
+    restart: unless-stopped
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_DSN: postgres://${POSTGRES_USER:-content}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-content_db}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    env_file:
+      - .env.${ENV:-local}
+    environment:
+      ENV: ${ENV:-local}
+      HTTP_ADDR: ":8003"
+      METRICS_ADDR: ":9003"
+      POSTGRES_DSN: postgres://${POSTGRES_USER:-content}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-content_db}?sslmode=disable
+      REDIS_ADDR: redis-bc3:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      REDIS_BLACKLIST_ADDR: host.docker.internal:${REDIS_BLACKLIST_PORT:-6383}
+      REDIS_BLACKLIST_PASSWORD: ${REDIS_BLACKLIST_PASSWORD:?REDIS_BLACKLIST_PASSWORD is required}
+      KAFKA_BROKERS: kafka:9092
+      S3_ENDPOINT: http://s3mock:9090
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      S3_BUCKET: ${S3_BUCKET:-saymo-programs}
+      JAEGER_OTLP_ENDPOINT: jaeger:4317
+    ports:
+      - "8003:8003"
+      - "9003:9003"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis-bc3:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      s3init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/rehabilitation-service", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+volumes:
+  postgres-data:

@@ -1,0 +1,41 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+
+# Test artifacts
+*.test
+*.out
+coverage.html
+
+# Dependencies
+vendor/
+go.work
+
+# Environment (только .env.example коммитится)
+.env
+.env.local
+.env.test
+.env.prod
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+tmp/
+dist/
+
+# Keys / JWKS
+*.pem
+*.key
+local_jwks.json
+
