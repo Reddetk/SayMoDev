@@ -7,6 +7,7 @@ import (
 	"time"
 
 	_ "github.com/Reddetk/SayMoDev/rehabilitation-service/docs" // swagger-спека, регенерируется `swag init`
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/auth"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/health"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,7 @@ type Deps struct {
 	Build         BuildInfo
 	CORSOrigins   []string
 	EnableSwagger bool
+	Auth          *auth.Authenticator
 }
 
 // NewRouter собирает gin-роутер S1: health, readiness, swagger и 404/405.
@@ -69,10 +71,37 @@ func NewRouter(deps Deps) *gin.Engine {
 		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/swagger/doc.json")))
 	}
 
-	// Группы зарезервированы под контракты BC#3 (endpoints.md): публичное чтение и admin-write.
-	// Наполняются в S4/S5; middleware RBAC подключается в S3.
-	_ = router.Group("/content")
-	_ = router.Group("/admin")
+	// Группы под контракты BC#3 (endpoints.md):
+	//   publicRead — GET каталога/урока без JWT;
+	//   adminWrite — write внутри /content, только administrator;
+	//   adminOnly  — /admin/*, только administrator.
+	// Наполняются в S4/S5; middleware S3 подключён заранее.
+	publicRead := router.Group("/content")
+	adminWrite := router.Group("/content")
+	adminOnly := router.Group("/admin")
+	authRead := router.Group("/content")
+	// Fail-closed: без настроенного Authenticator защищённые группы отвечают 503,
+	// а не становятся публичными при регистрации маршрутов в S4/S5.
+	var protected []gin.HandlerFunc
+	if deps.Auth != nil {
+		protected = []gin.HandlerFunc{deps.Auth.Middleware(), deps.Auth.RequireAdmin()}
+	} else {
+		protected = []gin.HandlerFunc{denyProtected}
+	}
+	var authOnly []gin.HandlerFunc
+	if deps.Auth != nil {
+		authOnly = []gin.HandlerFunc{deps.Auth.Middleware()}
+	} else {
+		authOnly = []gin.HandlerFunc{denyProtected}
+	}
+	adminWrite.Use(protected...)
+	adminOnly.Use(protected...)
+	// patient GET урока: JWT обязателен, ownership проверяется через BC#4 (S4).
+	authRead.Use(authOnly...)
+	_ = publicRead
+	_ = adminWrite
+	_ = adminOnly
+	_ = authRead
 
 	router.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
@@ -126,4 +155,10 @@ func readinessHandler(deps Deps) gin.HandlerFunc {
 			"checks": result.Checks,
 		})
 	}
+}
+
+// denyProtected — заглушка защищённых групп, когда Authenticator не собран
+// (нет JWKS/blacklist). 503, чтобы отсутствие конфигурации не открыло write-API.
+func denyProtected(c *gin.Context) {
+	c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "auth_unavailable"})
 }

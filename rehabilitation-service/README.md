@@ -1,4 +1,4 @@
-# rehabilitation-service — BC#3 Rehabilitation Content Management
+﻿# rehabilitation-service — BC#3 Rehabilitation Content Management
 
 Сервис управления реабилитационным контентом платформы SayMo (PWA реабилитации после инсульта).
 
@@ -69,7 +69,7 @@ sequenceDiagram
 |---|---|---|---|
 | **S1** | Окружение, тестовый стенд, health-check каждой среды | compose 2 → 8 сервисов (postgres, redis-bc3, kafka, s3mock, s3init, jaeger, migrate, server); `/health`+`/ready`+`/metrics` 2 → 3 (метрики на :9003); миграции 1 пустая → 3 инфраструктурные пары; тесты 0 → 9 test-функций / 40 PASS-записей + 5 E2E; GORM AutoMigrate → golang-migrate; 3 env-файла | deployment/*, Observability.md |
 | **S2** | Домен Program/Lesson + миграции | таблицы 0 → 2 (`programs`, `program_lessons`); миграции 3 → 14 пар (PK по версии, 5 индексов, CHECK-и домена); инварианты: classifier unique/immutable, ≥1 lesson, order_position без дыр, лимит 200; 107 PASS-записей; покрытие домена 94.5% | classification BC#3 §1–4 |
-| **S3** | JWT (RS256/JWKS) + RBAC + L1/L2 revocation | защищённых маршрутов 0 → 9; 401/403 ветки; JWKS-кэш TTL 1h, timeout 2s, fail-closed; RBAC `administrator` на write | classification §Authentication, ADR-003/004 |
+| **S3** | JWT (RS256/JWKS) + RBAC + L1/L2 revocation | 3 CSV-фикстуры (62 кейса), auth coverage 76.6%; 401/403 ветки; JWKS-кэш TTL 1h, timeout 2s, fail-closed; RBAC `administrator`; fail-closed группы при `Auth == nil` (503) | classification §Authentication, ADR-003/004 |
 | **S4** | Read API каталога | 0 → 3 GET (`/content/programs`, `/{id}?version`, `/{id}/lessons/{lessonId}`); L1 5min + L2 Redis 1h + singleflight; presigned URL TTL 1h / кэш 55min | endpoints.md#bc3, classification §HTTP |
 | **S5** | Admin write API + S3 | 0 → 5 write-маршрутов (POST/PATCH/DELETE program, POST/PATCH/DELETE lesson); dedup SHA256; append не инкрементирует версию, insert_after_position инкрементирует; лимит 200 уроков; guard удаления через BC#4 | endpoints.md#bc3, classification §1–5 |
 | **S6** | Kafka: outbox publisher + consumers | события 0 → 8 типов (`ProgramCreated`, `ProgramUpdated`, `ProgramDeleted`, `LessonAddedToProgram`, `LessonInsertedIntoProgram`, `LessonUpdated`, `LessonContentChanged`, `LessonRemovedFromProgram`); consumers 0 → 2 (`ProgramActivated`, `ProgramCompleted`), throttle 50 events/sec, idempotency TTL 7d | events.md#bc3, EventDataFlow T1/T2 |
@@ -152,13 +152,21 @@ Definition of done каждого шага: `go vet ./...`, `go build ./...`, `g
 
 Подшаги S3:
 
-1. **S3.1 JWKS-клиент.** `GET $JWKS_URL`, кэш по `kid` TTL 1h, timeout 2s, без retry; unknown `kid` при недоступном JWKS → 401 (fail-closed).
-2. **S3.2 JWT-валидация.** RS256, claims `exp`/`iat` с ±30s, `iss=urn:saymo:identity-service`, `aud=api.saymo`; извлечение `sub`, `role`, `session_id`, `jti`, `rev`.
-3. **S3.3 Revocation L1→L2.** L1 in-process TTL 60s; L2 shared `redis-blacklist` (`jwt:black:<jti>`, `account:rev:<sub>`); L2 недоступен → 401 fail-closed. L3 PostgreSQL не используется: прямые SQL-соединения между BC запрещены (`context-map.md`), нужен ADR/внутренний endpoint BC#1.
-4. **S3.4 Middleware + RBAC.** `Authorization: Bearer`, 401 с `WWW-Authenticate`; `role != administrator` на write → 403; публичные GET — без JWT (контракт `endpoints.md`), patient GET урока — с JWT и ownership-проверкой через BC#4 (S4).
-5. **S3.5 Тесты.** CSV от чистого субагента: истёкший/будущий `iat`, неверная подпись, неизвестный `kid`, blacklisted `jti`, `rev` меньше account, отсутствующий/битый заголовок, `role=patient` на write. E2E с тестовым JWKS-стабом.
+1. **S3.1 JWKS-клиент.** `GET $JWKS_URL`, кэш по `kid` TTL 1h, timeout 2s, один refetch при неизвестном `kid` не чаще раза в минуту; unknown `kid` при недоступном JWKS → 401 (fail-closed).
+2. **S3.2 JWT-валидация.** RS256 only (`none`/`HS256` → 401), claims `exp`/`iat` с ±30s, `iss=urn:saymo:identity-service`, `aud=api.saymo`; `sub`, `jti`, `session_id` — непустые UUID, `role ∈ {patient, relative, administrator}`, `rev ≥ 0`.
+3. **S3.3 Revocation L1→L2.** L1 in-process TTL 60s (только allow — окно stale valid по ADR-003); L2 shared `redis-blacklist` (`jwt:black:<jti>`, `account:rev:<sub>`); Redis недоступен или `account:rev` отсутствует → 401 fail-closed. L3 PostgreSQL не используется: прямые SQL-соединения между BC запрещены (`context-map.md`), нужен ADR/внутренний endpoint BC#1.
+4. **S3.4 Middleware + RBAC.** `Authorization: Bearer`, 401 + `WWW-Authenticate`; `role != administrator` на write → 403; публичные GET — без JWT (контракт `endpoints.md`), patient GET урока — с JWT и ownership-проверкой через BC#4 (S4). Middleware подключён к группам роутера; сами маршруты появятся в S4/S5.
+5. **S3.5 Тесты.** CSV от чистого субагента: `jwt.csv` (26), `revocation.csv` (11), `rbac.csv` (25). Тесты поднимают настоящий `httptest` JWKS с RSA-ключом, подписывают токены и проходят gin-роутер.
 
-Гейт S3: 401/403 на всех ветках; `go build/vet/test -race`; E2E; ревьюер.
+**Гейт S3:** `go build/vet/test -race` зелёные; `go test ./internal/auth -cover` = **76.6%**; 62 fixture-кейса; 187 PASS-записей всего. HTTP-E2E для 401/403 переносится на S5: business-маршруты BC#3 ещё не зарегистрированы, проверять нечего.
+
+**Исправлено после ревью S3:**
+
+- **JWKS TTL 1h реально применяется** (`jwks.go`): ключ принимается только если `now - fetchedAt < 1h`; после истечения — обязательный refetch, при недоступности JWKS — fail-closed 401. Тест `TestJWKSRefetchesAfterTTLAndRejectsRetiredKey` ротирует ключ и проверяет, что старый перестаёт приниматься.
+- **Fail-closed композиция** (`router.go`): если `Auth == nil` (нет `JWKS_URL`/blacklist), защищённые группы используют `denyProtected` → 503, а не остаются без middleware. В `prod` конфиг требует `JWKS_URL` (https), `REDIS_BLACKLIST_ADDR`, `REDIS_BLACKLIST_PASSWORD`.
+- 401-ответ больше не содержит топологию/URL: `{"error":"unauthorized","code":"expired|signature|..."}`; детали — в WARN-лог.
+- `session_id` валидируется как UUID; `iat` обязателен; L1-кэш ограничен `min(now+60s, token.exp)`; массовый отзыв (`rev++`) также запаздывает до 60s (L1 allow) — принято по ADR-003.
+
 
 
 ---

@@ -1,0 +1,26 @@
+case_id,role,method,path,expected_status,notes
+rbac-001-anon-public-list,,GET,/content/programs,200,"Каталог программ открыт: ни JWT, ни роли не нужны"
+rbac-002-anon-public-detail,,GET,/content/programs/{program_id},200,"Карточка программы публична, id подставляется из сида"
+rbac-003-patient-public-list,patient,GET,/content/programs,200,"Пациент читает каталог — публичный роут, роль не мешает"
+rbac-004-admin-public-detail,administrator,GET,/content/programs/{program_id},200,Администратор на публичном GET: авторизация не должна требовать write-права
+rbac-005-admin-create-program,administrator,POST,/content/programs,200,200 здесь = запрос прошёл авторизацию и дошёл до usecase (реально 201)
+rbac-006-patient-create-program,patient,POST,/content/programs,403,"Пациенту создавать контент нельзя: 403, а не 401 — токен валиден, прав нет"
+rbac-007-relative-create-program,relative,POST,/content/programs,403,Родственник тоже только читает контент
+rbac-008-admin-patch-program,administrator,PATCH,/content/programs/{program_id},200,Частичное обновление программы администратором
+rbac-009-patient-patch-program,patient,PATCH,/content/programs/{program_id},403,"Пациент не правит программу, даже свою"
+rbac-010-admin-delete-program,administrator,DELETE,/content/programs/{program_id},200,"Удаление программы: 200 значит «допущен до usecase», фактический код 204/404"
+rbac-011-patient-delete-program,patient,DELETE,/content/programs/{program_id},403,Удаление контента — только администратор
+rbac-012-admin-create-lesson,administrator,POST,/content/programs/{program_id}/lessons,200,Добавление урока в программу
+rbac-013-patient-create-lesson,patient,POST,/content/programs/{program_id}/lessons,403,Пациенту нельзя добавлять уроки
+rbac-014-relative-create-lesson,relative,POST,/content/programs/{program_id}/lessons,403,"Родственник не пишет контент, только читает"
+rbac-015-admin-patch-lesson,administrator,PATCH,/content/programs/{program_id}/lessons/{lesson_id},200,Правка урока: lesson_id подставляется из сида
+rbac-016-patient-patch-lesson,patient,PATCH,/content/programs/{program_id}/lessons/{lesson_id},403,Пациент не редактирует урок
+rbac-017-admin-delete-lesson,administrator,DELETE,/content/programs/{program_id}/lessons/{lesson_id},200,Удаление урока администратором
+rbac-018-relative-delete-lesson,relative,DELETE,/content/programs/{program_id}/lessons/{lesson_id},403,Родственнику удаление урока запрещено
+rbac-019-patient-delete-lesson,patient,DELETE,/content/programs/{program_id}/lessons/{lesson_id},403,"Пациент на удалении урока: 403, токен при этом валиден"
+rbac-020-admin-migrate-patients,administrator,POST,/admin/content/programs/{program_id}/migrate-patients,200,Массовая миграция пациентов: 200 = 202 Accepted из usecase
+rbac-021-patient-migrate-patients,patient,POST,/admin/content/programs/{program_id}/migrate-patients,403,Пациент не должен даже видеть админский роут — 403 после авторизации
+rbac-022-relative-migrate-patients,relative,POST,/admin/content/programs/{program_id}/migrate-patients,403,Родственник в админку не ходит
+rbac-023-no-role-create-program,,POST,/content/programs,401,"Токена нет вовсе: 401 до RBAC, а не 403"
+rbac-024-no-role-delete-lesson,,DELETE,/content/programs/{program_id}/lessons/{lesson_id},401,Аноним на write-роуте урока — 401
+rbac-025-no-role-migrate-patients,,POST,/admin/content/programs/{program_id}/migrate-patients,401,"Аноним на админском роуте: сначала аутентификация, потом роли"

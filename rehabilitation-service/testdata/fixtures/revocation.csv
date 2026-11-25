@@ -1,0 +1,12 @@
+case_id,jti_blacklisted,account_rev,token_rev,redis_available,expected_status,expected_error_contains,notes
+rev-001-clean-session,false,3,3,true,200,,"Ни jti_blacklist, ни отзыва аккаунта: обычный запрос здоровой сессии"
+rev-002-jti-blacklisted,true,3,3,true,401,revoked,"jti лежит в jwt:black:<jti> — logout уже случился, access-токен мёртв"
+rev-003-token-behind-account,false,3,2,true,401,rev,token.rev=2 < account.rev=3: пароль/сессии сменили после выдачи токена
+rev-004-token-equals-account,false,5,5,true,200,,"token.rev == account.rev — граница в порядке, токен актуальной ревизии"
+rev-005-token-ahead-account,false,4,7,true,200,,"token.rev > account.rev: ревизия токена новее, признак отзыва не срабатывает"
+rev-006-redis-down,false,3,3,false,401,redis,"Redis недоступен и L1 пуст: fail-closed — отдаём 401, а не пропускаем"
+rev-007-redis-down-l1-hit,true,3,3,false,200,,"Redis лёг, но jti ещё в L1-кэше процесса (TTL не истёк) — решение принимается по L1"
+rev-008-account-rev-missing,false,,3,true,401,rev,account:rev:<sub> в Redis нет: нечем подтвердить ревизию — fail-closed
+rev-009-both-missing,false,,3,true,401,rev,"Ни записи blacklist, ни account.rev, хотя Redis жив: пустой ответ трактуем как отказ"
+rev-010-rev-negative,false,2,-1,true,401,rev,"Отрицательный token.rev: сравнение с account.rev бессмысленно, токен отвергаем"
+rev-011-jti-blacklisted-stale-rev,true,5,1,true,401,revoked,Сразу два признака: jti в blacklist и устаревшая ревизия — причина всё равно revoked

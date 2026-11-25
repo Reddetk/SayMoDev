@@ -13,6 +13,7 @@ import (
 
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/health"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
+	"github.com/gin-gonic/gin"
 )
 
 type fakeProbe struct {
@@ -85,6 +86,16 @@ func TestCORSAllowsConfiguredOriginBeforeAuth(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Fatalf("unknown origin must not receive allow-origin, got %q", got)
+	}
+}
+
+func TestDenyProtectedWithoutAuthReturns503(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	denyProtected(c)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d", rec.Code)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/adapter/postgres"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/adapter/redis"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/adapter/s3"
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/auth"
 	handlerhttp "github.com/Reddetk/SayMoDev/rehabilitation-service/internal/handler/http"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/health"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
@@ -63,6 +64,22 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 	checker := health.NewChecker(cfg.ProbeTimeout, pg, rdb, kf, s3probe)
 	met := metrics.New(build.Version, build.Commit)
 
+	var redisBlack *redis.Probe
+	if cfg.RedisBlacklistAddr != "" {
+		redisBlack = redis.New(cfg.RedisBlacklistAddr, cfg.RedisBlacklistPass)
+	}
+
+	// S3: JWT валидируется только если задан JWKS и есть shared blacklist.
+	// Если зависимостей нет, health/readiness работают, а защищённые группы
+	// отвечают 503 (denyProtected) — публичными они не становятся.
+	var authn *auth.Authenticator
+	if cfg.JWKSURL != "" && redisBlack != nil {
+		authn = auth.NewAuthenticator(
+			auth.Options{JWKSURL: cfg.JWKSURL, Logger: log},
+			auth.NewRedisRevocation(redisBlack.Client()),
+		)
+	}
+
 	router := handlerhttp.NewRouter(handlerhttp.Deps{
 		Health:        checker,
 		Metrics:       met,
@@ -70,14 +87,16 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 		Build:         build,
 		CORSOrigins:   cfg.CORSAllowedOrigins,
 		EnableSwagger: cfg.Env != config.EnvProd,
+		Auth:          authn,
 	})
 
 	app := &App{
-		cfg:      cfg,
-		log:      log,
-		metrics:  met,
-		postgres: pg,
-		redis:    rdb,
+		cfg:        cfg,
+		log:        log,
+		metrics:    met,
+		postgres:   pg,
+		redis:      rdb,
+		redisBlack: redisBlack,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
 			Handler:           router,
@@ -94,10 +113,6 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 			WriteTimeout:      10 * time.Second,
 			IdleTimeout:       60 * time.Second,
 		},
-	}
-
-	if cfg.RedisBlacklistAddr != "" {
-		app.redisBlack = redis.New(cfg.RedisBlacklistAddr, cfg.RedisBlacklistPass)
 	}
 
 	return app, nil

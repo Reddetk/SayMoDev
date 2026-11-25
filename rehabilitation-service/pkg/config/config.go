@@ -245,6 +245,20 @@ func (c *Config) validate() error {
 				return &ValidationError{field, "prod requires a real value, placeholder detected"}
 			}
 		}
+
+		if c.JWKSURL == "" {
+			return &ValidationError{"JWKS_URL", "is required in prod"}
+		}
+		jwks, err := url.Parse(c.JWKSURL)
+		if err != nil || jwks.Scheme != "https" || jwks.Host == "" {
+			return &ValidationError{"JWKS_URL", "must be an https URL in prod"}
+		}
+		if c.RedisBlacklistAddr == "" {
+			return &ValidationError{"REDIS_BLACKLIST_ADDR", "is required in prod"}
+		}
+		if isPlaceholder(c.RedisBlacklistPass) {
+			return &ValidationError{"REDIS_BLACKLIST_PASSWORD", "prod requires a real value, placeholder detected"}
+		}
 	}
 
 	return nil
