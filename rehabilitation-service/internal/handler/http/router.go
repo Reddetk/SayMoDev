@@ -34,6 +34,7 @@ type Deps struct {
 	CORSOrigins   []string
 	EnableSwagger bool
 	Auth          *auth.Authenticator
+	Content       *ContentHandler
 }
 
 // NewRouter собирает gin-роутер S1: health, readiness, swagger и 404/405.
@@ -98,10 +99,15 @@ func NewRouter(deps Deps) *gin.Engine {
 	adminOnly.Use(protected...)
 	// patient GET урока: JWT обязателен, ownership проверяется через BC#4 (S4).
 	authRead.Use(authOnly...)
-	_ = publicRead
+
+	if deps.Content != nil {
+		publicRead.GET("/programs", deps.Content.List)
+		publicRead.GET("/programs/:programId", deps.Content.Get)
+		authRead.GET("/programs/:programId/lessons/:lessonId", deps.Content.GetLesson)
+	}
+
 	_ = adminWrite
 	_ = adminOnly
-	_ = authRead
 
 	router.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})

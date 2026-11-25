@@ -16,6 +16,8 @@ import (
 	handlerhttp "github.com/Reddetk/SayMoDev/rehabilitation-service/internal/handler/http"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/health"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
+	repositorypostgres "github.com/Reddetk/SayMoDev/rehabilitation-service/internal/repository/postgres"
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/usecase"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/pkg/config"
 	"go.uber.org/zap"
 )
@@ -80,6 +82,11 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 		)
 	}
 
+	repo := repositorypostgres.NewProgramRepository(pg.Pool())
+	presigner := s3.NewPresigner(s3probe.Client(), cfg.S3Bucket)
+	query := usecase.NewProgramQuery(repo, presigner, redis.NewCache(rdb.Client()), log)
+	content := &handlerhttp.ContentHandler{Query: query}
+
 	router := handlerhttp.NewRouter(handlerhttp.Deps{
 		Health:        checker,
 		Metrics:       met,
@@ -88,6 +95,7 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 		CORSOrigins:   cfg.CORSAllowedOrigins,
 		EnableSwagger: cfg.Env != config.EnvProd,
 		Auth:          authn,
+		Content:       content,
 	})
 
 	app := &App{
