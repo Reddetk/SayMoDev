@@ -14,7 +14,7 @@
 
 ## План реализации (пайплайн AGENTS.md)
 
-**Текущий шаг: S2 — домен Program/Lesson + миграции.** S1 закрыт 2026-11-25 (гейт PASS: build/vet/test + E2E + ревьюер). Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
+**Текущий шаг: S3 — JWT/RBAC.** S1 закрыт 2026-11-25 (гейт PASS), S2 закрыт 2026-11-25 (домен 94.5% coverage, миграции 000004–000014). Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
 
 ### AS-IS: измеренные цифры (2026-11-25, до S1)
 
@@ -68,7 +68,7 @@ sequenceDiagram
 | Шаг | Цель | AS-IS → TO-BE (цифры) | Docs / ADR |
 |---|---|---|---|
 | **S1** | Окружение, тестовый стенд, health-check каждой среды | compose 2 → 8 сервисов (postgres, redis-bc3, kafka, s3mock, s3init, jaeger, migrate, server); `/health`+`/ready`+`/metrics` 2 → 3 (метрики на :9003); миграции 1 пустая → 3 инфраструктурные пары; тесты 0 → 9 test-функций / 40 PASS-записей + 5 E2E; GORM AutoMigrate → golang-migrate; 3 env-файла | deployment/*, Observability.md |
-| **S2** | Домен Program/Lesson + миграции | таблицы 0 → 2 (`programs`, `program_lessons`); миграции 3 → 8 пар (+3 индекса); инварианты: classifier unique/immutable, ≥1 lesson, order_position без дыр, лимит 200; unit-тестов 40 → ≥60 | classification BC#3 §1–4 |
+| **S2** | Домен Program/Lesson + миграции | таблицы 0 → 2 (`programs`, `program_lessons`); миграции 3 → 14 пар (PK по версии, 5 индексов, CHECK-и домена); инварианты: classifier unique/immutable, ≥1 lesson, order_position без дыр, лимит 200; 107 PASS-записей; покрытие домена 94.5% | classification BC#3 §1–4 |
 | **S3** | JWT (RS256/JWKS) + RBAC + L1/L2 revocation | защищённых маршрутов 0 → 9; 401/403 ветки; JWKS-кэш TTL 1h, timeout 2s, fail-closed; RBAC `administrator` на write | classification §Authentication, ADR-003/004 |
 | **S4** | Read API каталога | 0 → 3 GET (`/content/programs`, `/{id}?version`, `/{id}/lessons/{lessonId}`); L1 5min + L2 Redis 1h + singleflight; presigned URL TTL 1h / кэш 55min | endpoints.md#bc3, classification §HTTP |
 | **S5** | Admin write API + S3 | 0 → 5 write-маршрутов (POST/PATCH/DELETE program, POST/PATCH/DELETE lesson); dedup SHA256; append не инкрементирует версию, insert_after_position инкрементирует; лимит 200 уроков; guard удаления через BC#4 | endpoints.md#bc3, classification §1–5 |
@@ -119,20 +119,46 @@ Definition of done каждого шага: `go vet ./...`, `go build ./...`, `g
 4. **`go 1.26.0` в go.mod**: `go mod tidy` поднял директиву под фактический toolchain 1.26.0; `Dockerfile*` используют `golang:1.26-alpine` (docs говорят 1.25 — обновится вместе с docs/ADR при следующем шаге).
 5. **OTel-экспорт (Jaeger :4317) — S8**: `JAEGER_OTLP_ENDPOINT` зарезервирован, но SDK не инициализируется. Корреляция S1 обеспечена `trace_id` из `traceparent`/генерацией, без экспортёра.
 
-### S2 — домен и миграции (текущий шаг)
+### S2 — домен и миграции (закрыт 2026-11-25)
 
 **Цель:** доменная модель BC#3 без HTTP/Kafka, миграции доменных таблиц, красные тесты из CSV чистого субагента.
 
 Подшаги:
 
-1. **S2.1 Value objects.** `Classifier` (difficulty, aphasia_type: non-empty, ≤50, immutable), `ProgramTitle` (non-empty, ≤200), `OrderPosition` (1..200), `ContentHash` (SHA-256, 64 hex в нижнем регистре), `ProgramVersion` (≥1). Sentinel-ошибки — в `internal/domain`.
+1. **S2.1 Value objects.** Тип `Classifier` (difficulty `easy|medium|hard`, aphasia_type структурно: non-empty, ≤50, без обрамляющих пробелов). Остальные инварианты — inline-валидаторы без отдельных типов (KISS): title 1..255 рун, OrderPosition 1..200, ContentHash `^[0-9a-f]{64}$`, version ≥1. Sentinel-ошибки — в `internal/domain/errors.go`.
 2. **S2.2 Сущности.** `Lesson` (title, description, content_url, content_hash, file_size_bytes>0, mime_type=`application/pdf`, uploaded_by) и агрегат `Program` (id, title, classifier, version, lessons, active_reference_count).
-3. **S2.3 Поведение агрегата.** `NewProgram` (≥1 урок, позиции 1..N без дыр/дублей), `AppendLesson` (версия не меняется), `InsertLessonAfter(K)` (K∈[1,N], версия+1, сдвиг K+1..N), `Rename` (классификатор не принимается), `IncrementRefCount`/`DecrementRefCount` (пол 0). Лимит 200 уроков.
-4. **S2.4 Миграции.** `000004_create_programs`, `000005_create_program_lessons`, `000006_create_uniq_programs_classifier`, `000007_create_uniq_lessons_version_position`, `000008_create_idx_lessons_content_hash` — пары up/down, `BEGIN/COMMIT`.
-5. **S2.5 Порты и pgx-адаптер.** `internal/port/out` с DTO, принадлежащими пакету порта (ADR-007: `ProgramRecord`, `CreateProgramCmd`), pgx-репозиторий с `SELECT ... FOR UPDATE` для вставки урока и удаления программы. Маппинг — внутри сервиса.
-6. **S2.6 TDD.** CSV от чистого субагента: `testdata/fixtures/program.csv`, `lesson_ops.csv` (границы типов: пустое, unicode, 200/201 урок, позиции 0/-1/201, hash не 64 hex). Сначала красные тесты, затем реализация.
+3. **S2.3 Поведение агрегата.** `NewProgram` (≥1 урок, позиции 1..N без дыр/дублей или автоназначение), `AppendLesson` (версия не меняется), `InsertLessonAfter(K)` (валиден только K∈[1,N-1]: версия+1 и сдвиг K+1..N; K≥N → 400 по контракту), `Rename` (классификатор не принимается), `IncrementRefCount`/`DecrementRefCount` (пол 0). Лимит 200 уроков.
+4. **S2.4 Миграции.** `000004_create_programs`, `000005_create_program_lessons`, `000006_create_uniq_programs_classifier`, `000007_create_uniq_lessons_version_position`, `000008_create_idx_lessons_content_hash`, `000009_change_program_lessons_pk` (PK `(program_id, program_version, order_position)` — grandfathering), `000010_create_idx_lessons_id`, `000011_add_program_checks`, `000012_add_lesson_checks`, `000013_drop_uniq_lessons_version_position`; пары up/down, `BEGIN/COMMIT`.
+5. **S2.5 Порты и pgx-адаптер — перенесено в S4.** Репозиторий без потребителя (usecase) — преждевременная абстракция; S2 закрывает домен и схему. DTO на границах (ADR-007) и `RestoreLesson` (восстановление с внешним `lesson_id` для grandfathering) появятся вместе с первым usecase в S4.
+6. **S2.6 TDD.** CSV от чистого субагента: `testdata/fixtures/program.csv` (35 кейсов) и `lesson_ops.csv` (15 кейсов). Сначала красные тесты (compile fail), затем реализация.
 
-Гейт S2: `go vet/build/test -race` зелёные; `go test ./internal/domain/... -cover` ≥ 85%; миграции up/down/up; unit-тестов ≥60; ревьюер + E2E-агент (E2E S2 — миграции и отсутствие регрессии S1, HTTP-контрактов BC#3 ещё нет).
+**Гейт S2 — закрыт:** `go build/vet/test -race` зелёные; `go test ./internal/domain -cover` = **94.5%** (≥85%); миграции `up → down×4 → up` и `up → down → up` → `version=14 dirty=false`; 107 PASS-записей; интерпретации контракта зафиксированы ниже.
+
+**Решения S2, сверенные с docs:**
+
+| # | Вопрос | Решение S2 | Основание |
+|---|---|---|---|
+| 1 | `insert_after_position` = последняя позиция | **400** `insert_after_position`; append — отдельная операция | classification §4 Error Cases: `K >= total_lessons → 400` |
+| 2 | Версия при `insert_after_position` | ++версия при валидном K (< N) | endpoints.md: «version incremented only if insert_after_position provided» |
+| 3 | Лимит длины title | 255 рун (255 valid / 256 invalid) | docs не задают число; 255 зафиксировано в домене и БД CHECK |
+| 4 | Допустимые `difficulty` | `easy`, `medium`, `hard` (точное совпадение, без trim) | endpoints.md + use-cases |
+| 5 | Допустимые `aphasia_type` | структурно: non-empty, ≤50, без обрамляющих пробелов (enum не вводится) | ADR-008: структурная валидация; перечня значений в docs нет |
+| 6 | Регистр `content_hash` | только нижний hex | SHA-256 канонически lowercase; БД CHECK совпадает |
+| 7 | Модель версий уроков | PK `(program_id, program_version, order_position)`, `id` урока повторяется между версиями | grandfathering: старые пациенты остаются на старой версии, `lesson_id` стабилен |
+
+### S3 — JWT/RBAC (текущий шаг)
+
+**Цель:** каждый запрос BC#3 валидирует RS256 JWT самостоятельно, write-операции требуют `role=administrator`, revocation L1→L2 fail-closed.
+
+Подшаги S3:
+
+1. **S3.1 JWKS-клиент.** `GET $JWKS_URL`, кэш по `kid` TTL 1h, timeout 2s, без retry; unknown `kid` при недоступном JWKS → 401 (fail-closed).
+2. **S3.2 JWT-валидация.** RS256, claims `exp`/`iat` с ±30s, `iss=urn:saymo:identity-service`, `aud=api.saymo`; извлечение `sub`, `role`, `session_id`, `jti`, `rev`.
+3. **S3.3 Revocation L1→L2.** L1 in-process TTL 60s; L2 shared `redis-blacklist` (`jwt:black:<jti>`, `account:rev:<sub>`); L2 недоступен → 401 fail-closed. L3 PostgreSQL не используется: прямые SQL-соединения между BC запрещены (`context-map.md`), нужен ADR/внутренний endpoint BC#1.
+4. **S3.4 Middleware + RBAC.** `Authorization: Bearer`, 401 с `WWW-Authenticate`; `role != administrator` на write → 403; публичные GET — без JWT (контракт `endpoints.md`), patient GET урока — с JWT и ownership-проверкой через BC#4 (S4).
+5. **S3.5 Тесты.** CSV от чистого субагента: истёкший/будущий `iat`, неверная подпись, неизвестный `kid`, blacklisted `jti`, `rev` меньше account, отсутствующий/битый заголовок, `role=patient` на write. E2E с тестовым JWKS-стабом.
+
+Гейт S3: 401/403 на всех ветках; `go build/vet/test -race`; E2E; ревьюер.
 
 
 ---
@@ -151,10 +177,9 @@ erDiagram
         int active_reference_count
         timestamptz created_at
         timestamptz updated_at
-        tstzrange version_validity
     }
     program_lessons {
-        uuid id PK
+        uuid id
         uuid program_id FK
         int program_version
         int order_position
@@ -183,6 +208,8 @@ erDiagram
 ```
 
 Инварианты (дословно из `classifications/RehabilitationContentManagement.md`):
+
+- `program_lessons`: PK `(program_id, program_version, order_position)`; `id` урока стабилен между версиями (grandfathering), уникален в рамках `(program_id, program_version)`.
 
 - `programs.(difficulty, aphasia_type)` — UNIQUE; classifier неизменяем после создания.
 - Программа без уроков невозможна: создание программы и уроков — одна транзакция.

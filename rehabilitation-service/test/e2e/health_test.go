@@ -61,7 +61,18 @@ func TestHealthLiveness(t *testing.T) {
 }
 
 func TestReadinessAllDependencies(t *testing.T) {
-	resp, body := get(t, baseURL()+"/ready")
+	// Cold start (S3/Java, Kafka) может дать первый 503: readiness — это «прогрелся ли»,
+	// поэтому даём стенду до 20s и требуем устойчивый 200, а не первый ответ.
+	deadline := time.Now().Add(20 * time.Second)
+	var resp *http.Response
+	var body string
+	for {
+		resp, body = get(t, baseURL()+"/ready")
+		if resp.StatusCode == http.StatusOK || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("/ready: want 200 (all deps up), got %d (%s)", resp.StatusCode, body)
 	}

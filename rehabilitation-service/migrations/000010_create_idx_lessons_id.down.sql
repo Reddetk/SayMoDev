@@ -1,0 +1,5 @@
+BEGIN;
+
+DROP INDEX IF EXISTS idx_lessons_id;
+
+COMMIT;

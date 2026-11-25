@@ -39,3 +39,7 @@ dist/
 *.key
 local_jwks.json
 
+
+# Coverage
+coverage
+
