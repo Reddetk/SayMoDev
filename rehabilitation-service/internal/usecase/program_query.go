@@ -207,14 +207,15 @@ func (q *ProgramQuery) GetLesson(ctx context.Context, programID, lessonID string
 		lesson = value.(out.LessonRecord)
 	}
 
-	// Presigned URL живёт 1h; кэш 55min. Ссылка с остатком <=5min не отдаётся:
-	// перегенерируем, иначе клиент получит почти истёкший URL.
-	presignKey := fmt.Sprintf("presigned_url:%s:%s", programID, lessonID)
+	// Presigned URL живёт 1h; кэш 55min. Ключ включает contentHash: при смене
+	// PDF старая ссылка не отдаётся, даже если инвалидация L2 не удалась.
+	presignKey := fmt.Sprintf("presigned_url:%s:%s:%s", programID, lessonID, lesson.ContentHash)
 	var presigned string
 	presignStarted := time.Now()
 	value, err, presignShared := q.group.Do("presign:"+presignKey, func() (any, error) {
 		var cached presignedRecord
 		if q.l2Get(ctx, presignKey, &cached) && time.Until(cached.ExpiresAt) > presignMinRemain {
+			// Ссылка с остатком ≤5 мин не отдаётся: клиент получил бы почти истёкший URL.
 			return cached.URL, nil
 		}
 

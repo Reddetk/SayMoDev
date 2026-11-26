@@ -366,7 +366,7 @@ func (r *ProgramRepository) CreateMigrationRequest(ctx context.Context, programI
 		return "", out.ErrNotFound
 	}
 
-	jobID := migrationJobID(programID, targetVersion, selection, accountIDs)
+	jobID := migrationJobID(programID, currentVersion, targetVersion, selection, accountIDs)
 	canonicalIDs := canonicalAccountIDs(accountIDs)
 	if err := insertOutboxWithID(ctx, tx, jobID, "MigrationRequested", programID, map[string]any{
 		"migrationJobId":   jobID,
@@ -390,11 +390,13 @@ func (r *ProgramRepository) CreateMigrationRequest(ctx context.Context, programI
 	return jobID, nil
 }
 
-// migrationJobID детерминирован для (program, target, selection, набор accountIds, UTC-день).
-// Совпадение id делает outbox PK естественным ключом идемпотентности без новой таблицы.
-func migrationJobID(programID string, targetVersion int, selection string, accountIDs []string) string {
+// migrationJobID детерминирован для (program, oldVersion, target, selection,
+// набор accountIds, UTC-день). oldVersion входит в ключ: после изменения
+// программы тот же target — уже другая миграция.
+func migrationJobID(programID string, oldVersion, targetVersion int, selection string, accountIDs []string) string {
 	key := strings.Join([]string{
 		programID,
+		strconv.Itoa(oldVersion),
 		strconv.Itoa(targetVersion),
 		selection,
 		strings.Join(canonicalAccountIDs(accountIDs), ","),

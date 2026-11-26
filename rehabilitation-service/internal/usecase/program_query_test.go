@@ -16,6 +16,7 @@ type fakeRepo struct {
 	getCalls    atomic.Int32
 	lessonCalls atomic.Int32
 	delay       time.Duration
+	lessonHash  string
 }
 
 func (r *fakeRepo) List(context.Context, out.ProgramFilter) ([]out.ProgramSummary, error) {
@@ -33,9 +34,10 @@ func (r *fakeRepo) GetLesson(context.Context, string, string) (out.LessonRecord,
 	r.lessonCalls.Add(1)
 	time.Sleep(r.delay)
 	return out.LessonRecord{
-		LessonID:   "l1",
-		Title:      "Урок",
-		ContentURL: "https://storage.yandexcloud.net/saymo-programs/programs/p1/lessons/l1/v1.pdf",
+		LessonID:    "l1",
+		Title:       "Урок",
+		ContentURL:  "https://storage.yandexcloud.net/saymo-programs/programs/p1/lessons/l1/v1.pdf",
+		ContentHash: r.lessonHash,
 	}, nil
 }
 
@@ -204,7 +206,7 @@ func TestPresignedURLRegeneratedWhenLessThanFiveMinutesLeft(t *testing.T) {
 	query := NewProgramQuery(&fakeRepo{}, presigner, cache, nil)
 
 	nearExpiry := presignedRecord{URL: "old-near-expiry", ExpiresAt: time.Now().Add(4 * time.Minute)}
-	if err := cache.Set(context.Background(), "presigned_url:p1:l1", nearExpiry, time.Minute); err != nil {
+	if err := cache.Set(context.Background(), "presigned_url:p1:l1:", nearExpiry, time.Minute); err != nil {
 		t.Fatalf("seed presign: %v", err)
 	}
 
@@ -220,7 +222,7 @@ func TestPresignedURLRegeneratedWhenLessThanFiveMinutesLeft(t *testing.T) {
 	}
 
 	farExpiry := presignedRecord{URL: "cached-good", ExpiresAt: time.Now().Add(50 * time.Minute)}
-	if err := cache.Set(context.Background(), "presigned_url:p1:l1", farExpiry, time.Minute); err != nil {
+	if err := cache.Set(context.Background(), "presigned_url:p1:l1:", farExpiry, time.Minute); err != nil {
 		t.Fatalf("seed presign: %v", err)
 	}
 	lesson, err = query.GetLesson(context.Background(), "p1", "l1")
@@ -299,5 +301,28 @@ func TestInvalidationPublishFailureDoesNotFailWrite(t *testing.T) {
 
 	if err := query.InvalidateAll(context.Background()); err != nil {
 		t.Fatalf("publish failure must not break write: %v", err)
+	}
+}
+
+func TestPresignCacheKeyIncludesContentHash(t *testing.T) {
+	cache := newFakeCache()
+	presigner := &countingPresigner{}
+	query := NewProgramQuery(&fakeRepo{lessonHash: "hash-new"}, presigner, cache, nil)
+
+	// Ссылка для старого PDF не должна переиспользоваться после смены контента.
+	old := presignedRecord{URL: "old-url", ExpiresAt: time.Now().Add(50 * time.Minute)}
+	if err := cache.Set(context.Background(), "presigned_url:p1:l1:hash-old", old, time.Hour); err != nil {
+		t.Fatalf("seed old presign: %v", err)
+	}
+
+	lesson, err := query.GetLesson(context.Background(), "p1", "l1")
+	if err != nil {
+		t.Fatalf("get lesson: %v", err)
+	}
+	if lesson.ContentURL == "old-url" {
+		t.Fatal("presigned URL of the old content must not be served")
+	}
+	if presigner.calls.Load() != 1 {
+		t.Fatalf("presign calls: want 1, got %d", presigner.calls.Load())
 	}
 }

@@ -206,7 +206,22 @@ func (a *App) Run(ctx context.Context) error {
 	errCh := make(chan error, 2)
 	go a.outbox.Run(ctx)
 	go a.consumer.Run(ctx)
-	go a.invalidation.Run(ctx, a.query.ApplyInvalidation)
+	go func() {
+		// go-redis переподключается внутри, но если канал закроется — поднимаем
+		// подписчика заново, иначе кросс-репличная инвалидация умрёт молча.
+		for ctx.Err() == nil {
+			a.invalidation.Run(ctx, a.query.ApplyInvalidation)
+			if ctx.Err() != nil {
+				return
+			}
+			a.log.Warn("cache invalidation subscriber stopped, restarting")
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
+		}
+	}()
 	go func() {
 		if err := a.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err

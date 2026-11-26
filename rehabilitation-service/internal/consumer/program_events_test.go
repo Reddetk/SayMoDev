@@ -3,6 +3,7 @@ package consumer
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -63,7 +64,9 @@ type scriptedReader struct {
 }
 
 func (r *scriptedReader) ReadMessage(ctx context.Context) (Message, error) {
-	index := int(r.index.Load())
+	// Как segmentio/kafka-go FetchMessage: позиция сдвигается в момент выдачи,
+	// а не в Commit. Фейк должен это повторять, иначе тест не ловит потерю.
+	index := int(r.index.Add(1)) - 1
 	if index < len(r.messages) {
 		return r.messages[index], nil
 	}
@@ -72,7 +75,6 @@ func (r *scriptedReader) ReadMessage(ctx context.Context) (Message, error) {
 }
 
 func (r *scriptedReader) Commit(context.Context, Message) error {
-	r.index.Add(1)
 	r.commits.Add(1)
 	return nil
 }
@@ -82,20 +84,32 @@ func (r *scriptedReader) Close() error { return nil }
 type retryStore struct {
 	attempts  atomic.Int32
 	failUntil int32
+	mu        sync.Mutex
+	applied   []string
 }
 
-func (s *retryStore) ApplyProgramEvent(context.Context, string, string, string, int) (bool, error) {
+func (s *retryStore) ApplyProgramEvent(_ context.Context, _, _, programID string, _ int) (bool, error) {
 	attempt := s.attempts.Add(1)
 	if attempt <= s.failUntil {
 		return false, errors.New("transient db error")
 	}
+	s.mu.Lock()
+	s.applied = append(s.applied, programID)
+	s.mu.Unlock()
 	return true, nil
 }
 
-func TestRunRetriesProcessingErrorWithoutCommitting(t *testing.T) {
-	reader := &scriptedReader{messages: []Message{{
-		Value: []byte(`{"event_id":"11111111-1111-4111-8111-111111111111","event_type":"ProgramActivated","program_id":"33333333-3333-4333-8333-333333333333"}`),
-	}}}
+func (s *retryStore) appliedIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.applied...)
+}
+
+func TestRunRetriesSameEventWithoutSkipping(t *testing.T) {
+	reader := &scriptedReader{messages: []Message{
+		{Value: []byte(`{"event_id":"11111111-1111-4111-8111-111111111111","event_type":"ProgramActivated","program_id":"33333333-3333-4333-8333-333333333333"}`)},
+		{Value: []byte(`{"event_id":"22222222-2222-4222-8222-222222222222","event_type":"ProgramActivated","program_id":"44444444-4444-4444-8444-444444444444"}`)},
+	}}
 	store := &retryStore{failUntil: 1}
 	worker := NewWorker(reader, store, nil)
 	worker.retryBase = time.Millisecond
@@ -109,12 +123,13 @@ func TestRunRetriesProcessingErrorWithoutCommitting(t *testing.T) {
 	}()
 
 	deadline := time.After(2 * time.Second)
-	for reader.commits.Load() == 0 {
+	for reader.commits.Load() < 2 {
 		select {
 		case <-deadline:
 			cancel()
 			<-done
-			t.Fatalf("consumer did not recover: attempts=%d commits=%d", store.attempts.Load(), reader.commits.Load())
+			t.Fatalf("consumer did not recover: attempts=%d commits=%d applied=%v",
+				store.attempts.Load(), reader.commits.Load(), store.appliedIDs())
 		default:
 			time.Sleep(time.Millisecond)
 		}
@@ -122,10 +137,14 @@ func TestRunRetriesProcessingErrorWithoutCommitting(t *testing.T) {
 	cancel()
 	<-done
 
-	if store.attempts.Load() < 2 {
-		t.Fatalf("store must be retried, attempts=%d", store.attempts.Load())
+	if store.attempts.Load() < 3 {
+		t.Fatalf("failed event must be retried: attempts=%d", store.attempts.Load())
 	}
-	if reader.commits.Load() != 1 {
-		t.Fatalf("message must be committed exactly once, commits=%d", reader.commits.Load())
+	if reader.commits.Load() != 2 {
+		t.Fatalf("both events must be committed once, commits=%d", reader.commits.Load())
+	}
+	applied := store.appliedIDs()
+	if len(applied) != 2 || applied[0] != "33333333-3333-4333-8333-333333333333" || applied[1] != "44444444-4444-4444-8444-444444444444" {
+		t.Fatalf("failed event must not be skipped, applied=%v", applied)
 	}
 }

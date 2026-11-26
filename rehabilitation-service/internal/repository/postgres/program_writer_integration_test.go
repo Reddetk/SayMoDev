@@ -176,6 +176,21 @@ func TestMigrationRequestIsIdempotentWithinUTCDay(t *testing.T) {
 		t.Fatalf("duplicate request must enqueue exactly one event, got %d", count)
 	}
 
+	// Изменение программы (version 1→2) делает тот же target другой миграцией.
+	if _, _, err := repo.InsertLessonAfter(ctx, created.ProgramID, 1, testLesson("Вставка версии")); err != nil {
+		t.Fatalf("insert lesson: %v", err)
+	}
+	afterVersionID, err := repo.CreateMigrationRequest(ctx, created.ProgramID, 1, "specific", []string{second, first})
+	if err != nil {
+		t.Fatalf("request after version bump: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM outbox WHERE id = $1`, afterVersionID)
+	})
+	if afterVersionID == jobID {
+		t.Fatal("changed program version must produce a new migration job")
+	}
+
 	otherID, err := repo.CreateMigrationRequest(ctx, created.ProgramID, 1, "all", nil)
 	if err != nil {
 		t.Fatalf("other selection: %v", err)

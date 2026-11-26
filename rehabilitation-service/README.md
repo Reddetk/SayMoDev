@@ -228,9 +228,9 @@ go test -tags=e2e ./test/e2e/... -count=1
 
 ADR: [`docs/adr/011-bc3-pacelc-enforcement.md`](docs/adr/011-bc3-pacelc-enforcement.md). Политика взята из ADR-001 (`adr/001-pacelc-choices.md`, BC#3 = PC/EL), ADR-011 фиксирует механизмы и границы.
 
-- **Кэш:** L1 60 с (было 5 мин), L2 5 мин (было 1 час) — жёсткая граница staleness 5 мин даже при потерянном сообщении. После write: локальный L1 purge → удаление L2 → publish в `bc3:cache:invalidate`; остальные реплики чистят только свой L1 (`ApplyInvalidation`). Ошибка publish не ломает write, считается `redis_write_failures_total{operation="publish"}`.
-- **Consumer:** ошибка read/process/commit больше не останавливает партицию навсегда: retry 1→30 с, offset коммитится только после успешного применения, после успеха backoff сбрасывается. Идемпотентность — `processed_events`.
-- **Миграция:** `migrationJobId = UUIDv5(program, target, selection, sorted accountIds, UTC-дата)` и он же — PK строки outbox. Повторный идентичный запрос за сутки ловится по `outbox_pkey` и возвращает тот же id; новой таблицы/миграции нет.
+- **Кэш:** L1 60 с (было 5 мин), L2 5 мин (было 1 час) — жёсткая граница staleness 5 мин даже при потерянном сообщении. После write: локальный L1 purge → удаление L2 → publish в `bc3:cache:invalidate`; остальные реплики чистят только свой L1 (`ApplyInvalidation`). Ошибка publish не ломает write, считается `redis_write_failures_total{operation="publish"}`. Presigned URL кэшируется по ключу с `contentHash`, поэтому смена PDF не отдаёт старую ссылку. Отклонение от `classifications/...` (там L1 5 мин / L2 1 ч) названо в ADR-011: приоритет у границы ≤5 мин из ADR-001.
+- **Consumer:** ошибка read/process/commit не роняет партицию и не пропускает событие: обработка ретраится для **того же** сообщения (kafka-go сдвигает позицию в `FetchMessage` до `Commit`), backoff 1→30 с, offset коммитится только после успешного применения. Идемпотентность — `processed_events`.
+- **Миграция:** `migrationJobId = UUIDv5(program, oldVersion, target, selection, sorted accountIds, UTC-дата)` и он же — PK строки outbox. Повторный идентичный запрос за сутки ловится по `outbox_pkey` и возвращает тот же id; изменение версии программы даёт новый job. Новой таблицы/миграции нет.
 - **Алерты:** добавлены `EventProcessingLagHigh` (P95 > 60 с) и `CacheInvalidationPublishFailures`; всего 8 правил.
 - **Гейт:** unit (`usecase` invalidate/apply/publish-failure, consumer retry), integration (`TestMigrationRequestIsIdempotentWithinUTCDay`), E2E (повтор миграции → тот же `migration_job_id`), `go build/vet/test -race`.
 

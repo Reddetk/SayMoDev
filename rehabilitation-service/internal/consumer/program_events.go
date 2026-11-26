@@ -131,13 +131,19 @@ func (w *Worker) Run(ctx context.Context) {
 			}
 		}
 
-		if err := w.handle(ctx, message); err != nil {
-			w.log.Error("event processing failed, retrying without commit", zap.Error(err), zap.Duration("backoff", backoff))
+		// FetchMessage сдвигает позицию читателя до Commit, поэтому повторный
+		// ReadMessage вернул бы уже следующее событие и потерял упавшее.
+		// Ретраим обработку ТОГО ЖЕ message; идемпотентность — processed_events.
+		for {
+			err := w.handle(ctx, message)
+			if err == nil {
+				break
+			}
+			w.log.Error("event processing failed, retrying same event", zap.Error(err), zap.Duration("backoff", backoff))
 			if !sleepCtx(ctx, backoff) {
 				return
 			}
 			backoff = nextBackoff(backoff, w.retryMax)
-			continue
 		}
 
 		if !w.commit(ctx, message, &backoff) {

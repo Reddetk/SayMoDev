@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/domain"
@@ -290,12 +291,18 @@ func (c *ProgramCommand) invalidateAll(ctx context.Context) {
 	if c.cache == nil {
 		return
 	}
-	_ = c.cache.InvalidateAll(ctx)
+	// Инвалидация — после commit, поэтому обрыв клиента не должен её отменять:
+	// иначе при отменённом request-ctx stale живёт до TTL.
+	invCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	_ = c.cache.InvalidateAll(invCtx)
 }
 
 func (c *ProgramCommand) invalidateProgram(ctx context.Context, programID string) {
 	if c.cache == nil {
 		return
 	}
-	_ = c.cache.InvalidateProgram(ctx, programID)
+	invCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	_ = c.cache.InvalidateProgram(invCtx, programID)
 }
