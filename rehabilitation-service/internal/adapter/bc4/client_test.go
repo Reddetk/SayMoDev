@@ -16,7 +16,7 @@ func TestActivePatientsContract(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL)
+	client := New(server.URL, "token")
 	count, err := client.ActivePatients(context.Background(), "p1", 2)
 	if err != nil || count != 3 {
 		t.Fatalf("count=%d err=%v", count, err)
@@ -32,7 +32,7 @@ func TestActivePatientsAcceptsCountField(t *testing.T) {
 	}))
 	defer server.Close()
 
-	count, err := New(server.URL).ActivePatients(context.Background(), "p1", 1)
+	count, err := New(server.URL, "token").ActivePatients(context.Background(), "p1", 1)
 	if err != nil || count != 2 {
 		t.Fatalf("count=%d err=%v", count, err)
 	}
@@ -46,7 +46,7 @@ func TestCircuitBreakerOpensAndFailsClosed(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL)
+	client := New(server.URL, "token")
 	for i := 0; i < 5; i++ {
 		if _, err := client.ActivePatients(context.Background(), "p1", 1); err == nil {
 			t.Fatalf("failure %d: want error", i+1)

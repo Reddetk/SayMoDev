@@ -146,7 +146,7 @@ FROM generate_series(1, 200) AS g`); err != nil {
 func TestWriteAPIFixtures(t *testing.T) {
 	dsn := os.Getenv("POSTGRES_DSN")
 	if dsn == "" {
-		t.Skip("POSTGRES_DSN is not set")
+		t.Fatal("POSTGRES_DSN is required for write fixtures")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()

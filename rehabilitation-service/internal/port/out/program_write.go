@@ -8,6 +8,7 @@ import (
 
 var ErrConflict = errors.New("conflict")
 var ErrUnavailable = errors.New("dependency unavailable")
+var ErrBC4Unavailable = errors.New("bc4 unavailable")
 var ErrInvalidPosition = errors.New("invalid insert position")
 
 // LessonWrite — поля нового/обновляемого урока.

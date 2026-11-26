@@ -47,13 +47,20 @@ type event struct {
 	EventType  string `json:"event_type"`
 	ProgramID  string `json:"program_id"`
 	ProgramRef string `json:"programId"`
+	Payload    struct {
+		ProgramID string `json:"programId"`
+	} `json:"payload"`
 }
 
 func (e event) programID() string {
-	if e.ProgramID != "" {
+	switch {
+	case e.ProgramID != "":
 		return e.ProgramID
+	case e.ProgramRef != "":
+		return e.ProgramRef
+	default:
+		return e.Payload.ProgramID
 	}
-	return e.ProgramRef
 }
 
 // Run читает ProgramActivated/ProgramCompleted, throttle — 50 events/sec.

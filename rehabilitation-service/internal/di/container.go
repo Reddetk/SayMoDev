@@ -90,7 +90,7 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 
 	var bc4Guard *bc4.Client
 	if cfg.BC4URL != "" {
-		bc4Guard = bc4.New(cfg.BC4URL)
+		bc4Guard = bc4.New(cfg.BC4URL, cfg.BC4ServiceToken)
 	}
 
 	repo := repositorypostgres.NewProgramRepository(pg.Pool())

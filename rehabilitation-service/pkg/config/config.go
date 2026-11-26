@@ -46,6 +46,7 @@ type Config struct {
 
 	JWKSURL            string
 	BC4URL             string
+	BC4ServiceToken    string
 	JaegerOTLPEndpoint string
 
 	CORSAllowedOrigins []string
@@ -126,6 +127,7 @@ func LoadFrom(lookup func(string) (string, bool)) (*Config, error) {
 
 		JWKSURL:            get("JWKS_URL"),
 		BC4URL:             get("BC4_URL"),
+		BC4ServiceToken:    get("BC4_SERVICE_TOKEN"),
 		JaegerOTLPEndpoint: get("JAEGER_OTLP_ENDPOINT"),
 
 		CORSAllowedOrigins: splitList(defaultString(get("CORS_ALLOWED_ORIGINS"), "http://localhost:3000,http://localhost:5173")),

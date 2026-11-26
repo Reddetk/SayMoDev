@@ -10,11 +10,12 @@ import (
 )
 
 type Message struct {
-	ID          string
-	EventType   string
-	AggregateID string
-	Payload     []byte
-	CreatedAt   time.Time
+	ID            string
+	EventType     string
+	AggregateID   string
+	Payload       []byte
+	CreatedAt     time.Time
+	CorrelationID string
 }
 
 type Store interface {
@@ -71,11 +72,12 @@ func (w *Worker) Drain(ctx context.Context) (int, error) {
 	sent := make([]string, 0, len(messages))
 	for _, message := range messages {
 		envelope, err := json.Marshal(map[string]any{
-			"event_id":      message.ID,
-			"event_type":    message.EventType,
-			"event_version": 1,
-			"occurred_at":   message.CreatedAt.UTC().Format(time.RFC3339),
-			"payload":       json.RawMessage(message.Payload),
+			"event_id":       message.ID,
+			"event_type":     message.EventType,
+			"event_version":  1,
+			"occurred_at":    message.CreatedAt.UTC().Format(time.RFC3339),
+			"correlation_id": message.CorrelationID,
+			"payload":        json.RawMessage(message.Payload),
 		})
 		if err != nil {
 			return len(sent), err

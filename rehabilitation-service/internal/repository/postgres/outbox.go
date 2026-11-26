@@ -17,7 +17,7 @@ func NewOutboxStore(pool *pgxpool.Pool) *OutboxStore { return &OutboxStore{pool:
 
 func (s *OutboxStore) FetchUnsent(ctx context.Context, limit int) ([]outbox.Message, error) {
 	rows, err := s.pool.Query(ctx, `
-SELECT id, event_type, aggregate_id, payload, created_at
+SELECT id, event_type, aggregate_id, payload, created_at, correlation_id
 FROM outbox WHERE sent_at IS NULL
 ORDER BY created_at
 LIMIT $1`, limit)
@@ -29,7 +29,7 @@ LIMIT $1`, limit)
 	var messages []outbox.Message
 	for rows.Next() {
 		var message outbox.Message
-		if err := rows.Scan(&message.ID, &message.EventType, &message.AggregateID, &message.Payload, &message.CreatedAt); err != nil {
+		if err := rows.Scan(&message.ID, &message.EventType, &message.AggregateID, &message.Payload, &message.CreatedAt, &message.CorrelationID); err != nil {
 			return nil, fmt.Errorf("scan outbox: %w", err)
 		}
 		messages = append(messages, message)

@@ -39,7 +39,7 @@ func TestProgramWriterIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 
 	repo := NewProgramRepository(pool)
 	classifier := "it_" + uuid.NewString()[:8]

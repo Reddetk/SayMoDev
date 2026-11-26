@@ -18,6 +18,7 @@ const (
 
 type Client struct {
 	baseURL string
+	token   string
 	http    *http.Client
 
 	mu        sync.Mutex
@@ -26,9 +27,10 @@ type Client struct {
 	now       func() time.Time
 }
 
-func New(baseURL string) *Client {
+func New(baseURL, serviceToken string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
+		token:   serviceToken,
 		http:    &http.Client{Timeout: 2 * time.Second},
 		now:     time.Now,
 	}
@@ -47,6 +49,9 @@ func (c *Client) ActivePatients(ctx context.Context, programID string, version i
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return 0, err
+	}
+	if c.token != "" {
+		req.Header.Set("X-Service-Token", c.token)
 	}
 
 	resp, err := c.http.Do(req)

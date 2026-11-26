@@ -49,8 +49,8 @@ RETURNING id, title, difficulty, aphasia_type, version, created_at, updated_at`,
 
 	if err := insertOutbox(ctx, tx, "ProgramCreated", record.ProgramID, map[string]any{
 		"programId": record.ProgramID, "title": record.Title,
-		"difficulty": record.Difficulty, "aphasiaType": record.AphasiaType,
-		"version": record.Version, "created_at": time.Now().UTC(),
+		"classifier": map[string]string{"difficulty": record.Difficulty, "aphasiaType": record.AphasiaType},
+		"version":    record.Version, "created_at": time.Now().UTC(),
 	}); err != nil {
 		return out.ProgramRecord{}, err
 	}
@@ -234,7 +234,7 @@ RETURNING id, order_position, title, description, content_url, content_hash, cre
 	}
 
 	eventType := "LessonUpdated"
-	payload := map[string]any{"lessonId": lessonID, "updated_at": time.Now().UTC()}
+	payload := map[string]any{"lessonId": lessonID, "title": lesson.Title, "updated_at": time.Now().UTC()}
 	if patch.ContentHash != nil {
 		eventType = "LessonContentChanged"
 		payload["newContentHash"] = *patch.ContentHash
@@ -299,7 +299,7 @@ FROM tmp_lessons_shift`); err != nil {
 		return fmt.Errorf("close lesson positions: %w", err)
 	}
 	if err := insertOutbox(ctx, tx, "LessonRemovedFromProgram", programID, map[string]any{
-		"programId": programID, "lessonId": lessonID,
+		"programId": programID, "lessonId": lessonID, "version": version,
 	}); err != nil {
 		return err
 	}

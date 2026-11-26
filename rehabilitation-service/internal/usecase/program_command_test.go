@@ -184,7 +184,7 @@ func TestDeleteGuardFailsClosedWhenBC4Unavailable(t *testing.T) {
 	command := NewProgramCommand(writer, &fakeUploader{}, nil, fakeGuard{err: errors.New("dial tcp")})
 
 	err := command.DeleteProgram(context.Background(), "p1")
-	if !errors.Is(err, out.ErrUnavailable) {
+	if !errors.Is(err, out.ErrBC4Unavailable) {
 		t.Fatalf("want ErrUnavailable, got %v", err)
 	}
 	if writer.deleted {

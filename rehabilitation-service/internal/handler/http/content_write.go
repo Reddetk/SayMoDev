@@ -94,6 +94,8 @@ func (h *ContentHandler) writeError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "insert_after_position"})
 	case errors.Is(err, out.ErrUnavailable):
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "s3_unavailable"})
+	case errors.Is(err, out.ErrBC4Unavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "bc4_unavailable"})
 	case errors.Is(err, usecase.ErrInvalidInput):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
