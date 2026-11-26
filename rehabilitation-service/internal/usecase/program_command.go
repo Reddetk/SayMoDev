@@ -2,6 +2,7 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -156,6 +157,9 @@ func (c *ProgramCommand) prepareLesson(ctx context.Context, programID, lessonID 
 	}
 	if strings.TrimSpace(lesson.Title) == "" {
 		return out.LessonWrite{}, fmt.Errorf("%w: title", ErrInvalidInput)
+	}
+	if !bytes.HasPrefix(lesson.PDF, []byte("%PDF")) {
+		return out.LessonWrite{}, fmt.Errorf("%w: fields (pdf_file must be PDF)", ErrInvalidInput)
 	}
 
 	hash := fmt.Sprintf("%x", sha256.Sum256(lesson.PDF))

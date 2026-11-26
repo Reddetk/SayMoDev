@@ -84,7 +84,9 @@ func (i *fakeInvalidator) InvalidateProgram(_ context.Context, programID string)
 }
 
 func pdfBytes(size int) []byte {
-	return make([]byte, size)
+	buf := make([]byte, size)
+	copy(buf, "%PDF-1.4")
+	return buf
 }
 
 func TestCreateUsesDedupBeforeUpload(t *testing.T) {

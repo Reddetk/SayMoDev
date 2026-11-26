@@ -137,12 +137,27 @@ func (r *ProgramRepository) Rename(ctx context.Context, programID, title string)
 }
 
 func (r *ProgramRepository) DeleteProgram(ctx context.Context, programID string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM programs WHERE id = $1`, programID)
+	tx, err := r.pool.Begin(ctx)
 	if err != nil {
+		return fmt.Errorf("begin delete program: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var active int
+	if err := tx.QueryRow(ctx, `SELECT active_reference_count FROM programs WHERE id = $1 FOR UPDATE`, programID).Scan(&active); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return out.ErrNotFound
+		}
+		return fmt.Errorf("lock program for delete: %w", err)
+	}
+	if active > 0 {
+		return fmt.Errorf("active_patients=%d: %w", active, out.ErrConflict)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM programs WHERE id = $1`, programID); err != nil {
 		return fmt.Errorf("delete program: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return out.ErrNotFound
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit delete program: %w", err)
 	}
 	return nil
 }
@@ -176,12 +191,32 @@ RETURNING id, order_position, title, description, content_url, content_hash, cre
 }
 
 func (r *ProgramRepository) DeleteLesson(ctx context.Context, programID, lessonID string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM program_lessons WHERE program_id = $1 AND id = $2`, programID, lessonID)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin delete lesson: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var active int
+	if err := tx.QueryRow(ctx, `SELECT active_reference_count FROM programs WHERE id = $1 FOR UPDATE`, programID).Scan(&active); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return out.ErrNotFound
+		}
+		return fmt.Errorf("lock program for lesson delete: %w", err)
+	}
+	if active > 0 {
+		return fmt.Errorf("active_patients=%d: %w", active, out.ErrConflict)
+	}
+
+	tag, err := tx.Exec(ctx, `DELETE FROM program_lessons WHERE program_id = $1 AND id = $2`, programID, lessonID)
 	if err != nil {
 		return fmt.Errorf("delete lesson: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return out.ErrNotFound
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit delete lesson: %w", err)
 	}
 	return nil
 }
