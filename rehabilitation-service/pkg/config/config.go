@@ -264,6 +264,12 @@ func (c *Config) validate() error {
 		if isPlaceholder(c.RedisBlacklistPass) {
 			return &ValidationError{"REDIS_BLACKLIST_PASSWORD", "prod requires a real value, placeholder detected"}
 		}
+		if c.BC4URL == "" {
+			return &ValidationError{"BC4_URL", "is required in prod (deletion guard)"}
+		}
+		if c.BC4ServiceToken == "" {
+			return &ValidationError{"BC4_SERVICE_TOKEN", "is required in prod (S2S auth)"}
+		}
 	}
 
 	return nil

@@ -67,9 +67,9 @@ func (c *Client) ActivePatients(ctx context.Context, programID string, version i
 	}
 
 	var payload struct {
-		ActivePatientCount int `json:"activePatientCount"`
-		ActiveCount        int `json:"activeCount"`
-		Count              int `json:"count"`
+		ActivePatientCount *int `json:"activePatientCount"`
+		ActiveCount        *int `json:"activeCount"`
+		Count              *int `json:"count"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		c.failure()
@@ -78,12 +78,15 @@ func (c *Client) ActivePatients(ctx context.Context, programID string, version i
 	c.success()
 
 	switch {
-	case payload.ActivePatientCount != 0:
-		return payload.ActivePatientCount, nil
-	case payload.ActiveCount != 0:
-		return payload.ActiveCount, nil
+	case payload.ActivePatientCount != nil:
+		return *payload.ActivePatientCount, nil
+	case payload.ActiveCount != nil:
+		return *payload.ActiveCount, nil
+	case payload.Count != nil:
+		return *payload.Count, nil
 	default:
-		return payload.Count, nil
+		// 200 без распознанного поля счётчика — fail-closed, а не «0 пациентов».
+		return 0, fmt.Errorf("bc4 response has no active patients count field")
 	}
 }
 

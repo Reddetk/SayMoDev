@@ -143,6 +143,8 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
       S3_BUCKET: ${S3_BUCKET:-saymo-programs}
       JWKS_URL: http://host.docker.internal:8084/jwks.json
+      BC4_URL: ${BC4_URL:-}
+      BC4_SERVICE_TOKEN: ${BC4_SERVICE_TOKEN:-}
       JAEGER_OTLP_ENDPOINT: jaeger:4317
     ports:
       - "8003:8003"
