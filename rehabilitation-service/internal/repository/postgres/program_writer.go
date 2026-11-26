@@ -149,14 +149,25 @@ WHERE program_id = $1 AND program_version = $4`,
 
 // Rename меняет только title: classifier неизменяем.
 func (r *ProgramRepository) Rename(ctx context.Context, programID, title string) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE programs SET title = $2, updated_at = now() WHERE id = $1`, programID, title)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin rename program: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx, `UPDATE programs SET title = $2, updated_at = now() WHERE id = $1`, programID, title)
 	if err != nil {
 		return fmt.Errorf("rename program: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return out.ErrNotFound
 	}
-	return nil
+	if err := insertOutbox(ctx, tx, "ProgramUpdated", programID, map[string]any{
+		"programId": programID, "title": title, "updated_at": time.Now().UTC(),
+	}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *ProgramRepository) DeleteProgram(ctx context.Context, programID string) error {
@@ -191,6 +202,12 @@ func (r *ProgramRepository) DeleteProgram(ctx context.Context, programID string)
 }
 
 func (r *ProgramRepository) UpdateLesson(ctx context.Context, programID, lessonID string, patch out.LessonPatch) (out.LessonRecord, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return out.LessonRecord{}, fmt.Errorf("begin update lesson: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	const query = `
 UPDATE program_lessons SET
     title           = COALESCE($3, title),
@@ -204,7 +221,7 @@ WHERE program_id = $1 AND id = $2
 RETURNING id, order_position, title, description, content_url, content_hash, created_at, updated_at`
 
 	var lesson out.LessonRecord
-	err := r.pool.QueryRow(ctx, query, programID, lessonID,
+	err = tx.QueryRow(ctx, query, programID, lessonID,
 		patch.Title, patch.Description, patch.ContentURL, patch.ContentHash,
 		patch.FileSizeBytes, patch.MimeType,
 	).Scan(&lesson.LessonID, &lesson.OrderPosition, &lesson.Title, &lesson.Description,
@@ -214,6 +231,20 @@ RETURNING id, order_position, title, description, content_url, content_hash, cre
 			return out.LessonRecord{}, out.ErrNotFound
 		}
 		return out.LessonRecord{}, mapWriteError("update lesson", err)
+	}
+
+	eventType := "LessonUpdated"
+	payload := map[string]any{"lessonId": lessonID, "updated_at": time.Now().UTC()}
+	if patch.ContentHash != nil {
+		eventType = "LessonContentChanged"
+		payload["newContentHash"] = *patch.ContentHash
+		payload["contentUrl"] = lesson.ContentURL
+	}
+	if err := insertOutbox(ctx, tx, eventType, programID, payload); err != nil {
+		return out.LessonRecord{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return out.LessonRecord{}, fmt.Errorf("commit update lesson: %w", err)
 	}
 	return lesson, nil
 }
@@ -226,7 +257,8 @@ func (r *ProgramRepository) DeleteLesson(ctx context.Context, programID, lessonI
 	defer tx.Rollback(ctx)
 
 	var active int
-	if err := tx.QueryRow(ctx, `SELECT active_reference_count FROM programs WHERE id = $1 FOR UPDATE`, programID).Scan(&active); err != nil {
+	var version int
+	if err := tx.QueryRow(ctx, `SELECT version, active_reference_count FROM programs WHERE id = $1 FOR UPDATE`, programID).Scan(&version, &active); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return out.ErrNotFound
 		}
@@ -236,12 +268,35 @@ func (r *ProgramRepository) DeleteLesson(ctx context.Context, programID, lessonI
 		return fmt.Errorf("active_patients=%d: %w", active, out.ErrConflict)
 	}
 
-	tag, err := tx.Exec(ctx, `DELETE FROM program_lessons WHERE program_id = $1 AND id = $2`, programID, lessonID)
+	var deletedPosition int
+	err = tx.QueryRow(ctx, `DELETE FROM program_lessons WHERE program_id = $1 AND program_version = $2 AND id = $3 RETURNING order_position`,
+		programID, version, lessonID).Scan(&deletedPosition)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return out.ErrNotFound
+	}
 	if err != nil {
 		return fmt.Errorf("delete lesson: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return out.ErrNotFound
+
+	// Закрываем дыру в нумерации: переносим оставшиеся уроки через temp-таблицу
+	// (CHECK 1..200 и PK не дают сдвигать позиции «на месте»).
+	if _, err := tx.Exec(ctx, `CREATE TEMP TABLE tmp_lessons_shift ON COMMIT DROP AS
+SELECT * FROM program_lessons WHERE program_id = $1 AND program_version = $2`, programID, version); err != nil {
+		return fmt.Errorf("copy lesson positions: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM program_lessons WHERE program_id = $1 AND program_version = $2`, programID, version); err != nil {
+		return fmt.Errorf("clear lesson positions: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO program_lessons
+    (id, program_id, program_version, order_position, title, description,
+     content_url, content_hash, file_size_bytes, mime_type, uploaded_by, created_at, updated_at)
+SELECT id, program_id, program_version,
+       ROW_NUMBER() OVER (ORDER BY order_position),
+       title, description, content_url, content_hash, file_size_bytes, mime_type,
+       uploaded_by, created_at, now()
+FROM tmp_lessons_shift`); err != nil {
+		return fmt.Errorf("close lesson positions: %w", err)
 	}
 	if err := insertOutbox(ctx, tx, "LessonRemovedFromProgram", programID, map[string]any{
 		"programId": programID, "lessonId": lessonID,

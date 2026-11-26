@@ -3,6 +3,7 @@ package outbox
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"go.uber.org/zap"
@@ -13,6 +14,7 @@ type Message struct {
 	EventType   string
 	AggregateID string
 	Payload     []byte
+	CreatedAt   time.Time
 }
 
 type Store interface {
@@ -68,7 +70,17 @@ func (w *Worker) Drain(ctx context.Context) (int, error) {
 
 	sent := make([]string, 0, len(messages))
 	for _, message := range messages {
-		if err := w.publisher.Publish(ctx, w.topic, message.AggregateID, message.Payload); err != nil {
+		envelope, err := json.Marshal(map[string]any{
+			"event_id":      message.ID,
+			"event_type":    message.EventType,
+			"event_version": 1,
+			"occurred_at":   message.CreatedAt.UTC().Format(time.RFC3339),
+			"payload":       json.RawMessage(message.Payload),
+		})
+		if err != nil {
+			return len(sent), err
+		}
+		if err := w.publisher.Publish(ctx, w.topic, message.AggregateID, envelope); err != nil {
 			if len(sent) > 0 {
 				_ = w.store.MarkSent(ctx, sent)
 			}

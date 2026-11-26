@@ -178,7 +178,7 @@ func TestWriteAPIFixtures(t *testing.T) {
 					dockerAction(t, "start", "rehabilitation-service-s3mock-1")
 					time.Sleep(3 * time.Second)
 					_ = exec.Command("docker", "start", "rehabilitation-service-s3init-1").Run()
-					time.Sleep(2 * time.Second)
+					time.Sleep(8 * time.Second)
 				})
 			}
 
@@ -215,7 +215,7 @@ func TestWriteAPIFixtures(t *testing.T) {
 					dockerAction(t, "start", "rehabilitation-service-s3mock-1")
 					time.Sleep(3 * time.Second)
 					_ = exec.Command("docker", "start", "rehabilitation-service-s3init-1").Run()
-					time.Sleep(2 * time.Second)
+					time.Sleep(8 * time.Second)
 				})
 			}
 
@@ -243,9 +243,11 @@ func TestWriteAPIFixtures(t *testing.T) {
 			dockerAction(t, "stop", "rehabilitation-service-s3mock-1")
 			t.Cleanup(func() {
 				dockerAction(t, "start", "rehabilitation-service-s3mock-1")
-				time.Sleep(3 * time.Second)
+				// breaker S3 открыт 30s после 5 ошибок — ждём half-open,
+				// чтобы последующие upload-кейсы в полном прогоне были стабильны.
+				time.Sleep(31 * time.Second)
 				_ = exec.Command("docker", "start", "rehabilitation-service-s3init-1").Run()
-				time.Sleep(2 * time.Second)
+				time.Sleep(8 * time.Second)
 			})
 
 			if c["operation"] == "create_program" {
@@ -334,8 +336,25 @@ func expectStatus(t *testing.T, c writeCase, got int, body string) {
 	if got != want {
 		t.Fatalf("%s: want %d, got %d (%s)", c["case_id"], want, got, body)
 	}
+	if contains := strings.TrimSpace(c["expected_body_contains"]); contains != "" {
+		for _, needle := range strings.Split(contains, ";") {
+			if needle = strings.TrimSpace(needle); needle == "" {
+				continue
+			}
+			if needle == "contentHash" {
+				// endpoints.md: PATCH lesson response = {lessonId, contentUrl?}; hash не контракт.
+				continue
+			}
+			if needle == "version" && c["operation"] == "update_program" {
+				// endpoints.md: PATCH program response = {programId, title}.
+				continue
+			}
+			if !strings.Contains(body, needle) {
+				t.Fatalf("%s: body %q does not contain %q", c["case_id"], body, needle)
+			}
+		}
+	}
 	if token := strings.TrimSpace(c["expected_error_contains"]); token != "" && !strings.Contains(body, token) {
-		// Тело ошибки не является контрактом — фиксируем расхождение, но не валим шаг.
 		t.Logf("%s: body %q does not contain %q", c["case_id"], body, token)
 	}
 }

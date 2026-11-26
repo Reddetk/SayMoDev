@@ -43,9 +43,17 @@ func NewWorker(reader Reader, store ProcessedStore, log *zap.Logger) *Worker {
 }
 
 type event struct {
-	EventID   string `json:"event_id"`
-	EventType string `json:"event_type"`
-	ProgramID string `json:"program_id"`
+	EventID    string `json:"event_id"`
+	EventType  string `json:"event_type"`
+	ProgramID  string `json:"program_id"`
+	ProgramRef string `json:"programId"`
+}
+
+func (e event) programID() string {
+	if e.ProgramID != "" {
+		return e.ProgramID
+	}
+	return e.ProgramRef
 }
 
 // Run читает ProgramActivated/ProgramCompleted, throttle — 50 events/sec.
@@ -72,8 +80,9 @@ func (w *Worker) Run(ctx context.Context) {
 		<-throttle.C
 
 		if err := w.handle(ctx, message); err != nil {
-			w.log.Warn("event processing failed", zap.Error(err))
-			continue
+			// Останавливаем партицию, чтобы не коммитить более поздний offset и не потерять событие.
+			w.log.Error("event processing failed, stopping consumer", zap.Error(err))
+			return
 		}
 		if err := w.reader.Commit(ctx, message); err != nil {
 			w.log.Warn("kafka commit failed", zap.Error(err))
@@ -98,7 +107,7 @@ func (w *Worker) handle(ctx context.Context, message Message) error {
 	default:
 		return nil
 	}
-	if evt.EventID == "" || evt.ProgramID == "" {
+	if evt.EventID == "" || evt.programID() == "" {
 		w.log.Warn("event without id/program_id", zap.String("type", evt.EventType))
 		return nil
 	}
@@ -106,12 +115,12 @@ func (w *Worker) handle(ctx context.Context, message Message) error {
 		w.log.Warn("event_id is not a UUID", zap.String("event_id", evt.EventID))
 		return nil
 	}
-	if _, err := uuid.Parse(evt.ProgramID); err != nil {
-		w.log.Warn("program_id is not a UUID", zap.String("program_id", evt.ProgramID))
+	if _, err := uuid.Parse(evt.programID()); err != nil {
+		w.log.Warn("program_id is not a UUID", zap.String("program_id", evt.programID()))
 		return nil
 	}
 
-	applied, err := w.store.ApplyProgramEvent(ctx, evt.EventID, evt.EventType, evt.ProgramID, delta)
+	applied, err := w.store.ApplyProgramEvent(ctx, evt.EventID, evt.EventType, evt.programID(), delta)
 	if err != nil {
 		return err
 	}

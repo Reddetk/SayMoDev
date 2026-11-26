@@ -173,6 +173,16 @@ func (c *ProgramCommand) checkActivePatients(ctx context.Context, programID stri
 	if err != nil {
 		return fmt.Errorf("%w: bc4: %v", out.ErrUnavailable, err)
 	}
+	for v := 1; v <= version; v++ {
+		if v == version {
+			break
+		}
+		older, err := c.guard.ActivePatients(ctx, programID, v)
+		if err != nil {
+			return fmt.Errorf("%w: bc4 v%d: %v", out.ErrUnavailable, v, err)
+		}
+		count += older
+	}
 	if count > 0 {
 		return fmt.Errorf("active_patients=%d: %w", count, out.ErrConflict)
 	}

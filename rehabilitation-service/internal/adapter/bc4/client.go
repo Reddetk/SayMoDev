@@ -62,8 +62,9 @@ func (c *Client) ActivePatients(ctx context.Context, programID string, version i
 	}
 
 	var payload struct {
-		ActiveCount int `json:"activeCount"`
-		Count       int `json:"count"`
+		ActivePatientCount int `json:"activePatientCount"`
+		ActiveCount        int `json:"activeCount"`
+		Count              int `json:"count"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		c.failure()
@@ -71,10 +72,14 @@ func (c *Client) ActivePatients(ctx context.Context, programID string, version i
 	}
 	c.success()
 
-	if payload.ActiveCount != 0 {
+	switch {
+	case payload.ActivePatientCount != 0:
+		return payload.ActivePatientCount, nil
+	case payload.ActiveCount != 0:
 		return payload.ActiveCount, nil
+	default:
+		return payload.Count, nil
 	}
-	return payload.Count, nil
 }
 
 func (c *Client) allow() bool {

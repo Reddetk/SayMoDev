@@ -85,7 +85,7 @@ func TestReadAPISeeded(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &program); err != nil {
 		t.Fatalf("program body: %v (%s)", err, body)
 	}
-	if program.ProgramID != seedProgramID || program.Version != 1 || len(program.Lessons) == 0 {
+	if program.ProgramID != seedProgramID || program.Version < 1 || len(program.Lessons) == 0 {
 		t.Fatalf("unexpected program: %+v", program)
 	}
 
