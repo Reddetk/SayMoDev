@@ -98,6 +98,21 @@ services:
       - "16692:16686"
       - "4322:4317"
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - server
+
   keygen:
     image: golang:1.25-alpine
     working_dir: /src
@@ -196,3 +211,4 @@ services:
 
 volumes:
   postgres-data:
+  prometheus-data:

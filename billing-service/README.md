@@ -250,7 +250,9 @@ PostgreSQL `billing_db`, миграции `000001`–`000014`:
   `active_subscriptions_count{status,plan_type}`, `outbox_published_total`,
   `outbox_failed_total`, `outbox_pending_count`, `acquiring_latency_seconds`,
   `billing_postbox_send_total`, `billing_postbox_error_total`.
-- Трейсы: OTLP gRPC → Jaeger; HTTP-спаны с методом, маршрутом и статусом.
+- Трейсы: OTLP gRPC → Jaeger; HTTP-спаны с методом, маршрутом и статусом (Jaeger UI `:16692`).
+- Метрики: Prometheus `:9090` скрейпит `server:9002/metrics` каждые 15 секунд (`job=billing-service`),
+  серии доступны через PromQL API и UI.
 - Логи: zap, структурированные, с `trace_id`; секреты и OTP не логируются.
 - Health: `/health`, `/health/live`, `/health/ready`; метрики — `:9002/metrics`.
 
@@ -281,7 +283,7 @@ go run ./cmd/server
 ```
 
 Полный стенд: PostgreSQL 5442, Redis 6392 + shared 6384, Kafka 29192, Jaeger 16692/4322,
-acquiring mock 9031, Postbox mock 9025.
+Prometheus 9090, acquiring mock 9031, Postbox mock 9025.
 
 ```powershell
 go test ./... -count=1 -race
