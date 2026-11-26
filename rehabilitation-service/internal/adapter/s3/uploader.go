@@ -13,6 +13,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/port/out"
 )
 
 const (
@@ -20,7 +22,7 @@ const (
 	breakerOpenFor   = 30 * time.Second
 )
 
-var ErrBreakerOpen = fmt.Errorf("s3 circuit breaker is open")
+var ErrBreakerOpen = fmt.Errorf("s3 circuit breaker is open: %w", out.ErrUnavailable)
 
 type breaker struct {
 	mu        sync.Mutex

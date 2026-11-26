@@ -26,10 +26,10 @@ func (r *ProgramRepository) Create(ctx context.Context, cmd out.CreateProgramCmd
 
 	var record out.ProgramRecord
 	err = tx.QueryRow(ctx, `
-INSERT INTO programs (title, difficulty, aphasia_type, version)
-VALUES ($1, $2, $3, 1)
+INSERT INTO programs (id, title, difficulty, aphasia_type, version)
+VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, 1)
 RETURNING id, title, difficulty, aphasia_type, version, created_at, updated_at`,
-		cmd.Title, cmd.Difficulty, cmd.AphasiaType,
+		cmd.ID, cmd.Title, cmd.Difficulty, cmd.AphasiaType,
 	).Scan(&record.ProgramID, &record.Title, &record.Difficulty, &record.AphasiaType,
 		&record.Version, &record.CreatedAt, &record.UpdatedAt)
 	if err != nil {
@@ -223,11 +223,11 @@ func insertLesson(ctx context.Context, tx pgx.Tx, programID string, version, pos
 	var record out.LessonRecord
 	err := tx.QueryRow(ctx, `
 INSERT INTO program_lessons
-    (program_id, program_version, order_position, title, description,
+    (id, program_id, program_version, order_position, title, description,
      content_url, content_hash, file_size_bytes, mime_type, uploaded_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING id, order_position, title, description, content_url, content_hash, created_at, updated_at`,
-		programID, version, position, lesson.Title, lesson.Description,
+		lesson.ID, programID, version, position, lesson.Title, lesson.Description,
 		lesson.ContentURL, lesson.ContentHash, lesson.FileSizeBytes, lesson.MimeType, lesson.UploadedBy,
 	).Scan(&record.LessonID, &record.OrderPosition, &record.Title, &record.Description,
 		&record.ContentURL, &record.ContentHash, &record.CreatedAt, &record.UpdatedAt)

@@ -67,6 +67,26 @@ func (c *fakeCache) Set(_ context.Context, key string, value any, _ time.Duratio
 	return nil
 }
 
+func (c *fakeCache) Delete(_ context.Context, keys ...string) error {
+	c.mu.Lock()
+	for _, key := range keys {
+		delete(c.data, key)
+	}
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *fakeCache) DeletePrefix(_ context.Context, prefix string) error {
+	c.mu.Lock()
+	for key := range c.data {
+		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+			delete(c.data, key)
+		}
+	}
+	c.mu.Unlock()
+	return nil
+}
+
 type countingPresigner struct{ calls atomic.Int32 }
 
 func (p *countingPresigner) PresignGet(_ context.Context, contentURL string, _ time.Duration) (string, error) {

@@ -36,7 +36,74 @@ paths:
       summary: List rehabilitation programs
       tags:
       - content
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: JSON {title, classifier}
+        in: formData
+        name: program
+        required: true
+        type: string
+      - description: JSON array [{title, description}]
+        in: formData
+        name: lessons
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create program with lessons
+      tags:
+      - content
   /content/programs/{programId}:
+    delete:
+      parameters:
+      - description: program UUID
+        in: path
+        name: programId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      security:
+      - BearerAuth: []
+      summary: Delete program
+      tags:
+      - content
     get:
       description: Public program card. version defaults to the latest; lessons belong
         to that version.
@@ -71,7 +138,57 @@ paths:
       summary: Get program by id and version
       tags:
       - content
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: program UUID
+        in: path
+        name: programId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update program metadata
+      tags:
+      - content
+  /content/programs/{programId}/lessons:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: program UUID
+        in: path
+        name: programId
+        required: true
+        type: string
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add or insert lesson
+      tags:
+      - content
   /content/programs/{programId}/lessons/{lessonId}:
+    delete:
+      responses: {}
+      security:
+      - BearerAuth: []
+      summary: Delete lesson
+      tags:
+      - content
     get:
       description: Requires a valid patient/administrator JWT. contentUrl is a presigned
         GET URL (TTL 1h).
@@ -112,6 +229,15 @@ paths:
       security:
       - BearerAuth: []
       summary: Get lesson with presigned PDF URL
+      tags:
+      - content
+    patch:
+      consumes:
+      - multipart/form-data
+      responses: {}
+      security:
+      - BearerAuth: []
+      summary: Update lesson metadata or PDF
       tags:
       - content
   /health:

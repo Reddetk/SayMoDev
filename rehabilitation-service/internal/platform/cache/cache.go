@@ -62,6 +62,19 @@ func (c *Cache) Set(key string, value any, ttl time.Duration) {
 	c.entries[key] = entry{value: value, expires: c.now().Add(ttl)}
 }
 
+// DeletePrefix удаляет ключи с префиксом (инвалидация после write).
+func (c *Cache) DeletePrefix(prefix string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key := range c.entries {
+		if prefix == "" || len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+			delete(c.entries, key)
+		}
+	}
+}
+
+func (c *Cache) Clear() { c.DeletePrefix("") }
+
 // evictLocked удаляет просроченные записи, затем самую раннюю по expiry.
 func (c *Cache) evictLocked() {
 	now := c.now()

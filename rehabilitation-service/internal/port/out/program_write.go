@@ -7,9 +7,11 @@ import (
 )
 
 var ErrConflict = errors.New("conflict")
+var ErrUnavailable = errors.New("dependency unavailable")
 
 // LessonWrite — поля нового/обновляемого урока.
 type LessonWrite struct {
+	ID            string
 	Title         string
 	Description   string
 	ContentURL    string
@@ -21,6 +23,7 @@ type LessonWrite struct {
 
 // CreateProgramCmd — атомарное создание программы с уроками.
 type CreateProgramCmd struct {
+	ID          string
 	Title       string
 	Difficulty  string
 	AphasiaType string

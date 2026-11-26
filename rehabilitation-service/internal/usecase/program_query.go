@@ -218,3 +218,44 @@ func (q *ProgramQuery) l2Set(ctx context.Context, key string, value any, ttl tim
 		q.log.Warn("l2 cache set failed", zap.String("key", key), zap.Error(err))
 	}
 }
+
+// InvalidateAll сбрасывает L1 и общий каталог L2 после write.
+func (q *ProgramQuery) InvalidateAll(ctx context.Context) error {
+	q.l1.Clear()
+	if q.l2 == nil {
+		return nil
+	}
+	if err := q.l2.Delete(ctx, "programs:all"); err != nil {
+		q.log.Warn("invalidate programs:all failed", zap.Error(err))
+		return err
+	}
+	return nil
+}
+
+// InvalidateProgram удаляет кэш программы, её уроков и presigned URL.
+func (q *ProgramQuery) InvalidateProgram(ctx context.Context, programID string) error {
+	prefixes := []string{
+		"program:" + programID + ":",
+		"lesson:" + programID + ":",
+		"presigned_url:" + programID + ":",
+	}
+	for _, prefix := range prefixes {
+		q.l1.DeletePrefix(prefix)
+	}
+	if q.l2 == nil {
+		return nil
+	}
+	var firstErr error
+	for _, prefix := range prefixes {
+		if err := q.l2.DeletePrefix(ctx, prefix); err != nil {
+			q.log.Warn("invalidate prefix failed", zap.String("prefix", prefix), zap.Error(err))
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	if err := q.l2.Delete(ctx, "programs:all"); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	return firstErr
+}

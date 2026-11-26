@@ -105,6 +105,14 @@ func NewRouter(deps Deps) *gin.Engine {
 		publicRead.GET("/programs/:programId", deps.Content.Get)
 		authRead.GET("/programs/:programId/lessons/:lessonId", deps.Content.GetLesson)
 	}
+	if deps.Content != nil && deps.Content.Commands != nil {
+		adminWrite.POST("/programs", deps.Content.CreateProgram)
+		adminWrite.PATCH("/programs/:programId", deps.Content.UpdateProgram)
+		adminWrite.DELETE("/programs/:programId", deps.Content.DeleteProgram)
+		adminWrite.POST("/programs/:programId/lessons", deps.Content.AddLesson)
+		adminWrite.PATCH("/programs/:programId/lessons/:lessonId", deps.Content.UpdateLesson)
+		adminWrite.DELETE("/programs/:programId/lessons/:lessonId", deps.Content.DeleteLesson)
+	}
 
 	_ = adminWrite
 	_ = adminOnly
