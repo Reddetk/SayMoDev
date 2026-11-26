@@ -1,0 +1,46 @@
+case_id,description,current_status,action,period_expired,payment_success,want_status,want_error,want_error_contains
+t01,pending activate with successful payment,pending,activate,false,true,active,false,
+t02,pending activate with successful payment after period expired,pending,activate,true,true,active,false,
+t03,pending activate without payment,pending,activate,false,false,,true,payment
+t04,pending suspend,pending,suspend,false,false,suspended,false,
+t05,pending resume,pending,resume,false,false,,true,transition
+t06,pending cancel,pending,cancel,false,false,cancelled,false,
+t07,pending cancel with successful payment,pending,cancel,false,true,cancelled,false,
+t08,pending expire,pending,expire,false,false,,true,transition
+t09,pending upgrade,pending,upgrade,false,false,,true,transition
+t10,pending downgrade at period end,pending,downgrade_at_period_end,false,false,,true,transition
+t11,active activate,active,activate,false,true,,true,transition
+t12,active activate without payment,active,activate,false,false,,true,transition
+t13,active suspend,active,suspend,false,false,suspended,false,
+t14,active suspend after period expired,active,suspend,true,false,suspended,false,
+t15,active resume,active,resume,false,false,,true,transition
+t16,active cancel,active,cancel,false,false,cancelled,false,
+t17,active cancel after period expired,active,cancel,true,false,cancelled,false,
+t18,active expire,active,expire,false,false,expired,false,
+t19,active expire after period expired,active,expire,true,false,expired,false,
+t20,active upgrade,active,upgrade,false,true,active,false,
+t21,active downgrade at period end,active,downgrade_at_period_end,false,true,active,false,
+t22,cancelled activate,cancelled,activate,false,true,,true,transition
+t23,cancelled suspend,cancelled,suspend,false,false,,true,transition
+t24,cancelled resume,cancelled,resume,false,false,,true,transition
+t25,cancelled cancel,cancelled,cancel,false,false,,true,transition
+t26,cancelled expire,cancelled,expire,false,false,expired,false,
+t27,cancelled upgrade,cancelled,upgrade,false,false,,true,transition
+t28,cancelled downgrade at period end,cancelled,downgrade_at_period_end,false,false,,true,transition
+t29,expired activate,expired,activate,false,true,,true,transition
+t30,expired suspend,expired,suspend,false,false,,true,transition
+t31,expired resume,expired,resume,false,false,,true,transition
+t32,expired cancel,expired,cancel,false,false,,true,transition
+t33,expired expire,expired,expire,false,false,,true,transition
+t34,expired upgrade,expired,upgrade,false,false,,true,transition
+t35,expired downgrade at period end,expired,downgrade_at_period_end,false,false,,true,transition
+t36,suspended activate,suspended,activate,false,true,,true,transition
+t37,suspended suspend,suspended,suspend,false,false,,true,transition
+t38,suspended resume,suspended,resume,false,false,active,false,
+t39,suspended resume with successful payment,suspended,resume,false,true,active,false,
+t40,suspended resume after period expired,suspended,resume,true,false,,true,expired
+t41,suspended resume after period expired with successful payment,suspended,resume,true,true,,true,expired
+t42,suspended cancel,suspended,cancel,false,false,,true,transition
+t43,suspended expire,suspended,expire,false,false,expired,false,
+t44,suspended upgrade,suspended,upgrade,false,false,,true,transition
+t45,suspended downgrade at period end,suspended,downgrade_at_period_end,false,false,,true,transition

@@ -1,0 +1,21 @@
+case_id,description,bitmap,want_error,want_error_contains,want_bitmap
+b01,no days selected,0,false,,0
+b02,monday only,1,false,,1
+b03,tuesday only,2,false,,2
+b04,sunday only,64,false,,64
+b05,all seven days,127,false,,127
+b06,all days except sunday,63,false,,63
+b07,monday and sunday,65,false,,65
+b08,weekdays only,31,false,,31
+b09,upper bound plus one,128,true,range,,
+b10,negative one,-1,true,range,,
+b11,byte maximum,255,true,range,,
+b12,int64 overflow,9223372036854775808,true,range,,
+b13,empty bitmap,,true,bitmap,,
+b14,leading space," 7",true,bitmap,,
+b15,trailing space,"7 ",true,bitmap,,
+b16,leading plus sign,+7,true,bitmap,,
+b17,alphabetic value,seven,true,bitmap,,
+b18,decimal value,7.0,true,integer,,
+b19,fullwidth unicode digit,７,true,bitmap,,
+b20,space separated digits,"1 2",true,bitmap,,

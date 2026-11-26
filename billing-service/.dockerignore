@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Environment files (secrets never enter the build context)
+.env
+.env.*
+!.env.example
+
+# Test fixtures are not needed by the server binary
+testdata/
+
+# Build artifacts
+bin/
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Testing
+coverage.out
+coverage.html

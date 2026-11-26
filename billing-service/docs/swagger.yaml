@@ -1,0 +1,589 @@
+basePath: /
+definitions:
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.AdminActivateResult:
+    properties:
+      status:
+        type: string
+      subscriptionId:
+        type: string
+      tariffSnapshot:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.TariffSnapshotView'
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.AdminDeactivateResult:
+    properties:
+      revoked_at:
+        type: string
+      status:
+        type: string
+      subscriptionId:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.CancelResult:
+    properties:
+      message:
+        type: string
+      revoked_at:
+        type: string
+      status:
+        type: string
+      subscriptionId:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.DowngradeResult:
+    properties:
+      message:
+        type: string
+      scheduledChange:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.ScheduledChangeView'
+      status:
+        type: string
+      subscriptionId:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.InitiatedPayment:
+    properties:
+      acquiringRedirectUrl:
+        type: string
+      amount_kopecks:
+        type: integer
+      paymentId:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.PaymentView:
+    properties:
+      amount_kopecks:
+        type: integer
+      createdAt:
+        type: string
+      currency:
+        type: string
+      externalReferenceId:
+        type: string
+      paymentId:
+        type: string
+      paymentKind:
+        type: string
+      status:
+        type: string
+      tariffPlanName:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.PeriodView:
+    properties:
+      periodEnd:
+        type: string
+      periodStart:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.ProrationCharge:
+    properties:
+      amount_kopecks:
+        type: integer
+      currency:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.ProrationView:
+    properties:
+      amount_kopecks:
+        type: integer
+      currency:
+        type: string
+      new_daily_rate_kopecks:
+        type: integer
+      old_daily_rate_kopecks:
+        type: integer
+      remaining_days:
+        type: integer
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.ResumeResult:
+    properties:
+      message:
+        type: string
+      revoked_at:
+        type: string
+      status:
+        type: string
+      subscriptionId:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.ScheduledChangeView:
+    properties:
+      effectiveAt:
+        type: string
+      targetTariffPlanId:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.SubscribeResult:
+    properties:
+      billingPeriod:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.PeriodView'
+      payment:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.InitiatedPayment'
+      status:
+        type: string
+      subscriptionId:
+        type: string
+      tariffSnapshot:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.TariffSnapshotView'
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.SubscriptionView:
+    properties:
+      accountId:
+        type: string
+      billingPeriod:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.PeriodView'
+      revoked_at:
+        type: string
+      scheduledChange:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.ScheduledChangeView'
+      status:
+        type: string
+      subscriptionId:
+        type: string
+      tariffSnapshot:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.TariffSnapshotView'
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.TariffSnapshotView:
+    properties:
+      timezone:
+        type: string
+      weekBitmap:
+        type: integer
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.UpgradePreview:
+    properties:
+      currentTariffPlanId:
+        type: string
+      proration:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.ProrationView'
+      quoteExpiresAt:
+        type: string
+      quoteId:
+        type: string
+      targetTariffPlanId:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_billing-service_internal_port_in.UpgradeResult:
+    properties:
+      acquiringRedirectUrl:
+        type: string
+      prorationCharge:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.ProrationCharge'
+      status:
+        type: string
+      subscriptionId:
+        type: string
+      tariffSnapshot:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.TariffSnapshotView'
+    type: object
+  internal_handler_http.ErrorResponse:
+    properties:
+      error:
+        type: string
+      message:
+        type: string
+    type: object
+  internal_handler_http.adminActivateRequest:
+    properties:
+      periodEnd:
+        type: string
+      periodStart:
+        type: string
+      tariffPlanId:
+        type: string
+    type: object
+  internal_handler_http.patchRequest:
+    properties:
+      scheduledChange:
+        properties:
+          effectiveAt:
+            type: string
+          targetTariffPlanId:
+            type: string
+        type: object
+    type: object
+  internal_handler_http.subscribeRequest:
+    properties:
+      paymentMethod:
+        properties:
+          type:
+            type: string
+        type: object
+      tariffPlanId:
+        type: string
+    type: object
+  internal_handler_http.upgradeRequest:
+    properties:
+      quoteId:
+        type: string
+      targetTariffPlanId:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: BC#2 Billing and Subscriptions Management (SayMo).
+  title: SayMo Billing Service API
+  version: "1.0"
+paths:
+  /admin/billing/accounts/{accountId}/activate-tariff:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: UUID
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: tariffPlanId
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler_http.adminActivateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.AdminActivateResult'
+      security:
+      - BearerAuth: []
+      summary: 'Admin: активировать тариф аккаунту'
+      tags:
+      - admin
+  /admin/billing/accounts/{accountId}/deactivate-tariff:
+    post:
+      parameters:
+      - description: UUID
+        in: path
+        name: accountId
+        required: true
+        type: string
+      - description: UUID
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.AdminDeactivateResult'
+      security:
+      - BearerAuth: []
+      summary: 'Admin: деактивировать тариф аккаунта'
+      tags:
+      - admin
+  /billing/subscriptions:
+    post:
+      consumes:
+      - application/json
+      description: Создаёт pending-подписку и pending-платёж, возвращает ссылку WebPay.
+      parameters:
+      - description: UUID
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: tariffPlanId
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler_http.subscribeRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.SubscribeResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Активировать подписку
+      tags:
+      - billing
+  /billing/subscriptions/{subscriptionId}:
+    get:
+      parameters:
+      - description: UUID
+        in: path
+        name: subscriptionId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.SubscriptionView'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Подписка по ID
+      tags:
+      - billing
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: UUID
+        in: path
+        name: subscriptionId
+        required: true
+        type: string
+      - description: scheduledChange
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler_http.patchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.SubscriptionView'
+      security:
+      - BearerAuth: []
+      summary: 'Admin: запланировать смену тарифа'
+      tags:
+      - admin
+  /billing/subscriptions/{subscriptionId}/cancel:
+    post:
+      parameters:
+      - description: UUID
+        in: path
+        name: subscriptionId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.CancelResult'
+      security:
+      - BearerAuth: []
+      summary: Отменить подписку
+      tags:
+      - billing
+  /billing/subscriptions/{subscriptionId}/downgrade:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: UUID
+        in: path
+        name: subscriptionId
+        required: true
+        type: string
+      - description: UUID
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.DowngradeResult'
+      security:
+      - BearerAuth: []
+      summary: Отложенный downgrade
+      tags:
+      - billing
+  /billing/subscriptions/{subscriptionId}/payments:
+    get:
+      parameters:
+      - description: UUID
+        in: path
+        name: subscriptionId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.PaymentView'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: История платежей
+      tags:
+      - billing
+  /billing/subscriptions/{subscriptionId}/resume:
+    post:
+      parameters:
+      - description: UUID
+        in: path
+        name: subscriptionId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.ResumeResult'
+      security:
+      - BearerAuth: []
+      summary: Возобновить suspended-подписку
+      tags:
+      - billing
+  /billing/subscriptions/{subscriptionId}/upgrade:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: UUID
+        in: path
+        name: subscriptionId
+        required: true
+        type: string
+      - description: UUID
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: targetTariffPlanId
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler_http.upgradeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.UpgradeResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Немедленный upgrade с proration
+      tags:
+      - billing
+  /billing/subscriptions/{subscriptionId}/upgrade/preview:
+    get:
+      parameters:
+      - description: UUID
+        in: path
+        name: subscriptionId
+        required: true
+        type: string
+      - description: UUID
+        in: query
+        name: targetTariffPlanId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_billing-service_internal_port_in.UpgradePreview'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Preview доплаты при upgrade
+      tags:
+      - billing
+  /billing/webhooks/acquiring:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: HMAC → timestamp 5 мин → idempotency по transaction_id.
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler_http.ErrorResponse'
+      summary: Нотификатор WebPay
+      tags:
+      - webhooks
+schemes:
+- http
+- https
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT access token. Формат: Bearer {token}.'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

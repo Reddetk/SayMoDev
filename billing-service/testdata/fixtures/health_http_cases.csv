@@ -1,0 +1,41 @@
+case_id,description,postgres_ok,redis_ok,kafka_ok,http_method,request_path,want_status,want_json_status,want_services_contains
+live_all_ok,liveness probe with all dependencies up,true,true,true,GET,/health/live,200,,
+live_all_down,liveness probe with all dependencies down,false,false,false,GET,/health/live,200,,
+health_all_ok,health with all dependencies up,true,true,true,GET,/health,200,healthy,"""postgres"":""ok"""
+health_postgres_down,health with postgres down,false,true,true,GET,/health,200,degraded,"""postgres"":""error"""
+health_redis_down,health with redis down,true,false,true,GET,/health,200,degraded,"""redis"":""error"""
+health_kafka_down,health with kafka down,true,true,false,GET,/health,200,degraded,"""kafka"":""error"""
+health_all_down,health with all dependencies down,false,false,false,GET,/health,200,degraded,"""kafka"":""error"""
+health_postgres_and_redis_down,health with two dependencies down,false,false,true,GET,/health,200,degraded,"""redis"":""error"""
+health_query_string,health with a query string,true,true,true,GET,/health?verbose=1,200,healthy,"""redis"":""ok"""
+health_query_encoded,health with a percent-encoded query value,true,true,true,GET,/health?filter=a%20b,200,healthy,"""kafka"":""ok"""
+health_trailing_slash,health with a trailing slash,true,true,true,GET,/health/,404,,
+health_uppercase,health path in uppercase,true,true,true,GET,/HEALTH,404,,
+healthz_legacy,legacy healthz path,true,true,true,GET,/healthz,404,,
+readyz_legacy,legacy readyz path,true,true,true,GET,/readyz,404,,
+root_path,root path,true,true,true,GET,/,404,,
+health_encoded_slash,health path with an encoded slash,true,true,true,GET,/health%2Flive,404,,
+health_head,HEAD on health,true,true,true,HEAD,/health,405,,
+health_options,OPTIONS on health,true,true,true,OPTIONS,/health,405,,
+health_post,POST on health,true,true,true,POST,/health,405,,
+health_put,PUT on health,true,true,true,PUT,/health,405,,
+health_delete,DELETE on health,true,true,true,DELETE,/health,405,,
+live_head,HEAD on liveness,true,true,true,HEAD,/health/live,405,,
+live_post,POST on liveness,true,true,true,POST,/health/live,405,,
+live_trailing_slash,liveness with a trailing slash,true,true,true,GET,/health/live/,404,,
+ready_all_ok,readiness with all dependencies up,true,true,true,GET,/health/ready,200,ready,"""kafka"":""ok"""
+ready_postgres_down,readiness with postgres down,false,true,true,GET,/health/ready,503,not_ready,"""postgres"":""error"""
+ready_redis_down,readiness with redis down,true,false,true,GET,/health/ready,503,not_ready,"""redis"":""error"""
+ready_kafka_down,readiness with kafka down,true,true,false,GET,/health/ready,503,not_ready,"""kafka"":""error"""
+ready_all_down,readiness with all dependencies down,false,false,false,GET,/health/ready,503,not_ready,"""postgres"":""error"""
+ready_query_string,readiness with a query string,true,true,true,GET,/health/ready?full=true,200,ready,"""redis"":""ok"""
+ready_trailing_slash,readiness with a trailing slash,true,true,true,GET,/health/ready/,404,,
+ready_head,HEAD on readiness,true,true,true,HEAD,/health/ready,405,,
+ready_options,OPTIONS on readiness,true,true,true,OPTIONS,/health/ready,405,,
+ready_post,POST on readiness,true,true,true,POST,/health/ready,405,,
+ready_put,PUT on readiness,true,true,true,PUT,/health/ready,405,,
+ready_delete,DELETE on readiness,true,true,true,DELETE,/health/ready,405,,
+metrics_get,metrics endpoint with all dependencies up,true,true,true,GET,/metrics,200,,
+metrics_get_with_deps_down,metrics endpoint with all dependencies down,false,false,false,GET,/metrics,200,,
+metrics_query_string,metrics endpoint with a query string,true,true,true,GET,/metrics?format=text,200,,
+metrics_trailing_slash,metrics with a trailing slash,true,true,true,GET,/metrics/,404,,

@@ -1,0 +1,34 @@
+case_id,description,old_price_kopecks,new_price_kopecks,billing_days,remaining_days,want_error,want_error_contains,want_charge_kopecks
+p01,simple upgrade,1000,2000,10,5,false,,500
+p02,upgrade for whole period,1000,2000,10,10,false,,1000
+p03,upgrade with one day left,1000,2000,10,1,false,,100
+p04,single day billing period,100,250,1,1,false,,150
+p05,full year billing period,36500,73000,365,365,false,,36500
+p06,full year billing period with one day left,36500,73000,365,1,false,,100
+p07,minimum upgrade of one kopeck on one day,100,101,1,1,false,,1
+p08,rounding up on three day period,999,1000,3,3,false,,3
+p09,small prices with rounding,100,400,3,3,false,,300
+p10,max prices over full period,100,100000000,303,303,false,,99999999
+p11,max prices on a single day,100,100000000,1,1,false,,99999900
+p12,rounding keeps the same daily rate,1000,1001,3,2,true,charge,,
+p13,rounding keeps the same daily rate with one day left,1000,1001,3,1,true,charge,,
+p14,equal prices,5000,5000,30,30,true,charge,,
+p15,downgrade,2000,1000,10,5,true,charge,,
+p16,downgrade by one kopeck daily,3001,3000,3,3,true,charge,,
+p17,billing days zero,1000,2000,0,1,true,billing_days,,
+p18,billing days negative,1000,2000,-5,1,true,billing_days,,
+p19,billing days above one year,1000,2000,366,1,true,billing_days,,
+p20,billing days empty,1000,2000,,1,true,billing_days,,
+p21,billing days non integer,1000,2000,10.5,1,true,billing_days,,
+p22,billing days with leading space,1000,2000," 10",1,true,billing_days,,
+p23,remaining days zero,1000,2000,10,0,true,remaining,,
+p24,remaining days negative,1000,2000,10,-1,true,remaining,,
+p25,remaining days empty,1000,2000,10,,true,remaining,,
+p26,remaining days with trailing space,1000,2000,10,"5 ",true,remaining,,
+p27,old price below minimum,99,2000,10,5,true,price,,
+p28,old price negative,-1000,2000,10,5,true,price,,
+p29,new price above maximum,1000,100000001,10,5,true,price,,
+p30,old price empty,,2000,10,5,true,price,,
+p31,new price non integer,1000,2000.5,10,5,true,price,,
+p32,new price at int64 maximum,100,9223372036854775807,303,303,true,price,,
+p33,new price overflows int64,100,9223372036854775808,10,5,true,overflow,,

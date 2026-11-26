@@ -1,0 +1,31 @@
+case_id,description,amount_kopecks,currency,want_error,want_error_contains,want_amount,want_currency
+m01,lower bound accepted,100,BYN,false,,100,BYN
+m02,upper bound accepted,100000000,RUB,false,,100000000,RUB
+m03,mid range amount accepted,50000,USD,false,,50000,USD
+m04,one kopeck above lower bound,101,EUR,false,,101,EUR
+m05,one kopeck below upper bound,99999999,BYN,false,,99999999,BYN
+m06,quarter million kopecks with every currency family,250000,EUR,false,,250000,EUR
+m07,one below lower bound,99,BYN,true,range,,
+m08,one above upper bound,100000001,BYN,true,range,,
+m09,zero amount,0,BYN,true,range,,
+m10,negative amount,-100,BYN,true,range,,
+m11,int64 minimum,-9223372036854775808,BYN,true,range,,
+m12,int64 maximum,9223372036854775807,BYN,true,range,,
+m13,int64 overflow,9223372036854775808,BYN,true,overflow,,
+m14,empty amount,,BYN,true,amount,,
+m15,leading space in amount," 100",BYN,true,amount,,
+m16,trailing space in amount,"100 ",BYN,true,amount,,
+m17,leading plus sign,+100,BYN,true,amount,,
+m18,leading zero,0100,BYN,true,amount,,
+m19,decimal amount,100.50,BYN,true,integer,,
+m20,exponent notation,1e5,BYN,true,integer,,
+m21,alphabetic amount,one hundred,BYN,true,amount,,
+m22,fullwidth unicode digits,１００,BYN,true,amount,,
+m23,space separated thousands,"100 000",BYN,true,amount,,
+m24,double minus sign,--100,BYN,true,amount,,
+m25,currency in lowercase,100,byn,true,currency,,
+m26,unknown currency code,100,GBP,true,currency,,
+m27,empty currency,100,,true,currency,,
+m28,currency with inner space,100,"BY N",true,currency,,
+m29,currency with trailing letter,100,BYNN,true,currency,,
+m30,currency with trailing space,100,"BYN ",true,currency,,

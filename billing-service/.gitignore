@@ -1,0 +1,31 @@
+# Binaries and build output
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+bin/
+dist/
+coverage.out
+coverage.html
+
+# Env files: only .env.example is committed (deployment/taskfile.md)
+.env
+.env.*
+!.env.example
+
+# Secrets
+*.pem
+*.key
+local_jwks.json
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+*.log
