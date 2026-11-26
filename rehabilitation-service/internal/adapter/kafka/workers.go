@@ -76,3 +76,6 @@ func (c *Consumer) Commit(ctx context.Context, message consumer.Message) error {
 }
 
 func (c *Consumer) Close() error { return c.reader.Close() }
+
+// Lag отдаёт отставание консьюмера для kafka_consumer_queue_length.
+func (c *Consumer) Lag() int64 { return c.reader.Stats().Lag }

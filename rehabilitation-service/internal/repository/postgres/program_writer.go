@@ -380,6 +380,65 @@ func (r *ProgramRepository) CreateMigrationRequest(ctx context.Context, programI
 	return jobID, nil
 }
 
+// ActiveReferenceTotal — сумма active_reference_count по всем программам.
+func (r *ProgramRepository) ActiveReferenceTotal(ctx context.Context) (int, error) {
+	var total int
+	if err := r.pool.QueryRow(ctx, `SELECT COALESCE(SUM(active_reference_count), 0) FROM programs`).Scan(&total); err != nil {
+		return 0, fmt.Errorf("active reference total: %w", err)
+	}
+	return total, nil
+}
+
+// ProgramCounts — количество программ по классификатору (ключ "difficulty|aphasia_type").
+func (r *ProgramRepository) ProgramCounts(ctx context.Context) (map[string]int, error) {
+	rows, err := r.pool.Query(ctx, `SELECT difficulty, aphasia_type, COUNT(*) FROM programs GROUP BY difficulty, aphasia_type`)
+	if err != nil {
+		return nil, fmt.Errorf("program counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var difficulty, aphasia string
+		var count int
+		if err := rows.Scan(&difficulty, &aphasia, &count); err != nil {
+			return nil, fmt.Errorf("scan program counts: %w", err)
+		}
+		counts[difficulty+"|"+aphasia] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("program counts rows: %w", err)
+	}
+	return counts, nil
+}
+
+// LessonCounts — количество уроков в текущей версии каждой программы.
+func (r *ProgramRepository) LessonCounts(ctx context.Context) (map[string]int, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT pl.program_id, COUNT(*)
+FROM program_lessons pl
+JOIN programs p ON p.id = pl.program_id AND p.version = pl.program_version
+GROUP BY pl.program_id`)
+	if err != nil {
+		return nil, fmt.Errorf("lesson counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var programID string
+		var count int
+		if err := rows.Scan(&programID, &count); err != nil {
+			return nil, fmt.Errorf("scan lesson counts: %w", err)
+		}
+		counts[programID] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("lesson counts rows: %w", err)
+	}
+	return counts, nil
+}
+
 func (r *ProgramRepository) FindContentByHash(ctx context.Context, contentHash string) (string, bool, error) {
 	var contentURL string
 	err := r.pool.QueryRow(ctx, `

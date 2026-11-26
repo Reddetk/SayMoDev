@@ -14,7 +14,7 @@
 
 ## План реализации (пайплайн AGENTS.md)
 
-**Текущий шаг: S8 — observability и финальный E2E.** S1–S4 закрыты, S5.1–S5.4 закрыты (ownership — contract-blocked), S5.5 **PASS** (2026-11-26), S6 закрыт, S7 закрыт (migration endpoint, E2E 202/400/404/429). Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
+**Текущий шаг: S8 закрыт — сервис реализован по плану.** S1–S7 закрыты, S8 закрыт 2026-11-26 (OTel→Jaeger, 24 семейства BC#3 на :9003, alert rules, финальный E2E). Единственный незакрытый пункт — ownership/403 урока: contract-blocked (в docs нет S2S endpoint BC#4 для lesson-access). Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
 
 ### AS-IS: измеренные цифры (2026-11-25, до S1)
 
@@ -74,7 +74,7 @@ sequenceDiagram
 | **S5** | Admin write API + S3 | 0 → 5 write-маршрутов (POST/PATCH/DELETE program, POST/PATCH/DELETE lesson); dedup SHA256; append не инкрементирует версию, insert_after_position инкрементирует; лимит 200; guard удаления через BC#4; ownership/403 для урока; инвалидация `programs:all`, `program:*`, `lesson:*`, `presigned_url:*` | endpoints.md#bc3, classification §1–5 |
 | **S6** | Kafka: outbox publisher + consumers | события 0 → 8 типов (`ProgramCreated`, `ProgramUpdated`, `ProgramDeleted`, `LessonAddedToProgram`, `LessonInsertedIntoProgram`, `LessonUpdated`, `LessonContentChanged`, `LessonRemovedFromProgram`); consumers 0 → 2 (`ProgramActivated`, `ProgramCompleted`), throttle 50 events/sec, idempotency TTL 7d | events.md#bc3, EventDataFlow T1/T2 |
 | **S7** | Миграция пациентов | 0 → 1 endpoint `POST /admin/content/programs/{programId}/migrate-patients`; 202 + `migration_job_id`; rate limit 10/min; `MigrationRequested` в outbox; 400/404/429 | endpoints.md#bc3, classification |
-| **S8** | Наблюдаемость, swagger, E2E | метрик 0 → семейства из Observability.md BC#3; `/metrics` :9003; `docs/` swagger; E2E по всем контрактам BC#3 | Observability.md |
+| **S8** | Наблюдаемость, swagger, E2E | OTel OTLP→Jaeger (spans `rehabilitation-service/http`, trace_id в логах); 24 семейства Observability.md BC#3 на :9003; alert rules; swagger с migrate-эндпоинтом; E2E 10 тестов / ~81 s зелёный | Observability.md |
 
 Definition of done каждого шага: `go vet ./...`, `go build ./...`, `go test ./... -count=1 -race` зелёные, E2E зелёный, `docs/` swagger перегенерирован, этот план сдвинут, миграции парные.
 
@@ -223,7 +223,17 @@ go test -tags=e2e ./test/e2e/... -count=1
 - `POST /admin/content/programs/:programId/migrate-patients` (adminOnly): 202 `{migration_job_id, affected_patients_count}`, 400, 404 target version, 429 при >10/мин на администратора (in-process окно).
 - E2E `TestMigratePatientsEndpoint` — PASS (202 + outbox, 400 empty accounts, 404 version 99, 429 на 11-м запросе).
 
-### S6 — Kafka outbox + consumers (закрыт 2026-11-26)
+### S8 — наблюдаемость, swagger, финальный E2E (закрыт 2026-11-26)
+
+- **Трейсы:** `internal/platform/telemetry` — OTLP gRPC exporter → Jaeger (`JAEGER_OTLP_ENDPOINT`; пусто = no-op). `tracing()` middleware создаёт спан на запрос, `trace_id` из span попадает в `http_request` лог и `X-Trace-ID`. Проверено live: Jaeger API `/api/v3/services` (порт 16687) отдаёт `rehabilitation-service`, спаны scope `rehabilitation-service/http` (например `PATCH /content/programs/:programId`), тот же `trace_id` найден в строке лога сервера.
+- **Метрики:** на :9003 экспортируются 24 семейства Observability.md BC#3 — business counters (`programs_total`, `lessons_total`, `program_version_increments_total`, `migration_total`, `invariant_violations_total`, `pdf_uploaded_total`, `deletion_blocked_total`), business gauges (`programs_count{is_active}`, `active_reference_count_total`, `lessons_per_program`), infra counters/gauges (`cdn_upload_total`, `circuit_breaker_state{service=cdn}`, `circuit_breaker_transitions_total`, `rate_limited_requests_total`, `singleflight_calls_total`, `redis_write_failures_total`, `cache_miss_recovery_total`, `kafka_consumer_throttled_total`, `kafka_consumer_queue_length`), histograms (`cdn_upload_latency_seconds`, `program_query_latency_seconds{cache_hit,singleflight_shared}`, `singleflight_wait_duration_seconds`, `kafka_consumer_throttled_seconds`, `event_processing_lag_seconds`).
+- **Снимки из БД:** при старте `programs_count`, `active_reference_count_total`, `lessons_per_program` заполняются из PostgreSQL (`ProgramCounts`, `ActiveReferenceTotal`, `LessonCounts`), поэтому не обнуляются после рестарта; `active_reference_count_total` дополнительно обновляется consumer'ом после применённого события.
+- **Алерты:** `deploy/prometheus/rehabilitation-service-alerts.yml` — ContentServiceDown, CDNUploadLatencyHigh (P95 > 10s), CDNCircuitBreakerOpen, InvariantViolations, DeletionBlockedSpike, Bc4GuardUnavailable.
+- **Стенд:** порты Jaeger сдвинуты (`16687:16686`, `4321:4317`, `4323:4318`), чтобы не конфликтовать с identy/billing compose-проектами; `.env.example` (in-network `jaeger:4317`), `.env.local`/`.env.test` (`localhost:4321`), compose server env — синхронизированы.
+- **Гейт:** `go build`, `go vet`, `go test ./... -count=1 -race`, integration (`TestProgramWriterIntegration`), E2E `./test/e2e` — зелёные; swagger перегенерирован и содержит `/admin/content/programs/{programId}/migrate-patients`.
+- **Отклонения от docs (осознанные):** `program_version_increments_total` помечен `{operation}`, а не `{program_id}` — docs сами запрещают high-cardinality метки; `lessons_total` дополнительно принимает `operation="removed"` (docs перечисляют added|inserted|updated); `bc3_api_calls_total`/`bc3_api_latency_seconds` относятся к стороне BC#4 (BC#4→BC#3), в BC#3 не реализуются.
+
+### S6 - Kafka outbox + consumers (закрыт 2026-11-26)
 
 - **Outbox publisher** (`internal/outbox/worker.go`): пачки по 100, `FetchUnsent → Publish → MarkSent`; частичный сбой не помечает неотправленные. Live: 9 событий отправлены, `sent_at` заполнен.
 - **Producers в транзакциях**: `ProgramCreated`, `LessonAddedToProgram`, `LessonInsertedIntoProgram`, `ProgramDeleted`, `LessonRemovedFromProgram` пишутся в `outbox` в той же транзакции.

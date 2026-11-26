@@ -56,6 +56,7 @@ func NewRouter(deps Deps) *gin.Engine {
 	// CORS стоит последним, но до auth: preflight обрабатывается без JWT, при этом
 	// accessLog/instrument (внешние) успевают зафиксировать OPTIONS.
 	router.Use(recovery(deps.Logger))
+	router.Use(tracing(ServiceName))
 	router.Use(requestContext())
 	router.Use(securityHeaders())
 	router.Use(accessLog(deps.Logger))

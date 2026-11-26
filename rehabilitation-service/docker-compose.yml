@@ -107,9 +107,10 @@ services:
     image: jaegertracing/jaeger@sha256:3823829974ccfc2485d2e48b165579091f32295022ae80ca49704e2f4834116e
     restart: unless-stopped
     ports:
-      - "16686:16686"
-      - "4317:4317"
-      - "4318:4318"
+      # Сдвинуто относительно identy/billing-стеков, чтобы compose-проекты не конфликтовали.
+      - "16687:16686"
+      - "4321:4317"
+      - "4323:4318"
 
   migrate:
     build:

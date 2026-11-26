@@ -6,10 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/domain"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/cache"
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/port/out"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
@@ -36,6 +38,7 @@ type ProgramQuery struct {
 	l1        *cache.Cache
 	l2        out.Cache
 	log       *zap.Logger
+	met       *metrics.Metrics
 	group     singleflight.Group
 }
 
@@ -52,10 +55,20 @@ func NewProgramQuery(repo out.ProgramRepository, presigner out.Presigner, l2 out
 	}
 }
 
+// SetMetrics включает program_query_latency_seconds и singleflight_* (Observability.md BC#3).
+func (q *ProgramQuery) SetMetrics(m *metrics.Metrics) { q.met = m }
+
 func (q *ProgramQuery) List(ctx context.Context, filter out.ProgramFilter) ([]out.ProgramSummary, error) {
 	if err := validateFilter(filter); err != nil {
 		return nil, err
 	}
+
+	started := time.Now()
+	cacheHit := true
+	sharedCall := false
+	defer func() {
+		q.observeQuery("list", started, cacheHit, sharedCall)
+	}()
 
 	// Полный каталог кэшируется под документированным ключом programs:all;
 	// фильтры применяются в памяти, чтобы публичный query не плодил ключи L2/БД.
@@ -64,9 +77,13 @@ func (q *ProgramQuery) List(ctx context.Context, filter out.ProgramFilter) ([]ou
 	if value, ok := q.l1.Get(key); ok {
 		items = value.([]out.ProgramSummary)
 	} else {
-		value, err, _ := q.group.Do(key, func() (any, error) {
+		cacheHit = false
+		groupStarted := time.Now()
+		value, err, shared := q.group.Do(key, func() (any, error) {
 			var cached []out.ProgramSummary
 			if q.l2Get(ctx, key, &cached) {
+				cacheHit = true
+				q.countCacheMiss("program_list")
 				q.l1.Set(key, cached, l1TTL)
 				return cached, nil
 			}
@@ -79,6 +96,8 @@ func (q *ProgramQuery) List(ctx context.Context, filter out.ProgramFilter) ([]ou
 			q.l2Set(ctx, key, fetched, l2TTL)
 			return fetched, nil
 		})
+		q.observeSingleflight("list", groupStarted, shared)
+		sharedCall = shared
 		if err != nil {
 			return nil, err
 		}
@@ -100,13 +119,25 @@ func (q *ProgramQuery) List(ctx context.Context, filter out.ProgramFilter) ([]ou
 
 func (q *ProgramQuery) Get(ctx context.Context, programID string, version int) (out.ProgramRecord, error) {
 	key := fmt.Sprintf("program:%s:v:%d", programID, version)
+
+	started := time.Now()
+	cacheHit := true
+	sharedCall := false
+	defer func() {
+		q.observeQuery("get", started, cacheHit, sharedCall)
+	}()
+
 	if value, ok := q.l1.Get(key); ok {
 		return value.(out.ProgramRecord), nil
 	}
+	cacheHit = false
 
-	value, err, _ := q.group.Do(key, func() (any, error) {
+	groupStarted := time.Now()
+	value, err, shared := q.group.Do(key, func() (any, error) {
 		var cached out.ProgramRecord
 		if q.l2Get(ctx, key, &cached) {
+			cacheHit = true
+			q.countCacheMiss("program")
 			q.l1.Set(key, cached, l1TTL)
 			return cached, nil
 		}
@@ -119,6 +150,8 @@ func (q *ProgramQuery) Get(ctx context.Context, programID string, version int) (
 		q.l2Set(ctx, key, record, l2TTL)
 		return record, nil
 	})
+	q.observeSingleflight("get", groupStarted, shared)
+	sharedCall = shared
 	if err != nil {
 		return out.ProgramRecord{}, err
 	}
@@ -127,13 +160,25 @@ func (q *ProgramQuery) Get(ctx context.Context, programID string, version int) (
 
 func (q *ProgramQuery) GetLesson(ctx context.Context, programID, lessonID string) (out.LessonRecord, error) {
 	metaKey := fmt.Sprintf("lesson:%s:%s", programID, lessonID)
+
+	started := time.Now()
+	cacheHit := true
+	sharedCall := false
+	defer func() {
+		q.observeQuery("get_lesson", started, cacheHit, sharedCall)
+	}()
+
 	var lesson out.LessonRecord
 	if value, ok := q.l1.Get(metaKey); ok {
 		lesson = value.(out.LessonRecord)
 	} else {
-		value, err, _ := q.group.Do(metaKey, func() (any, error) {
+		cacheHit = false
+		groupStarted := time.Now()
+		value, err, shared := q.group.Do(metaKey, func() (any, error) {
 			var cached out.LessonRecord
 			if q.l2Get(ctx, metaKey, &cached) {
+				cacheHit = true
+				q.countCacheMiss("lesson")
 				q.l1.Set(metaKey, cached, l1TTL)
 				return cached, nil
 			}
@@ -145,6 +190,8 @@ func (q *ProgramQuery) GetLesson(ctx context.Context, programID, lessonID string
 			q.l2Set(ctx, metaKey, record, l2TTL)
 			return record, nil
 		})
+		q.observeSingleflight("get_lesson", groupStarted, shared)
+		sharedCall = shared
 		if err != nil {
 			return out.LessonRecord{}, err
 		}
@@ -155,7 +202,8 @@ func (q *ProgramQuery) GetLesson(ctx context.Context, programID, lessonID string
 	// перегенерируем, иначе клиент получит почти истёкший URL.
 	presignKey := fmt.Sprintf("presigned_url:%s:%s", programID, lessonID)
 	var presigned string
-	value, err, _ := q.group.Do("presign:"+presignKey, func() (any, error) {
+	presignStarted := time.Now()
+	value, err, presignShared := q.group.Do("presign:"+presignKey, func() (any, error) {
 		var cached presignedRecord
 		if q.l2Get(ctx, presignKey, &cached) && time.Until(cached.ExpiresAt) > presignMinRemain {
 			return cached.URL, nil
@@ -172,6 +220,7 @@ func (q *ProgramQuery) GetLesson(ctx context.Context, programID, lessonID string
 		q.l2Set(ctx, presignKey, presignedRecord{URL: generated, ExpiresAt: generatedAt.Add(presignTTL)}, presignCacheTTL)
 		return generated, nil
 	})
+	q.observeSingleflight("presign", presignStarted, presignShared)
 	if err != nil {
 		return out.LessonRecord{}, err
 	}
@@ -179,6 +228,35 @@ func (q *ProgramQuery) GetLesson(ctx context.Context, programID, lessonID string
 
 	lesson.ContentURL = presigned
 	return lesson, nil
+}
+
+func (q *ProgramQuery) observeQuery(endpoint string, started time.Time, cacheHit, shared bool) {
+	if q.met == nil {
+		return
+	}
+	q.met.ProgramQueryLatency.WithLabelValues(strconv.FormatBool(cacheHit), strconv.FormatBool(shared)).
+		Observe(time.Since(started).Seconds())
+	if cacheHit && !shared {
+		q.met.SingleflightCalls.WithLabelValues(endpoint, "hit").Inc()
+	}
+}
+
+func (q *ProgramQuery) observeSingleflight(endpoint string, started time.Time, shared bool) {
+	if q.met == nil {
+		return
+	}
+	q.met.SingleflightWait.WithLabelValues(endpoint).Observe(time.Since(started).Seconds())
+	if shared {
+		q.met.SingleflightCalls.WithLabelValues(endpoint, "shared").Inc()
+	} else {
+		q.met.SingleflightCalls.WithLabelValues(endpoint, "miss").Inc()
+	}
+}
+
+func (q *ProgramQuery) countCacheMiss(keyType string) {
+	if q.met != nil {
+		q.met.CacheMissRecovery.WithLabelValues(keyType).Inc()
+	}
 }
 
 func validateFilter(filter out.ProgramFilter) error {
@@ -216,6 +294,9 @@ func (q *ProgramQuery) l2Set(ctx context.Context, key string, value any, ttl tim
 	}
 	if err := q.l2.Set(ctx, key, value, ttl); err != nil {
 		q.log.Warn("l2 cache set failed", zap.String("key", key), zap.Error(err))
+		if q.met != nil {
+			q.met.RedisWriteFailures.WithLabelValues("set").Inc()
+		}
 	}
 }
 
@@ -227,6 +308,9 @@ func (q *ProgramQuery) InvalidateAll(ctx context.Context) error {
 	}
 	if err := q.l2.Delete(ctx, "programs:all"); err != nil {
 		q.log.Warn("invalidate programs:all failed", zap.Error(err))
+		if q.met != nil {
+			q.met.RedisWriteFailures.WithLabelValues("delete").Inc()
+		}
 		return err
 	}
 	return nil
@@ -249,12 +333,19 @@ func (q *ProgramQuery) InvalidateProgram(ctx context.Context, programID string) 
 	for _, prefix := range prefixes {
 		if err := q.l2.DeletePrefix(ctx, prefix); err != nil {
 			q.log.Warn("invalidate prefix failed", zap.String("prefix", prefix), zap.Error(err))
+			if q.met != nil {
+				q.met.RedisWriteFailures.WithLabelValues("delete_prefix").Inc()
+			}
 			if firstErr == nil {
 				firstErr = err
 			}
 		}
 	}
 	if err := q.l2.Delete(ctx, "programs:all"); err != nil && firstErr == nil {
+		q.log.Warn("invalidate programs:all failed", zap.Error(err))
+		if q.met != nil {
+			q.met.RedisWriteFailures.WithLabelValues("delete").Inc()
+		}
 		firstErr = err
 	}
 	return firstErr

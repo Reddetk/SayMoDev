@@ -1,9 +1,37 @@
 package s3
 
 import (
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
 )
+
+func TestBreakerTransitionsAreExported(t *testing.T) {
+	met := metrics.New("test", "test")
+	u := NewUploader(nil, "saymo-programs", "http://localhost:9005")
+	u.SetMetrics(met)
+
+	for i := 0; i < breakerThreshold; i++ {
+		u.breaker.failure()
+		u.observeBreaker()
+	}
+
+	rec := httptest.NewRecorder()
+	met.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	body := rec.Body.String()
+
+	for _, want := range []string{
+		`circuit_breaker_state{service="cdn"} 1`,
+		`circuit_breaker_transitions_total{from="closed",service="cdn",to="open"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics output missing %q", want)
+		}
+	}
+}
 
 func TestBreakerOpensAfterFiveFailures(t *testing.T) {
 	now := time.Now()

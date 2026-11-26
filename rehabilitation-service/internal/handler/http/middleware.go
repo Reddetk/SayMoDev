@@ -12,12 +12,32 @@ import (
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
+
+// tracing создаёт OTel-спан на HTTP-запрос; trace_id уходит в логи и заголовок.
+func tracing(service string) gin.HandlerFunc {
+	tracer := otel.Tracer(service + "/http")
+	return func(c *gin.Context) {
+		ctx, span := tracer.Start(c.Request.Context(), c.Request.Method+" "+c.FullPath())
+		defer span.End()
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+
+		span.SetAttributes(
+			attribute.String("http.method", c.Request.Method),
+			attribute.String("http.path", c.Request.URL.Path),
+			attribute.Int("http.status_code", c.Writer.Status()),
+		)
+	}
+}
 
 func recovery(log *zap.Logger) gin.HandlerFunc {
 	return gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, recovered any) {
@@ -49,6 +69,9 @@ func requestContext() gin.HandlerFunc {
 		c.Header(headerRequestID, requestID)
 
 		traceID := traceIDFromTraceparent(c.GetHeader("traceparent"))
+		if span := trace.SpanFromContext(c.Request.Context()); span.SpanContext().IsValid() {
+			traceID = span.SpanContext().TraceID().String()
+		}
 		if traceID == "" {
 			traceID = randomTraceID()
 		}

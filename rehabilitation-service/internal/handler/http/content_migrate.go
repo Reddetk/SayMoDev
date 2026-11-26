@@ -74,6 +74,9 @@ func (h *ContentHandler) MigratePatients(c *gin.Context) {
 		return
 	}
 	if !h.migrationLimiter.allow(identity.AccountID, 10, time.Minute, time.Now()) {
+		if h.Metrics != nil {
+			h.Metrics.RateLimitedRequests.WithLabelValues("migrate_patients").Inc()
+		}
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate_limit_exceeded"})
 		return
 	}
@@ -112,4 +115,7 @@ func (h *ContentHandler) MigratePatients(c *gin.Context) {
 		"migration_job_id":        jobID,
 		"affected_patients_count": affected,
 	})
+	if h.Metrics != nil {
+		h.Metrics.MigrationTotal.WithLabelValues("requested").Inc()
+	}
 }

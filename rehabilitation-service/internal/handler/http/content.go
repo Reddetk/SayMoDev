@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/port/out"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/usecase"
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,7 @@ import (
 type ContentHandler struct {
 	Query            *usecase.ProgramQuery
 	Commands         *usecase.ProgramCommand
+	Metrics          *metrics.Metrics
 	Log              *zap.Logger
 	migrationLimiter migrationLimiter
 }

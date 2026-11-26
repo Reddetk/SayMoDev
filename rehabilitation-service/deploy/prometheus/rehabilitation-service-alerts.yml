@@ -1,0 +1,65 @@
+# Alert rules BC#3 (content-service / rehabilitation-service).
+# Источник: Observability.md, раздел "BC#3: Rehabilitation Content Management → Alert linkage".
+# Порт scrape-цели — localhost:9003 (job: content-service).
+groups:
+  - name: rehabilitation-service.bc3
+    rules:
+      - alert: ContentServiceDown
+        expr: up{job="content-service"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          bc: bc3
+        annotations:
+          summary: "BC#3 content-service недоступен"
+          description: "Scrape-цель :9003 не отвечает более 5 минут."
+
+      - alert: CDNUploadLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(cdn_upload_latency_seconds_bucket[5m]))) > 10
+        for: 10m
+        labels:
+          severity: warning
+          bc: bc3
+        annotations:
+          summary: "P95 загрузки PDF в CDN выше 10s"
+          description: "Деградация CDN: P95 cdn_upload_latency_seconds > 10s."
+
+      - alert: CDNCircuitBreakerOpen
+        expr: circuit_breaker_state{service="cdn"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          bc: bc3
+        annotations:
+          summary: "Circuit breaker CDN открыт"
+          description: "S3/CDN недоступен: circuit_breaker_state{service=cdn} == 1."
+
+      - alert: InvariantViolations
+        expr: increase(invariant_violations_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          bc: bc3
+        annotations:
+          summary: "Нарушены инварианты домена BC#3"
+          description: "invariant_violations_total вырос: возможна порча данных (uniqueness/min_lessons/immutable_classifier)."
+
+      - alert: DeletionBlockedSpike
+        expr: increase(deletion_blocked_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          bc: bc3
+        annotations:
+          summary: "Всплеск блокировок удаления"
+          description: "Более 10 удалений за 5 минут заблокированы активными пациентами."
+
+      - alert: Bc4GuardUnavailable
+        expr: rate(http_requests_total{route="/content/programs/:programId",status="503"}[5m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          bc: bc3
+        annotations:
+          summary: "BC#3 отвечает 503 на удаление"
+          description: "Guard BC#4 недоступен: удаления fail-closed, проверьте BC#4."

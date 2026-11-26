@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/adapter/bc4"
@@ -19,6 +20,7 @@ import (
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/health"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/outbox"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/telemetry"
 	repositorypostgres "github.com/Reddetk/SayMoDev/rehabilitation-service/internal/repository/postgres"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/usecase"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/pkg/config"
@@ -27,23 +29,29 @@ import (
 
 // App — собранный процесс: HTTP, metrics и адаптеры.
 type App struct {
-	cfg        *config.Config
-	log        *zap.Logger
-	metrics    *metrics.Metrics
-	httpServer *http.Server
-	metServer  *http.Server
-	postgres   *postgres.Probe
-	redis      *redis.Probe
-	redisBlack *redis.Probe
-	outbox     *outbox.Worker
-	consumer   *consumer.Worker
-	producer   *kafka.Producer
+	cfg             *config.Config
+	log             *zap.Logger
+	metrics         *metrics.Metrics
+	httpServer      *http.Server
+	metServer       *http.Server
+	postgres        *postgres.Probe
+	redis           *redis.Probe
+	redisBlack      *redis.Probe
+	outbox          *outbox.Worker
+	consumer        *consumer.Worker
+	producer        *kafka.Producer
+	shutdownTracing func(context.Context) error
 }
 
 // New собирает приложение. Ошибка возвращается только при невалидной конфигурации
 // или невозможности создать клиентов; недоступность зависимостей видна в /ready.
 func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (*App, error) {
 	log, err := newLogger(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	shutdownTracing, err := telemetry.Init(ctx, cfg.JaegerOTLPEndpoint, "rehabilitation-service", build.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -96,12 +104,38 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 	repo := repositorypostgres.NewProgramRepository(pg.Pool())
 	presigner := s3.NewPresigner(s3probe.Client(), cfg.S3Bucket)
 	uploader := s3.NewUploader(s3probe.Client(), cfg.S3Bucket, cfg.S3Endpoint)
+	uploader.SetMetrics(met)
 	query := usecase.NewProgramQuery(repo, presigner, redis.NewCache(rdb.Client()), log)
+	query.SetMetrics(met)
 	commands := usecase.NewProgramCommand(repo, uploader, query)
 	if bc4Guard != nil {
 		commands = usecase.NewProgramCommand(repo, uploader, query, bc4Guard)
 	}
-	content := &handlerhttp.ContentHandler{Query: query, Commands: commands, Log: log}
+	content := &handlerhttp.ContentHandler{Query: query, Commands: commands, Metrics: met, Log: log}
+
+	// Гauge-снимки из БД: иначе после рестарта programs_count/active_reference_count_total врали бы.
+	if counts, err := repo.ProgramCounts(ctx); err != nil {
+		log.Warn("initial programs_count failed", zap.Error(err))
+	} else {
+		for key, count := range counts {
+			parts := strings.SplitN(key, "|", 2)
+			if len(parts) == 2 {
+				met.ProgramsCount.WithLabelValues(parts[0], parts[1], "true").Set(float64(count))
+			}
+		}
+	}
+	if total, err := repo.ActiveReferenceTotal(ctx); err != nil {
+		log.Warn("initial active_reference_count_total failed", zap.Error(err))
+	} else {
+		met.ActiveReferenceCount.Set(float64(total))
+	}
+	if lessons, err := repo.LessonCounts(ctx); err != nil {
+		log.Warn("initial lessons_per_program failed", zap.Error(err))
+	} else {
+		for programID, count := range lessons {
+			met.LessonsPerProgram.WithLabelValues(programID).Set(float64(count))
+		}
+	}
 
 	producer := kafka.NewProducer(cfg.KafkaBrokers)
 	outboxWorker := outbox.NewWorker(repositorypostgres.NewOutboxStore(pg.Pool()), producer, "saymo.content.events", log)
@@ -110,6 +144,7 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 		repositorypostgres.NewProgramEventStore(pg.Pool()),
 		log,
 	)
+	consumerWorker.SetMetrics(met)
 
 	router := handlerhttp.NewRouter(handlerhttp.Deps{
 		Health:        checker,
@@ -123,15 +158,16 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 	})
 
 	app := &App{
-		cfg:        cfg,
-		log:        log,
-		metrics:    met,
-		postgres:   pg,
-		redis:      rdb,
-		redisBlack: redisBlack,
-		outbox:     outboxWorker,
-		consumer:   consumerWorker,
-		producer:   producer,
+		cfg:             cfg,
+		log:             log,
+		metrics:         met,
+		postgres:        pg,
+		redis:           rdb,
+		redisBlack:      redisBlack,
+		outbox:          outboxWorker,
+		consumer:        consumerWorker,
+		producer:        producer,
+		shutdownTracing: shutdownTracing,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
 			Handler:           router,
@@ -203,5 +239,10 @@ func (a *App) close() {
 	}
 	_ = a.redis.Close()
 	_ = a.producer.Close()
+	if a.shutdownTracing != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = a.shutdownTracing(shutdownCtx)
+		cancel()
+	}
 	_ = a.log.Sync()
 }

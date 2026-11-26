@@ -6,6 +6,44 @@ info:
   title: SayMo Rehabilitation Content Service API
   version: 0.1.0
 paths:
+  /admin/content/programs/{programId}/migrate-patients:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: program UUID
+        in: path
+        name: programId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Request batch migration of patients to a program version
+      tags:
+      - content
   /content/programs:
     get:
       description: 'Public catalog: latest version of each program. Filters are optional.'

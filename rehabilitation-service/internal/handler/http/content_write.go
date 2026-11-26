@@ -86,8 +86,14 @@ func (h *ContentHandler) writeError(c *gin.Context, err error) {
 			code = "active_patients"
 		case strings.Contains(message, "classifier"):
 			code = "classifier_exists"
+			if h.Metrics != nil {
+				h.Metrics.InvariantViolations.WithLabelValues("uniqueness").Inc()
+			}
 		case strings.Contains(message, "lessons"):
 			code = "lessons"
+			if h.Metrics != nil {
+				h.Metrics.InvariantViolations.WithLabelValues("min_lessons").Inc()
+			}
 		}
 		c.JSON(http.StatusConflict, gin.H{"error": code})
 	case errors.Is(err, out.ErrInvalidPosition):
@@ -128,6 +134,9 @@ func (h *ContentHandler) CreateProgram(c *gin.Context) {
 
 	var lessons []lessonForm
 	if err := json.Unmarshal([]byte(c.PostForm("lessons")), &lessons); err != nil || len(lessons) == 0 {
+		if h.Metrics != nil && err == nil {
+			h.Metrics.InvariantViolations.WithLabelValues("min_lessons").Inc()
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_lessons"})
 		return
 	}
@@ -159,6 +168,14 @@ func (h *ContentHandler) CreateProgram(c *gin.Context) {
 		"programId": record.ProgramID, "version": record.Version,
 		"createdAt": record.CreatedAt, "updatedAt": record.UpdatedAt, "lessons": lessonsOut,
 	})
+	if h.Metrics != nil {
+		h.Metrics.ProgramsTotal.WithLabelValues("created", program.diff(), program.aphasia()).Inc()
+		h.Metrics.ProgramsCount.WithLabelValues(program.diff(), program.aphasia(), "true").Inc()
+		h.Metrics.LessonsPerProgram.WithLabelValues(record.ProgramID).Set(float64(len(record.Lessons)))
+		for range uploads {
+			h.Metrics.PDFUploaded.WithLabelValues("application/pdf").Inc()
+		}
+	}
 }
 
 // UpdateProgram godoc
@@ -184,6 +201,9 @@ func (h *ContentHandler) UpdateProgram(c *gin.Context) {
 	}
 	for key := range body {
 		if strings.Contains(strings.ToLower(key), "classifier") || key == "difficulty" || key == "aphasiaType" || key == "aphasia_type" {
+			if h.Metrics != nil {
+				h.Metrics.InvariantViolations.WithLabelValues("immutable_classifier").Inc()
+			}
 			c.JSON(http.StatusBadRequest, gin.H{"error": "classifier_immutable"})
 			return
 		}
@@ -194,6 +214,9 @@ func (h *ContentHandler) UpdateProgram(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"programId": programID, "title": title})
+	if h.Metrics != nil {
+		h.Metrics.ProgramsTotal.WithLabelValues("updated", "", "").Inc()
+	}
 }
 
 // DeleteProgram godoc
@@ -210,8 +233,18 @@ func (h *ContentHandler) DeleteProgram(c *gin.Context) {
 		return
 	}
 	if err := h.Commands.DeleteProgram(c.Request.Context(), programID); err != nil {
+		if errors.Is(err, out.ErrConflict) && h.Metrics != nil {
+			h.Metrics.DeletionBlocked.WithLabelValues("program", "active_references").Inc()
+		}
 		h.writeError(c, err)
 		return
+	}
+	if h.Metrics != nil {
+		h.Metrics.ProgramsTotal.WithLabelValues("deleted", "", "").Inc()
+		if record, err := h.Query.Get(c.Request.Context(), programID, 0); err == nil {
+			h.Metrics.ProgramsCount.WithLabelValues(record.Difficulty, record.AphasiaType, "true").Dec()
+		}
+		h.Metrics.LessonsPerProgram.DeleteLabelValues(programID)
 	}
 	c.Status(http.StatusNoContent)
 }
@@ -263,6 +296,17 @@ func (h *ContentHandler) AddLesson(c *gin.Context) {
 		"contentUrl": record.ContentURL, "createdAt": record.CreatedAt,
 		"updatedAt": record.UpdatedAt, "version": version,
 	})
+	if h.Metrics != nil {
+		h.Metrics.LessonsTotal.WithLabelValues("added").Inc()
+		h.Metrics.PDFUploaded.WithLabelValues("application/pdf").Inc()
+		h.Metrics.LessonsPerProgram.WithLabelValues(programID).Inc()
+		if insertAfter != nil {
+			h.Metrics.LessonsTotal.WithLabelValues("inserted").Inc()
+			h.Metrics.ProgramVersionIncrements.WithLabelValues("lesson_inserted").Inc()
+		} else {
+			h.Metrics.ProgramVersionIncrements.WithLabelValues("lesson_added").Inc()
+		}
+	}
 }
 
 // UpdateLesson godoc
@@ -302,6 +346,12 @@ func (h *ContentHandler) UpdateLesson(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"lessonId": record.LessonID, "contentUrl": record.ContentURL})
+	if h.Metrics != nil {
+		h.Metrics.LessonsTotal.WithLabelValues("updated").Inc()
+		if pdf != nil {
+			h.Metrics.PDFUploaded.WithLabelValues("application/pdf").Inc()
+		}
+	}
 }
 
 // DeleteLesson godoc
@@ -321,8 +371,15 @@ func (h *ContentHandler) DeleteLesson(c *gin.Context) {
 		return
 	}
 	if err := h.Commands.DeleteLesson(c.Request.Context(), programID, lessonID); err != nil {
+		if errors.Is(err, out.ErrConflict) && h.Metrics != nil {
+			h.Metrics.DeletionBlocked.WithLabelValues("lesson", "active_references").Inc()
+		}
 		h.writeError(c, err)
 		return
+	}
+	if h.Metrics != nil {
+		h.Metrics.LessonsTotal.WithLabelValues("removed").Inc()
+		h.Metrics.LessonsPerProgram.WithLabelValues(programID).Dec()
 	}
 	c.Status(http.StatusNoContent)
 }
