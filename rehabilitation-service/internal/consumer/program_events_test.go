@@ -2,85 +2,53 @@ package consumer
 
 import (
 	"context"
-	"errors"
 	"testing"
-	"time"
 )
-
-type fakeReader struct {
-	messages []Message
-	idx      int
-	commits  int
-}
-
-func (r *fakeReader) ReadMessage(context.Context) (Message, error) {
-	if r.idx >= len(r.messages) {
-		time.Sleep(time.Millisecond)
-		return Message{}, errors.New("EOF")
-	}
-	message := r.messages[r.idx]
-	r.idx++
-	return message, nil
-}
-func (r *fakeReader) Commit(context.Context, Message) error { r.commits++; return nil }
-func (r *fakeReader) Close() error                          { return nil }
 
 type fakeStore struct {
 	applied []string
-	delta   int
+	deltas  []int
 }
 
-func (s *fakeStore) ApplyProgramEvent(_ context.Context, eventID, _, programID string, delta int) (bool, error) {
+func (s *fakeStore) ApplyProgramEvent(_ context.Context, _, _, programID string, delta int) (bool, error) {
 	s.applied = append(s.applied, programID)
-	s.delta = delta
-	return true, nil
-}
-
-func TestWorkerAppliesActivatedAndCompleted(t *testing.T) {
-	reader := &fakeReader{messages: []Message{
-		{Value: []byte(`{"event_id":"e1","event_type":"ProgramActivated","program_id":"p1"}`)},
-		{Value: []byte(`{"event_id":"e2","event_type":"ProgramCompleted","program_id":"p1"}`)},
-	}}
-	store := &fakeStore{}
-	worker := NewWorker(reader, store, nil)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		for reader.idx < len(reader.messages) {
-		}
-		cancel()
-	}()
-	worker.Run(ctx)
-
-	if len(store.applied) != 2 {
-		t.Fatalf("applied: %v", store.applied)
-	}
-}
-
-type deltaStore struct{ deltas []int }
-
-func (s *deltaStore) ApplyProgramEvent(_ context.Context, _, _, _ string, delta int) (bool, error) {
 	s.deltas = append(s.deltas, delta)
 	return true, nil
 }
 
-func TestDeltasForEvents(t *testing.T) {
-	reader := &fakeReader{messages: []Message{
-		{Value: []byte(`{"event_id":"e1","event_type":"ProgramActivated","program_id":"p1"}`)},
-		{Value: []byte(`{"event_id":"e2","event_type":"ProgramCompleted","program_id":"p1"}`)},
-	}}
-	store := &deltaStore{}
-	worker := NewWorker(reader, store, nil)
+func TestHandleAppliesDeltas(t *testing.T) {
+	store := &fakeStore{}
+	worker := NewWorker(nil, store, nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		for reader.idx < len(reader.messages) {
+	for _, value := range []string{
+		`{"event_id":"11111111-1111-4111-8111-111111111111","event_type":"ProgramActivated","program_id":"33333333-3333-4333-8333-333333333333"}`,
+		`{"event_id":"22222222-2222-4222-8222-222222222222","event_type":"ProgramCompleted","program_id":"33333333-3333-4333-8333-333333333333"}`,
+	} {
+		if err := worker.handle(context.Background(), Message{Value: []byte(value)}); err != nil {
+			t.Fatalf("handle: %v", err)
 		}
-		cancel()
-	}()
-	worker.Run(ctx)
+	}
 
 	if len(store.deltas) != 2 || store.deltas[0] != 1 || store.deltas[1] != -1 {
 		t.Fatalf("deltas: %v", store.deltas)
+	}
+}
+
+func TestHandleSkipsInvalidPayloadAndUUID(t *testing.T) {
+	store := &fakeStore{}
+	worker := NewWorker(nil, store, nil)
+
+	cases := []string{
+		`not-json`,
+		`{"event_id":"e1","event_type":"ProgramActivated","program_id":"p1"}`,
+		`{"event_id":"11111111-1111-4111-8111-111111111111","event_type":"Other","program_id":"33333333-3333-4333-8333-333333333333"}`,
+	}
+	for _, value := range cases {
+		if err := worker.handle(context.Background(), Message{Value: []byte(value)}); err != nil {
+			t.Fatalf("handle %q: %v", value, err)
+		}
+	}
+	if len(store.applied) != 0 {
+		t.Fatalf("invalid/unknown events must not reach store: %v", store.applied)
 	}
 }

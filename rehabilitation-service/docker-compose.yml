@@ -63,6 +63,21 @@ services:
       retries: 12
       start_period: 20s
 
+  kafka-init:
+    image: apache/kafka:3.9.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists
+        --topic saymo.content.events --partitions 3 --replication-factor 1 &&
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists
+        --topic saymo.progress.events --partitions 3 --replication-factor 1
+    restart: "no"
+
   # S3-совместимый стенд. MinIO-образы недоступны из реестра на этой машине,
   # поэтому локально используется adobe/s3mock (S3 API, path-style). В prod — Yandex Object Storage.
   s3mock:
@@ -141,6 +156,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       s3init:
         condition: service_completed_successfully
       migrate:

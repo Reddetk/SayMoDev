@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -99,6 +100,14 @@ func (w *Worker) handle(ctx context.Context, message Message) error {
 	}
 	if evt.EventID == "" || evt.ProgramID == "" {
 		w.log.Warn("event without id/program_id", zap.String("type", evt.EventType))
+		return nil
+	}
+	if _, err := uuid.Parse(evt.EventID); err != nil {
+		w.log.Warn("event_id is not a UUID", zap.String("event_id", evt.EventID))
+		return nil
+	}
+	if _, err := uuid.Parse(evt.ProgramID); err != nil {
+		w.log.Warn("program_id is not a UUID", zap.String("program_id", evt.ProgramID))
 		return nil
 	}
 

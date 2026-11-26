@@ -42,11 +42,12 @@ type Consumer struct {
 
 func NewConsumer(brokers []string, groupID, topic string) *Consumer {
 	return &Consumer{reader: kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  brokers,
-		GroupID:  groupID,
-		Topic:    topic,
-		MinBytes: 1,
-		MaxBytes: 10 << 20,
+		Brokers:        brokers,
+		GroupID:        groupID,
+		Topic:          topic,
+		MinBytes:       1,
+		MaxBytes:       10 << 20,
+		CommitInterval: 0, // commit только после успешной обработки
 	})}
 }
 

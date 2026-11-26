@@ -214,12 +214,14 @@ go test -tags=e2e ./test/e2e/... -count=1
 
 Гейт S5: `go build/vet/test -race`, integration-тесты репозитория, E2E по всем write-контрактам, swagger, ревьюер.
 
-### S6 — Kafka outbox + consumers (реализовано, live-consumer не подтверждён)
+### S6 — Kafka outbox + consumers (закрыт 2026-11-26)
 
-- **Outbox publisher** (`internal/outbox/worker.go`): пачки по 100, `FetchUnsent → Publish → MarkSent`; частичный сбой не помечает неотправленные. Live: после создания топика `saymo.content.events` воркер отправил 9 событий, `sent_at` заполнен (`outbox batch sent count=9`).
-- **Producers в транзакциях**: `ProgramCreated`, `LessonAddedToProgram`, `LessonInsertedIntoProgram`, `ProgramDeleted`, `LessonRemovedFromProgram` пишутся в `outbox` в той же транзакции, что и доменные изменения.
-- **Consumer** (`internal/consumer/program_events.go`): `ProgramActivated` → +1, `ProgramCompleted` → −1 (`GREATEST(0, …)`), throttle 20ms (50/s), идемпотентность через `processed_events` внутри транзакции; неизвестные/битые события пропускаются в лог.
-- **Проверено unit-тестами**: `internal/outbox` (publish+mark, partial failure), `internal/consumer` (delta +1/−1, дедупликация на уровне store-контракта). Интеграционный store `ApplyProgramEvent` покрыт SQL-логикой, но live-проверка consumption не завершена: после публикации `ProgramActivated` в `saymo.progress.events` `processed_events` остался пуст — consumer в运行时 не подтверждён (топик создан после старта воркера, требует перезапуска/диагностики).
+- **Outbox publisher** (`internal/outbox/worker.go`): пачки по 100, `FetchUnsent → Publish → MarkSent`; частичный сбой не помечает неотправленные. Live: 9 событий отправлены, `sent_at` заполнен.
+- **Producers в транзакциях**: `ProgramCreated`, `LessonAddedToProgram`, `LessonInsertedIntoProgram`, `ProgramDeleted`, `LessonRemovedFromProgram` пишутся в `outbox` в той же транзакции.
+- **Consumer** (`internal/consumer/program_events.go`): `ProgramActivated` +1, `ProgramCompleted` −1 (`GREATEST(0,…)`), throttle 50/s, идемпотентность через `processed_events` внутри транзакции; невалидные UUID/битые события пропускаются и не отравляют партицию; `CommitInterval=0` — offset коммитится только после успешной обработки.
+- **Live-доказательство:** после перезапуска с существующими топиками `ProgramActivated` → `active_reference_count` 0→2, `ProgramCompleted` → 2→1; повторная публикация того же `event_id` не изменила счётчик, `processed_events` содержит ровно одну запись. Группа `bc3-content` lag 0.
+- `kafka-init` в compose создаёт `saymo.content.events` и `saymo.progress.events` (3 партиции), сервер стартует после него.
+
 
 
 
