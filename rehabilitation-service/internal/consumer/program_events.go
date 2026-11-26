@@ -153,8 +153,8 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
-// commit ретраит фиксацию offset: если commit не прошёл, следующее чтение
-// вернёт то же событие, а идемпотентность не даст применить его дважды.
+// commit ретраит фиксацию того же offset: следующее сообщение не читается,
+// пока фиксация не прошла, поэтому событие не теряется и не применяется дважды.
 func (w *Worker) commit(ctx context.Context, message Message, backoff *time.Duration) bool {
 	for {
 		if err := w.reader.Commit(ctx, message); err == nil {
