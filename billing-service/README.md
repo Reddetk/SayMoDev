@@ -313,3 +313,12 @@ Standalone SVG, отражают текущую реализацию:
 ![](docs/diagrams/05-renewal-worker.svg)
 ![](docs/diagrams/06-db-schema.svg)
 ![](docs/diagrams/07-state-machine.svg)
+
+---
+
+## Правило коммитов
+
+Агенты и автоматизация **никогда не подписываются в git своим именем** — ни в `author`/`committer`,
+ни в сообщении коммита, ни в подписях. Все коммиты и push выполняются от имени владельца
+репозитория: `Reddetk <igar.makhnach@gmail.com>`.
+
