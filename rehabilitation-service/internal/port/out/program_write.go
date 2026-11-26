@@ -54,4 +54,6 @@ type ProgramWriter interface {
 	// FindContentByHash — дедупликация PDF: существующий content_url для SHA-256.
 	FindContentByHash(ctx context.Context, contentHash string) (string, bool, error)
 	CurrentVersion(ctx context.Context, programID string) (int, error)
+	ActiveReferenceCount(ctx context.Context, programID string) (int, error)
+	CreateMigrationRequest(ctx context.Context, programID string, targetVersion int, selection string, accountIDs []string) (string, error)
 }

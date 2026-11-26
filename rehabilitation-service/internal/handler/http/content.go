@@ -15,9 +15,10 @@ import (
 
 // ContentHandler — публичное чтение каталога и урок BC#3.
 type ContentHandler struct {
-	Query    *usecase.ProgramQuery
-	Commands *usecase.ProgramCommand
-	Log      *zap.Logger
+	Query            *usecase.ProgramQuery
+	Commands         *usecase.ProgramCommand
+	Log              *zap.Logger
+	migrationLimiter migrationLimiter
 }
 
 func (h *ContentHandler) logError(c *gin.Context, message string, err error) {

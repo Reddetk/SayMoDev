@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/port/out"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -319,6 +320,64 @@ func (r *ProgramRepository) CurrentVersion(ctx context.Context, programID string
 		return 0, fmt.Errorf("current version: %w", err)
 	}
 	return version, nil
+}
+
+func (r *ProgramRepository) ActiveReferenceCount(ctx context.Context, programID string) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `SELECT active_reference_count FROM programs WHERE id = $1`, programID).Scan(&count)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, out.ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("active reference count: %w", err)
+	}
+	return count, nil
+}
+
+// CreateMigrationRequest пишет MigrationRequested в outbox в одной транзакции
+// с проверкой целевой версии.
+func (r *ProgramRepository) CreateMigrationRequest(ctx context.Context, programID string, targetVersion int, selection string, accountIDs []string) (string, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("begin migration request: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var currentVersion int
+	if err := tx.QueryRow(ctx, `SELECT version FROM programs WHERE id = $1 FOR UPDATE`, programID).Scan(&currentVersion); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", out.ErrNotFound
+		}
+		return "", fmt.Errorf("lock program for migration: %w", err)
+	}
+	if targetVersion < 1 || targetVersion > currentVersion {
+		return "", out.ErrNotFound
+	}
+
+	var lessons int
+	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM program_lessons WHERE program_id = $1 AND program_version = $2`,
+		programID, targetVersion).Scan(&lessons); err != nil {
+		return "", fmt.Errorf("count target version lessons: %w", err)
+	}
+	if lessons == 0 {
+		return "", out.ErrNotFound
+	}
+
+	jobID := uuid.NewString()
+	if err := insertOutbox(ctx, tx, "MigrationRequested", programID, map[string]any{
+		"migrationJobId":   jobID,
+		"programId":        programID,
+		"oldVersion":       currentVersion,
+		"targetVersion":    targetVersion,
+		"patientSelection": selection,
+		"accountIds":       accountIDs,
+	}); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("commit migration request: %w", err)
+	}
+	return jobID, nil
 }
 
 func (r *ProgramRepository) FindContentByHash(ctx context.Context, contentHash string) (string, bool, error) {

@@ -186,6 +186,47 @@ func (c *ProgramCommand) checkActivePatients(ctx context.Context, programID stri
 	return nil
 }
 
+func (c *ProgramCommand) MigratePatients(ctx context.Context, programID string, targetVersion int, selection string, accountIDs []string) (string, int, error) {
+	switch selection {
+	case "all":
+	case "specific":
+		if len(accountIDs) == 0 {
+			return "", 0, fmt.Errorf("%w: account_ids", ErrInvalidInput)
+		}
+	default:
+		return "", 0, fmt.Errorf("%w: patient_selection", ErrInvalidInput)
+	}
+
+	affected := 0
+	if selection == "specific" {
+		affected = len(accountIDs)
+	} else {
+		version, err := c.writer.CurrentVersion(ctx, programID)
+		if err != nil {
+			return "", 0, err
+		}
+		if c.guard != nil {
+			count, err := c.guard.ActivePatients(ctx, programID, version)
+			if err != nil {
+				return "", 0, fmt.Errorf("%w: bc4: %v", out.ErrBC4Unavailable, err)
+			}
+			affected = count
+		} else {
+			count, err := c.writer.ActiveReferenceCount(ctx, programID)
+			if err != nil {
+				return "", 0, err
+			}
+			affected = count
+		}
+	}
+
+	jobID, err := c.writer.CreateMigrationRequest(ctx, programID, targetVersion, selection, accountIDs)
+	if err != nil {
+		return "", 0, err
+	}
+	return jobID, affected, nil
+}
+
 func (c *ProgramCommand) prepareLesson(ctx context.Context, programID, lessonID string, lesson LessonUpload, requireTitle bool) (out.LessonWrite, error) {
 	if len(lesson.PDF) == 0 {
 		return out.LessonWrite{}, fmt.Errorf("%w: pdf_file is required", ErrInvalidInput)

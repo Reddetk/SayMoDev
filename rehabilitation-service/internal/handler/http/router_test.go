@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/health"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
@@ -96,6 +97,25 @@ func TestDenyProtectedWithoutAuthReturns503(t *testing.T) {
 	denyProtected(c)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("want 503, got %d", rec.Code)
+	}
+}
+
+func TestMigrationRateLimiter(t *testing.T) {
+	var limiter migrationLimiter
+	now := time.Now()
+	for i := 0; i < 10; i++ {
+		if !limiter.allow("admin", 10, time.Minute, now) {
+			t.Fatalf("request %d must be allowed", i+1)
+		}
+	}
+	if limiter.allow("admin", 10, time.Minute, now) {
+		t.Fatal("11th request within a minute must be rejected")
+	}
+	if !limiter.allow("other", 10, time.Minute, now) {
+		t.Fatal("limit is per admin")
+	}
+	if !limiter.allow("admin", 10, time.Minute, now.Add(time.Minute)) {
+		t.Fatal("new window must allow")
 	}
 }
 

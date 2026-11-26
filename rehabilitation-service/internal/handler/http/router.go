@@ -112,6 +112,7 @@ func NewRouter(deps Deps) *gin.Engine {
 		adminWrite.POST("/programs/:programId/lessons", deps.Content.AddLesson)
 		adminWrite.PATCH("/programs/:programId/lessons/:lessonId", deps.Content.UpdateLesson)
 		adminWrite.DELETE("/programs/:programId/lessons/:lessonId", deps.Content.DeleteLesson)
+		adminOnly.POST("/content/programs/:programId/migrate-patients", deps.Content.MigratePatients)
 	}
 
 	_ = adminWrite

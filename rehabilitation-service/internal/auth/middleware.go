@@ -11,6 +11,16 @@ import (
 
 const identityContextKey = "auth.identity"
 
+// IdentityFrom возвращает проверенную identity из gin-контекста.
+func IdentityFrom(c *gin.Context) (Identity, bool) {
+	value, ok := c.Get(identityContextKey)
+	if !ok {
+		return Identity{}, false
+	}
+	identity, ok := value.(Identity)
+	return identity, ok
+}
+
 // Middleware требует валидный Bearer JWT. 401 при любой ошибке (fail-closed).
 func (a *Authenticator) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {

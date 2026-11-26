@@ -17,6 +17,9 @@ type fakeWriter struct {
 	deleted      bool
 	lessonDelete bool
 	patched      out.LessonPatch
+	migrationJob string
+	migrationIDs []string
+	migrationSel string
 	existingURL  string
 	hasExisting  bool
 	createErr    error
@@ -63,6 +66,15 @@ func (w *fakeWriter) FindContentByHash(context.Context, string) (string, bool, e
 }
 
 func (w *fakeWriter) CurrentVersion(context.Context, string) (int, error) { return 2, nil }
+
+func (w *fakeWriter) ActiveReferenceCount(context.Context, string) (int, error) { return 0, nil }
+
+func (w *fakeWriter) CreateMigrationRequest(_ context.Context, _ string, _ int, selection string, ids []string) (string, error) {
+	w.migrationJob = "job-1"
+	w.migrationSel = selection
+	w.migrationIDs = ids
+	return "job-1", nil
+}
 
 type fakeUploader struct {
 	calls int
@@ -185,9 +197,36 @@ func TestDeleteGuardFailsClosedWhenBC4Unavailable(t *testing.T) {
 
 	err := command.DeleteProgram(context.Background(), "p1")
 	if !errors.Is(err, out.ErrBC4Unavailable) {
-		t.Fatalf("want ErrUnavailable, got %v", err)
+		t.Fatalf("want ErrBC4Unavailable, got %v", err)
 	}
 	if writer.deleted {
 		t.Fatal("program must not be deleted when guard is unavailable")
+	}
+}
+
+func TestMigratePatientsValidation(t *testing.T) {
+	command := NewProgramCommand(&fakeWriter{}, &fakeUploader{}, nil)
+
+	if _, _, err := command.MigratePatients(context.Background(), "p1", 2, "specific", nil); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("empty account_ids: want ErrInvalidInput, got %v", err)
+	}
+	if _, _, err := command.MigratePatients(context.Background(), "p1", 2, "unknown", nil); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("unknown selection: want ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestMigratePatientsSpecificAndAll(t *testing.T) {
+	writer := &fakeWriter{}
+	command := NewProgramCommand(writer, &fakeUploader{}, nil)
+
+	ids := []string{"11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"}
+	jobID, affected, err := command.MigratePatients(context.Background(), "p1", 2, "specific", ids)
+	if err != nil || jobID != "job-1" || affected != 2 || writer.migrationSel != "specific" {
+		t.Fatalf("specific: job=%q affected=%d sel=%q err=%v", jobID, affected, writer.migrationSel, err)
+	}
+
+	guarded := NewProgramCommand(&fakeWriter{}, &fakeUploader{}, nil, fakeGuard{count: 5})
+	if _, affected, err := guarded.MigratePatients(context.Background(), "p1", 2, "all", nil); err != nil || affected != 5 {
+		t.Fatalf("all: affected=%d err=%v", affected, err)
 	}
 }

@@ -14,7 +14,7 @@
 
 ## План реализации (пайплайн AGENTS.md)
 
-**Текущий шаг: S5 — admin write API + S3.** S1–S3 закрыты, S4 закрыт 2026-11-26 (PASS ревьюера, E2E 7/7, commit `4b6f75f`). Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
+**Текущий шаг: S8 — observability и финальный E2E.** S1–S4 закрыты, S5.1–S5.4 закрыты (ownership — contract-blocked), S5.5 **PASS** (2026-11-26), S6 закрыт, S7 закрыт (migration endpoint, E2E 202/400/404/429). Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
 
 ### AS-IS: измеренные цифры (2026-11-25, до S1)
 
@@ -73,7 +73,7 @@ sequenceDiagram
 | **S4** | Read API каталога | 0 → 3 GET (`/content/programs`, `/{id}?version`, `/{id}/lessons/{lessonId}`); L1 5min + L2 Redis 1h + singleflight; presigned URL TTL 1h / кэш 55min с перегенерацией при остатке ≤5min; 15 fixture-кейсов, handler 85.5%, E2E 7/7 | endpoints.md#bc3, classification §HTTP |
 | **S5** | Admin write API + S3 | 0 → 5 write-маршрутов (POST/PATCH/DELETE program, POST/PATCH/DELETE lesson); dedup SHA256; append не инкрементирует версию, insert_after_position инкрементирует; лимит 200; guard удаления через BC#4; ownership/403 для урока; инвалидация `programs:all`, `program:*`, `lesson:*`, `presigned_url:*` | endpoints.md#bc3, classification §1–5 |
 | **S6** | Kafka: outbox publisher + consumers | события 0 → 8 типов (`ProgramCreated`, `ProgramUpdated`, `ProgramDeleted`, `LessonAddedToProgram`, `LessonInsertedIntoProgram`, `LessonUpdated`, `LessonContentChanged`, `LessonRemovedFromProgram`); consumers 0 → 2 (`ProgramActivated`, `ProgramCompleted`), throttle 50 events/sec, idempotency TTL 7d | events.md#bc3, EventDataFlow T1/T2 |
-| **S7** | Миграция пациентов | 0 → 1 endpoint `POST /admin/content/programs/{programId}/migrate-patients`; 202 + `migration_job_id`; rate limit 10/min | endpoints.md#bc3, classification |
+| **S7** | Миграция пациентов | 0 → 1 endpoint `POST /admin/content/programs/{programId}/migrate-patients`; 202 + `migration_job_id`; rate limit 10/min; `MigrationRequested` в outbox; 400/404/429 | endpoints.md#bc3, classification |
 | **S8** | Наблюдаемость, swagger, E2E | метрик 0 → семейства из Observability.md BC#3; `/metrics` :9003; `docs/` swagger; E2E по всем контрактам BC#3 | Observability.md |
 
 Definition of done каждого шага: `go vet ./...`, `go build ./...`, `go test ./... -count=1 -race` зелёные, E2E зелёный, `docs/` swagger перегенерирован, этот план сдвинут, миграции парные.
@@ -213,6 +213,15 @@ go test -tags=e2e ./test/e2e/... -count=1
 5. **S5.5 Тесты/E2E.** CSV от чистого субагента `testdata/fixtures/write_api.csv` (36 кейсов: create/update/delete/lesson ops, 400/401/403/404/409/503), multipart E2E с реальной загрузкой PDF в s3mock и скачиванием по presigned URL, ревьюер.
 
 Гейт S5: `go build/vet/test -race`, integration-тесты репозитория, E2E по всем write-контрактам, swagger, ревьюер.
+
+**S5.5 — PASS (2026-11-26).** Узкая повторная приёмка commit `9a01235`: BC#4 fail-closed на 200 без поля счётчика, `X-Service-Token`, обязательные `BC4_URL`/`BC4_SERVICE_TOKEN` в prod, live 503 `bc4_unavailable` / 204 при `…Count:0`. Остаточные неблокирующие: breaker сбрасывается до проверки формы payload; `BC4_SERVICE_TOKEN` не проверяется `isPlaceholder`; 503-ветка покрыта только live-тестом. Ownership/403 урока остаётся contract-blocked (нет S2S endpoint в docs) — честно зафиксировано.
+
+### S7 — миграция пациентов (закрыт 2026-11-26)
+
+- `ProgramRepository.CreateMigrationRequest`: транзакция, `FOR UPDATE`, проверка `1..currentVersion` и наличия уроков целевой версии, outbox `MigrationRequested` (`migrationJobId`, `programId`, `oldVersion`, `targetVersion`, `patientSelection`, `accountIds`).
+- `ProgramCommand.MigratePatients`: `all` (affected = BC#4 active count или локальный счётчик) / `specific` (непустые UUID, affected = len); невалидный selection/пустой список → 400.
+- `POST /admin/content/programs/:programId/migrate-patients` (adminOnly): 202 `{migration_job_id, affected_patients_count}`, 400, 404 target version, 429 при >10/мин на администратора (in-process окно).
+- E2E `TestMigratePatientsEndpoint` — PASS (202 + outbox, 400 empty accounts, 404 version 99, 429 на 11-м запросе).
 
 ### S6 — Kafka outbox + consumers (закрыт 2026-11-26)
 
