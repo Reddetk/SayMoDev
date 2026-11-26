@@ -2,7 +2,10 @@ package consumer
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type fakeStore struct {
@@ -50,5 +53,79 @@ func TestHandleSkipsInvalidPayloadAndUUID(t *testing.T) {
 	}
 	if len(store.applied) != 0 {
 		t.Fatalf("invalid/unknown events must not reach store: %v", store.applied)
+	}
+}
+
+type scriptedReader struct {
+	messages []Message
+	index    atomic.Int32
+	commits  atomic.Int32
+}
+
+func (r *scriptedReader) ReadMessage(ctx context.Context) (Message, error) {
+	index := int(r.index.Load())
+	if index < len(r.messages) {
+		return r.messages[index], nil
+	}
+	<-ctx.Done()
+	return Message{}, ctx.Err()
+}
+
+func (r *scriptedReader) Commit(context.Context, Message) error {
+	r.index.Add(1)
+	r.commits.Add(1)
+	return nil
+}
+
+func (r *scriptedReader) Close() error { return nil }
+
+type retryStore struct {
+	attempts  atomic.Int32
+	failUntil int32
+}
+
+func (s *retryStore) ApplyProgramEvent(context.Context, string, string, string, int) (bool, error) {
+	attempt := s.attempts.Add(1)
+	if attempt <= s.failUntil {
+		return false, errors.New("transient db error")
+	}
+	return true, nil
+}
+
+func TestRunRetriesProcessingErrorWithoutCommitting(t *testing.T) {
+	reader := &scriptedReader{messages: []Message{{
+		Value: []byte(`{"event_id":"11111111-1111-4111-8111-111111111111","event_type":"ProgramActivated","program_id":"33333333-3333-4333-8333-333333333333"}`),
+	}}}
+	store := &retryStore{failUntil: 1}
+	worker := NewWorker(reader, store, nil)
+	worker.retryBase = time.Millisecond
+	worker.retryMax = 5 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		worker.Run(ctx)
+		close(done)
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for reader.commits.Load() == 0 {
+		select {
+		case <-deadline:
+			cancel()
+			<-done
+			t.Fatalf("consumer did not recover: attempts=%d commits=%d", store.attempts.Load(), reader.commits.Load())
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	cancel()
+	<-done
+
+	if store.attempts.Load() < 2 {
+		t.Fatalf("store must be retried, attempts=%d", store.attempts.Load())
+	}
+	if reader.commits.Load() != 1 {
+		t.Fatalf("message must be committed exactly once, commits=%d", reader.commits.Load())
 	}
 }

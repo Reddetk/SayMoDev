@@ -40,6 +40,8 @@ type App struct {
 	outbox          *outbox.Worker
 	consumer        *consumer.Worker
 	producer        *kafka.Producer
+	invalidation    *redis.Invalidator
+	query           *usecase.ProgramQuery
 	shutdownTracing func(context.Context) error
 }
 
@@ -107,6 +109,8 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 	uploader.SetMetrics(met)
 	query := usecase.NewProgramQuery(repo, presigner, redis.NewCache(rdb.Client()), log)
 	query.SetMetrics(met)
+	invalidator := redis.NewInvalidator(rdb.Client())
+	query.SetInvalidationPublisher(invalidator)
 	commands := usecase.NewProgramCommand(repo, uploader, query)
 	if bc4Guard != nil {
 		commands = usecase.NewProgramCommand(repo, uploader, query, bc4Guard)
@@ -167,6 +171,8 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 		outbox:          outboxWorker,
 		consumer:        consumerWorker,
 		producer:        producer,
+		invalidation:    invalidator,
+		query:           query,
 		shutdownTracing: shutdownTracing,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
@@ -200,6 +206,7 @@ func (a *App) Run(ctx context.Context) error {
 	errCh := make(chan error, 2)
 	go a.outbox.Run(ctx)
 	go a.consumer.Run(ctx)
+	go a.invalidation.Run(ctx, a.query.ApplyInvalidation)
 	go func() {
 		if err := a.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err

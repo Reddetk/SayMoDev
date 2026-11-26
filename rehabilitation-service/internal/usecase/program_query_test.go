@@ -234,3 +234,70 @@ func TestPresignedURLRegeneratedWhenLessThanFiveMinutesLeft(t *testing.T) {
 		t.Fatalf("fresh URL must not trigger presign, calls=%d", presigner.calls.Load())
 	}
 }
+
+type fakePublisher struct {
+	scopes []string
+	err    error
+}
+
+func (p *fakePublisher) PublishInvalidation(_ context.Context, scope string) error {
+	p.scopes = append(p.scopes, scope)
+	return p.err
+}
+
+func TestInvalidationPublishesScopeAndClearsL1(t *testing.T) {
+	query := NewProgramQuery(&fakeRepo{}, nil, nil, nil)
+	publisher := &fakePublisher{}
+	query.SetInvalidationPublisher(publisher)
+
+	query.l1.Set("program:p1:v:1", out.ProgramRecord{ProgramID: "p1"}, time.Minute)
+	query.l1.Set("lesson:p1:l1", out.LessonRecord{LessonID: "l1"}, time.Minute)
+	query.l1.Set("programs:all", []out.ProgramSummary{{ProgramID: "p1"}}, time.Minute)
+
+	if err := query.InvalidateProgram(context.Background(), "p1"); err != nil {
+		t.Fatalf("invalidate program: %v", err)
+	}
+	for _, key := range []string{"program:p1:v:1", "lesson:p1:l1", "programs:all"} {
+		if _, ok := query.l1.Get(key); ok {
+			t.Fatalf("L1 key %q must be cleared", key)
+		}
+	}
+	if len(publisher.scopes) != 1 || publisher.scopes[0] != out.InvalidationScopeProgram+"p1" {
+		t.Fatalf("scopes: %v", publisher.scopes)
+	}
+
+	if err := query.InvalidateAll(context.Background()); err != nil {
+		t.Fatalf("invalidate all: %v", err)
+	}
+	if len(publisher.scopes) != 2 || publisher.scopes[1] != out.InvalidationScopeAll {
+		t.Fatalf("scopes: %v", publisher.scopes)
+	}
+}
+
+func TestApplyInvalidationClearsOnlyLocalL1(t *testing.T) {
+	query := NewProgramQuery(&fakeRepo{}, nil, nil, nil)
+	query.l1.Set("program:p1:v:1", out.ProgramRecord{ProgramID: "p1"}, time.Minute)
+	query.l1.Set("lesson:p1:l1", out.LessonRecord{LessonID: "l1"}, time.Minute)
+	query.l1.Set("program:p2:v:1", out.ProgramRecord{ProgramID: "p2"}, time.Minute)
+	query.l1.Set("programs:all", []out.ProgramSummary{{ProgramID: "p1"}}, time.Minute)
+
+	query.ApplyInvalidation(out.InvalidationScopeProgram + "p1")
+
+	for _, key := range []string{"program:p1:v:1", "lesson:p1:l1", "programs:all"} {
+		if _, ok := query.l1.Get(key); ok {
+			t.Fatalf("L1 key %q must be cleared for p1", key)
+		}
+	}
+	if _, ok := query.l1.Get("program:p2:v:1"); !ok {
+		t.Fatal("unrelated program cache must survive")
+	}
+}
+
+func TestInvalidationPublishFailureDoesNotFailWrite(t *testing.T) {
+	query := NewProgramQuery(&fakeRepo{}, nil, nil, nil)
+	query.SetInvalidationPublisher(&fakePublisher{err: context.DeadlineExceeded})
+
+	if err := query.InvalidateAll(context.Background()); err != nil {
+		t.Fatalf("publish failure must not break write: %v", err)
+	}
+}

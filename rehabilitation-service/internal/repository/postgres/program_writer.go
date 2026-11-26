@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/port/out"
@@ -363,21 +366,47 @@ func (r *ProgramRepository) CreateMigrationRequest(ctx context.Context, programI
 		return "", out.ErrNotFound
 	}
 
-	jobID := uuid.NewString()
-	if err := insertOutbox(ctx, tx, "MigrationRequested", programID, map[string]any{
+	jobID := migrationJobID(programID, targetVersion, selection, accountIDs)
+	canonicalIDs := canonicalAccountIDs(accountIDs)
+	if err := insertOutboxWithID(ctx, tx, jobID, "MigrationRequested", programID, map[string]any{
 		"migrationJobId":   jobID,
 		"programId":        programID,
 		"oldVersion":       currentVersion,
 		"targetVersion":    targetVersion,
 		"patientSelection": selection,
-		"accountIds":       accountIDs,
+		"accountIds":       canonicalIDs,
 	}); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "outbox_pkey" {
+			// Идемпотентный повтор в те же UTC-сутки: событие уже поставлено,
+			// возвращаем тот же job id (ADR-011).
+			return jobID, nil
+		}
 		return "", err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return "", fmt.Errorf("commit migration request: %w", err)
 	}
 	return jobID, nil
+}
+
+// migrationJobID детерминирован для (program, target, selection, набор accountIds, UTC-день).
+// Совпадение id делает outbox PK естественным ключом идемпотентности без новой таблицы.
+func migrationJobID(programID string, targetVersion int, selection string, accountIDs []string) string {
+	key := strings.Join([]string{
+		programID,
+		strconv.Itoa(targetVersion),
+		selection,
+		strings.Join(canonicalAccountIDs(accountIDs), ","),
+		time.Now().UTC().Format("2006-01-02"),
+	}, "|")
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(key)).String()
+}
+
+func canonicalAccountIDs(accountIDs []string) []string {
+	canonical := append([]string(nil), accountIDs...)
+	sort.Strings(canonical)
+	return canonical
 }
 
 // ActiveReferenceTotal — сумма active_reference_count по всем программам.
@@ -488,13 +517,20 @@ RETURNING id, order_position, title, description, content_url, content_hash, cre
 }
 
 func insertOutbox(ctx context.Context, tx pgx.Tx, eventType, aggregateID string, payload map[string]any) error {
+	return insertOutboxWithID(ctx, tx, "", eventType, aggregateID, payload)
+}
+
+// insertOutboxWithID позволяет задать детерминированный id (идемпотентность);
+// пустой id означает gen_random_uuid().
+func insertOutboxWithID(ctx context.Context, tx pgx.Tx, id, eventType, aggregateID string, payload map[string]any) error {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal outbox payload: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
-INSERT INTO outbox (event_type, aggregate_id, payload) VALUES ($1, $2, $3)`,
-		eventType, aggregateID, raw); err != nil {
+INSERT INTO outbox (id, event_type, aggregate_id, payload)
+VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2, $3, $4)`,
+		id, eventType, aggregateID, raw); err != nil {
 		return fmt.Errorf("insert outbox %s: %w", eventType, err)
 	}
 	return nil

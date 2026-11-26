@@ -14,7 +14,7 @@
 
 ## План реализации (пайплайн AGENTS.md)
 
-**Текущий шаг: S8 закрыт — сервис реализован по плану.** S1–S7 закрыты, S8 закрыт 2026-11-26 (OTel→Jaeger, 24 семейства BC#3 на :9003, alert rules, финальный E2E). Единственный незакрытый пункт — ownership/403 урока: contract-blocked (в docs нет S2S endpoint BC#4 для lesson-access). Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
+**Текущий шаг: S9 закрыт — PACELC-политика BC#3 (PC/EL из ADR-001) обеспечена механизмами.** S1–S8 закрыты; S9 закрыт 2026-11-26 (pub/sub-инвалидация L1, supervised consumer, идемпотентная миграция, 2 новых алерта, ADR-011). Единственный незакрытый пункт — ownership/403 урока: contract-blocked (в docs нет S2S endpoint BC#4 для lesson-access). Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
 
 ### AS-IS: измеренные цифры (2026-11-25, до S1)
 
@@ -75,6 +75,7 @@ sequenceDiagram
 | **S6** | Kafka: outbox publisher + consumers | события 0 → 8 типов (`ProgramCreated`, `ProgramUpdated`, `ProgramDeleted`, `LessonAddedToProgram`, `LessonInsertedIntoProgram`, `LessonUpdated`, `LessonContentChanged`, `LessonRemovedFromProgram`); consumers 0 → 2 (`ProgramActivated`, `ProgramCompleted`), throttle 50 events/sec, idempotency TTL 7d | events.md#bc3, EventDataFlow T1/T2 |
 | **S7** | Миграция пациентов | 0 → 1 endpoint `POST /admin/content/programs/{programId}/migrate-patients`; 202 + `migration_job_id`; rate limit 10/min; `MigrationRequested` в outbox; 400/404/429 | endpoints.md#bc3, classification |
 | **S8** | Наблюдаемость, swagger, E2E | OTel OTLP→Jaeger (spans `rehabilitation-service/http`, trace_id в логах); 24 семейства Observability.md BC#3 на :9003; alert rules; swagger с migrate-эндпоинтом; E2E 10 тестов / ~81 s зелёный | Observability.md |
+| **S9** | Исполнение PACELC PC/EL (ADR-001) | staleness чтения 60 мин worst-case → 5 мин hard / <1 с типично; consumer «умер навсегда» → retry 1→30 с без commit offset; повтор миграции 2 job id → 1 и тот же id; alert rules 6 → 8; схема БД не менялась | adr/001, ADR-011 |
 
 Definition of done каждого шага: `go vet ./...`, `go build ./...`, `go test ./... -count=1 -race` зелёные, E2E зелёный, `docs/` swagger перегенерирован, этот план сдвинут, миграции парные.
 
@@ -223,7 +224,17 @@ go test -tags=e2e ./test/e2e/... -count=1
 - `POST /admin/content/programs/:programId/migrate-patients` (adminOnly): 202 `{migration_job_id, affected_patients_count}`, 400, 404 target version, 429 при >10/мин на администратора (in-process окно).
 - E2E `TestMigratePatientsEndpoint` — PASS (202 + outbox, 400 empty accounts, 404 version 99, 429 на 11-м запросе).
 
-### S8 — наблюдаемость, swagger, финальный E2E (закрыт 2026-11-26)
+### S9 — исполнение PACELC PC/EL (закрыт 2026-11-26)
+
+ADR: [`docs/adr/011-bc3-pacelc-enforcement.md`](docs/adr/011-bc3-pacelc-enforcement.md). Политика взята из ADR-001 (`adr/001-pacelc-choices.md`, BC#3 = PC/EL), ADR-011 фиксирует механизмы и границы.
+
+- **Кэш:** L1 60 с (было 5 мин), L2 5 мин (было 1 час) — жёсткая граница staleness 5 мин даже при потерянном сообщении. После write: локальный L1 purge → удаление L2 → publish в `bc3:cache:invalidate`; остальные реплики чистят только свой L1 (`ApplyInvalidation`). Ошибка publish не ломает write, считается `redis_write_failures_total{operation="publish"}`.
+- **Consumer:** ошибка read/process/commit больше не останавливает партицию навсегда: retry 1→30 с, offset коммитится только после успешного применения, после успеха backoff сбрасывается. Идемпотентность — `processed_events`.
+- **Миграция:** `migrationJobId = UUIDv5(program, target, selection, sorted accountIds, UTC-дата)` и он же — PK строки outbox. Повторный идентичный запрос за сутки ловится по `outbox_pkey` и возвращает тот же id; новой таблицы/миграции нет.
+- **Алерты:** добавлены `EventProcessingLagHigh` (P95 > 60 с) и `CacheInvalidationPublishFailures`; всего 8 правил.
+- **Гейт:** unit (`usecase` invalidate/apply/publish-failure, consumer retry), integration (`TestMigrationRequestIsIdempotentWithinUTCDay`), E2E (повтор миграции → тот же `migration_job_id`), `go build/vet/test -race`.
+
+### S8 - наблюдаемость, swagger, финальный E2E (закрыт 2026-11-26)
 
 - **Трейсы:** `internal/platform/telemetry` — OTLP gRPC exporter → Jaeger (`JAEGER_OTLP_ENDPOINT`; пусто = no-op exporter). Propagator W3C `tracecontext`+`baggage` ставится всегда, `tracing()` извлекает входящий `traceparent` — BC#3 продолжает трейс вызывающего, а не создаёт новый root. `trace_id` спана попадает в `http_request` лог и `X-Trace-ID`. Проверено live: Jaeger API `/api/v3/services` (порт 16687) отдаёт `rehabilitation-service`, спаны scope `rehabilitation-service/http`, тот же `trace_id` найден в строке лога сервера; unit-тест `TestTraceparentPropagatesToSpan` фиксирует совпадение с входящим `traceparent`.
 - **Метрики:** на :9003 экспортируются 24 семейства Observability.md BC#3 — business counters (`programs_total`, `lessons_total`, `program_version_increments_total`, `migration_total`, `invariant_violations_total`, `pdf_uploaded_total`, `deletion_blocked_total`), business gauges (`programs_count{is_active}`, `active_reference_count_total`, `lessons_per_program`), infra counters/gauges (`cdn_upload_total`, `circuit_breaker_state{service=cdn}`, `circuit_breaker_transitions_total`, `rate_limited_requests_total`, `singleflight_calls_total`, `redis_write_failures_total`, `cache_miss_recovery_total`, `kafka_consumer_throttled_total`, `kafka_consumer_queue_length`), histograms (`cdn_upload_latency_seconds`, `program_query_latency_seconds{cache_hit,singleflight_shared}`, `singleflight_wait_duration_seconds`, `kafka_consumer_throttled_seconds`, `event_processing_lag_seconds`).

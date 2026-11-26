@@ -53,6 +53,18 @@ func TestMigratePatientsEndpoint(t *testing.T) {
 		t.Fatalf("accepted body: %v (%s)", err, body)
 	}
 
+	// ADR-011: идентичный запрос в те же UTC-сутки идемпотентен.
+	resp, body = doJSON(t, http.MethodPost, baseURL()+"/admin/content/programs/"+created.ProgramID+"/migrate-patients", admin, payload)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("idempotent replay: want 202, got %d (%s)", resp.StatusCode, body)
+	}
+	var replay struct {
+		JobID string `json:"migration_job_id"`
+	}
+	if err := json.Unmarshal([]byte(body), &replay); err != nil || replay.JobID != accepted.JobID {
+		t.Fatalf("replay must return the same job id: %q vs %q (%s)", replay.JobID, accepted.JobID, body)
+	}
+
 	// Валидация: пустой account_ids → 400; неизвестная версия → 404.
 	payload["account_ids"] = []string{}
 	resp, body = doJSON(t, http.MethodPost, baseURL()+"/admin/content/programs/"+created.ProgramID+"/migrate-patients", admin, payload)

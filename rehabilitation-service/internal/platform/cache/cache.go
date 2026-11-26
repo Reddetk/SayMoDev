@@ -1,5 +1,5 @@
 // Package cache — L1 in-process кэш BC#3 (TTL, без внешних зависимостей).
-// goca:manual — L1+L2 стратегия docs BC#3 (5min/1h) генератором не создаётся.
+// goca:manual — L1+L2 стратегия docs BC#3: ADR-011 задаёт 60s/5min (граница staleness 5 мин).
 package cache
 
 import (

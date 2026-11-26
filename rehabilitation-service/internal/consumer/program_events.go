@@ -45,13 +45,24 @@ type Worker struct {
 	store  ProcessedStore
 	log    *zap.Logger
 	met    *metrics.Metrics
+
+	// Retry-политика для read/process/commit: offset не коммитится, пока событие
+	// не применено, поэтому retry сохраняет и отсутствие потерь, и доступность.
+	retryBase time.Duration
+	retryMax  time.Duration
 }
 
 func NewWorker(reader Reader, store ProcessedStore, log *zap.Logger) *Worker {
 	if log == nil {
 		log = zap.NewNop()
 	}
-	return &Worker{reader: reader, store: store, log: log}
+	return &Worker{
+		reader:    reader,
+		store:     store,
+		log:       log,
+		retryBase: time.Second,
+		retryMax:  30 * time.Second,
+	}
 }
 
 // SetMetrics включает event_processing_lag_seconds, kafka_consumer_* (Observability.md BC#3).
@@ -80,16 +91,17 @@ func (e event) programID() string {
 }
 
 // Run читает ProgramActivated/ProgramCompleted, throttle — 50 events/sec.
+// Любая ошибка (read/process/commit) приводит к retry с backoff, offset не
+// коммитится: событие не теряется, партиция не «умирает» навсегда (ADR-011).
 func (w *Worker) Run(ctx context.Context) {
 	defer w.reader.Close()
 	throttle := time.NewTicker(20 * time.Millisecond)
 	defer throttle.Stop()
 
+	backoff := w.retryBase
 	for {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		default:
 		}
 
 		message, err := w.reader.ReadMessage(ctx)
@@ -97,12 +109,20 @@ func (w *Worker) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			w.log.Warn("kafka read failed", zap.Error(err))
+			w.log.Warn("kafka read failed, retrying", zap.Error(err), zap.Duration("backoff", backoff))
+			if !sleepCtx(ctx, backoff) {
+				return
+			}
+			backoff = nextBackoff(backoff, w.retryMax)
 			continue
 		}
 
 		throttleStarted := time.Now()
-		<-throttle.C
+		select {
+		case <-ctx.Done():
+			return
+		case <-throttle.C:
+		}
 		if elapsed := time.Since(throttleStarted); elapsed >= 5*time.Millisecond {
 			eventType := eventTypeOf(message.Value)
 			if w.met != nil {
@@ -112,13 +132,55 @@ func (w *Worker) Run(ctx context.Context) {
 		}
 
 		if err := w.handle(ctx, message); err != nil {
-			// Останавливаем партицию, чтобы не коммитить более поздний offset и не потерять событие.
-			w.log.Error("event processing failed, stopping consumer", zap.Error(err))
+			w.log.Error("event processing failed, retrying without commit", zap.Error(err), zap.Duration("backoff", backoff))
+			if !sleepCtx(ctx, backoff) {
+				return
+			}
+			backoff = nextBackoff(backoff, w.retryMax)
+			continue
+		}
+
+		if !w.commit(ctx, message, &backoff) {
 			return
 		}
-		if err := w.reader.Commit(ctx, message); err != nil {
-			w.log.Warn("kafka commit failed", zap.Error(err))
+		backoff = w.retryBase
+	}
+}
+
+// commit ретраит фиксацию offset: если commit не прошёл, следующее чтение
+// вернёт то же событие, а идемпотентность не даст применить его дважды.
+func (w *Worker) commit(ctx context.Context, message Message, backoff *time.Duration) bool {
+	for {
+		if err := w.reader.Commit(ctx, message); err == nil {
+			return true
+		} else if ctx.Err() != nil {
+			return false
+		} else {
+			w.log.Warn("kafka commit failed, retrying", zap.Error(err), zap.Duration("backoff", *backoff))
 		}
+		if !sleepCtx(ctx, *backoff) {
+			return false
+		}
+		*backoff = nextBackoff(*backoff, w.retryMax)
+	}
+}
+
+func nextBackoff(current, maximum time.Duration) time.Duration {
+	next := current * 2
+	if next > maximum {
+		return maximum
+	}
+	return next
+}
+
+func sleepCtx(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 

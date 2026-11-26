@@ -13,3 +13,15 @@ type Cache interface {
 	Delete(ctx context.Context, keys ...string) error
 	DeletePrefix(ctx context.Context, prefix string) error
 }
+
+// CacheInvalidationPublisher — широковещательная инвалидация L1 между репликами.
+// Scope: InvalidationScopeAll либо InvalidationScopeProgram + ID.
+// Ошибка публикации не должна ломать write: кэш производный, staleness ограничен TTL.
+type CacheInvalidationPublisher interface {
+	PublishInvalidation(ctx context.Context, scope string) error
+}
+
+const (
+	InvalidationScopeAll     = "all"
+	InvalidationScopeProgram = "program:"
+)

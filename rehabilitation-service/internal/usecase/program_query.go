@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/domain"
@@ -18,8 +19,10 @@ import (
 )
 
 const (
-	l1TTL            = 5 * time.Minute
-	l2TTL            = time.Hour
+	// ADR-001: read-path BC#3 — cache-first с eventual consistency ≤ 5 min.
+	// L1 короче, чтобы потерянное pub/sub-сообщение не растягивало staleness до L2 TTL.
+	l1TTL            = time.Minute
+	l2TTL            = 5 * time.Minute
 	presignTTL       = time.Hour
 	presignCacheTTL  = 55 * time.Minute
 	presignMinRemain = 5 * time.Minute
@@ -33,13 +36,14 @@ type presignedRecord struct {
 var ErrInvalidFilter = errors.New("invalid filter")
 
 type ProgramQuery struct {
-	repo      out.ProgramRepository
-	presigner out.Presigner
-	l1        *cache.Cache
-	l2        out.Cache
-	log       *zap.Logger
-	met       *metrics.Metrics
-	group     singleflight.Group
+	repo        out.ProgramRepository
+	presigner   out.Presigner
+	l1          *cache.Cache
+	l2          out.Cache
+	invalidator out.CacheInvalidationPublisher
+	log         *zap.Logger
+	met         *metrics.Metrics
+	group       singleflight.Group
 }
 
 func NewProgramQuery(repo out.ProgramRepository, presigner out.Presigner, l2 out.Cache, log *zap.Logger) *ProgramQuery {
@@ -57,6 +61,11 @@ func NewProgramQuery(repo out.ProgramRepository, presigner out.Presigner, l2 out
 
 // SetMetrics включает program_query_latency_seconds и singleflight_* (Observability.md BC#3).
 func (q *ProgramQuery) SetMetrics(m *metrics.Metrics) { q.met = m }
+
+// SetInvalidationPublisher включает кросс-репличную инвалидацию L1 (ADR-011).
+func (q *ProgramQuery) SetInvalidationPublisher(p out.CacheInvalidationPublisher) {
+	q.invalidator = p
+}
 
 func (q *ProgramQuery) List(ctx context.Context, filter out.ProgramFilter) ([]out.ProgramSummary, error) {
 	if err := validateFilter(filter); err != nil {
@@ -303,17 +312,18 @@ func (q *ProgramQuery) l2Set(ctx context.Context, key string, value any, ttl tim
 // InvalidateAll сбрасывает L1 и общий каталог L2 после write.
 func (q *ProgramQuery) InvalidateAll(ctx context.Context) error {
 	q.l1.Clear()
-	if q.l2 == nil {
-		return nil
-	}
-	if err := q.l2.Delete(ctx, "programs:all"); err != nil {
-		q.log.Warn("invalidate programs:all failed", zap.Error(err))
-		if q.met != nil {
-			q.met.RedisWriteFailures.WithLabelValues("delete").Inc()
+	var err error
+	if q.l2 != nil {
+		if deleteErr := q.l2.Delete(ctx, "programs:all"); deleteErr != nil {
+			q.log.Warn("invalidate programs:all failed", zap.Error(deleteErr))
+			if q.met != nil {
+				q.met.RedisWriteFailures.WithLabelValues("delete").Inc()
+			}
+			err = deleteErr
 		}
-		return err
 	}
-	return nil
+	q.publishInvalidation(ctx, out.InvalidationScopeAll)
+	return err
 }
 
 // InvalidateProgram удаляет кэш программы, её уроков и presigned URL.
@@ -326,7 +336,9 @@ func (q *ProgramQuery) InvalidateProgram(ctx context.Context, programID string) 
 	for _, prefix := range prefixes {
 		q.l1.DeletePrefix(prefix)
 	}
+	q.l1.DeletePrefix("programs:all")
 	if q.l2 == nil {
+		q.publishInvalidation(ctx, out.InvalidationScopeProgram+programID)
 		return nil
 	}
 	var firstErr error
@@ -348,5 +360,40 @@ func (q *ProgramQuery) InvalidateProgram(ctx context.Context, programID string) 
 		}
 		firstErr = err
 	}
+	q.publishInvalidation(ctx, out.InvalidationScopeProgram+programID)
 	return firstErr
+}
+
+// ApplyInvalidation применяет сообщение pub/sub: чистит только локальный L1.
+// L2 уже инвалидирован писателем; удалять его здесь нельзя — можно снести более свежее значение.
+func (q *ProgramQuery) ApplyInvalidation(scope string) {
+	switch {
+	case scope == out.InvalidationScopeAll:
+		q.l1.Clear()
+	case strings.HasPrefix(scope, out.InvalidationScopeProgram):
+		programID := strings.TrimPrefix(scope, out.InvalidationScopeProgram)
+		if programID == "" {
+			return
+		}
+		for _, prefix := range []string{
+			"program:" + programID + ":",
+			"lesson:" + programID + ":",
+			"presigned_url:" + programID + ":",
+		} {
+			q.l1.DeletePrefix(prefix)
+		}
+		q.l1.DeletePrefix("programs:all")
+	}
+}
+
+func (q *ProgramQuery) publishInvalidation(ctx context.Context, scope string) {
+	if q.invalidator == nil {
+		return
+	}
+	if err := q.invalidator.PublishInvalidation(ctx, scope); err != nil {
+		q.log.Warn("cache invalidation publish failed", zap.String("scope", scope), zap.Error(err))
+		if q.met != nil {
+			q.met.RedisWriteFailures.WithLabelValues("publish").Inc()
+		}
+	}
 }

@@ -63,3 +63,23 @@ groups:
         annotations:
           summary: "BC#3 отвечает 503 на удаление"
           description: "Guard BC#4 недоступен: удаления fail-closed, проверьте BC#4."
+
+      - alert: EventProcessingLagHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(event_processing_lag_seconds_bucket[5m]))) > 60
+        for: 5m
+        labels:
+          severity: warning
+          bc: bc3
+        annotations:
+          summary: "Лаг обработки событий BC#3 > 60s"
+          description: "ADR-011: сходимость active_reference_count деградировала; проверьте consumer и BC#4."
+
+      - alert: CacheInvalidationPublishFailures
+        expr: rate(redis_write_failures_total{operation="publish"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          bc: bc3
+        annotations:
+          summary: "Pub/Sub инвалидация кэша не публикуется"
+          description: "Кросс-репличная staleness ограничена TTL 5 мин; проверьте Redis pub/sub."

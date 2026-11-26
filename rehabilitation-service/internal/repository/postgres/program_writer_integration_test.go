@@ -121,3 +121,69 @@ func TestProgramWriterIntegration(t *testing.T) {
 		t.Fatalf("lessons after delete: %d", len(afterDelete.Lessons))
 	}
 }
+
+func TestMigrationRequestIsIdempotentWithinUTCDay(t *testing.T) {
+	dsn := os.Getenv("POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("POSTGRES_DSN is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	repo := NewProgramRepository(pool)
+	created, err := repo.Create(ctx, out.CreateProgramCmd{
+		Title:       "Migration idempotency",
+		Difficulty:  "easy",
+		AphasiaType: "it_" + uuid.NewString()[:8],
+		Lessons:     []out.LessonWrite{testLesson("Урок 1"), testLesson("Урок 2")},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.DeleteProgram(context.Background(), created.ProgramID) })
+
+	first := uuid.NewString()
+	second := uuid.NewString()
+
+	jobID, err := repo.CreateMigrationRequest(ctx, created.ProgramID, 1, "specific", []string{first, second})
+	if err != nil {
+		t.Fatalf("first request: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM outbox WHERE id = $1`, jobID)
+	})
+
+	// Тот же набор в другом порядке — тот же job id (каноническая сортировка).
+	repeatID, err := repo.CreateMigrationRequest(ctx, created.ProgramID, 1, "specific", []string{second, first})
+	if err != nil {
+		t.Fatalf("repeat request: %v", err)
+	}
+	if repeatID != jobID {
+		t.Fatalf("repeat must return the same job id: %s vs %s", repeatID, jobID)
+	}
+
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM outbox WHERE id = $1`, jobID).Scan(&count); err != nil {
+		t.Fatalf("count outbox: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("duplicate request must enqueue exactly one event, got %d", count)
+	}
+
+	otherID, err := repo.CreateMigrationRequest(ctx, created.ProgramID, 1, "all", nil)
+	if err != nil {
+		t.Fatalf("other selection: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM outbox WHERE id = $1`, otherID)
+	})
+	if otherID == jobID {
+		t.Fatal("different selection must produce a different job")
+	}
+}
