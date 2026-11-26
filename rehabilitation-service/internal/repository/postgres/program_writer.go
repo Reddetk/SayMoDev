@@ -186,6 +186,21 @@ func (r *ProgramRepository) DeleteLesson(ctx context.Context, programID, lessonI
 	return nil
 }
 
+func (r *ProgramRepository) FindContentByHash(ctx context.Context, contentHash string) (string, bool, error) {
+	var contentURL string
+	err := r.pool.QueryRow(ctx, `
+SELECT content_url FROM program_lessons WHERE content_hash = $1 ORDER BY created_at DESC LIMIT 1`,
+		contentHash,
+	).Scan(&contentURL)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("find content by hash: %w", err)
+	}
+	return contentURL, true, nil
+}
+
 func lockProgram(ctx context.Context, tx pgx.Tx, programID string) (version, total int, err error) {
 	err = tx.QueryRow(ctx, `SELECT version FROM programs WHERE id = $1 FOR UPDATE`, programID).Scan(&version)
 	if errors.Is(err, pgx.ErrNoRows) {
