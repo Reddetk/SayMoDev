@@ -14,7 +14,7 @@
 
 ## План реализации (пайплайн AGENTS.md)
 
-**Текущий шаг: S5 — admin write API + S3.** S1 закрыт 2026-11-25, S2 закрыт 2026-11-25 (домен 94.5% coverage, миграции 000004–000014), S3 закрыт 2026-11-26 (PASS ревьюера), S4 — реализован и E2E-зелёный (7/7), ждёт ревьюера. Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
+**Текущий шаг: S5 — admin write API + S3.** S1–S3 закрыты, S4 закрыт 2026-11-26 (PASS ревьюера, E2E 7/7, commit `4b6f75f`). Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
 
 ### AS-IS: измеренные цифры (2026-11-25, до S1)
 
@@ -167,7 +167,7 @@ Definition of done каждого шага: `go vet ./...`, `go build ./...`, `g
 - 401-ответ больше не содержит топологию/URL: `{"error":"unauthorized","code":"expired|signature|..."}`; детали — в WARN-лог.
 - `session_id` валидируется как UUID; `iat` обязателен; L1-кэш ограничен `min(now+60s, token.exp)`; массовый отзыв (`rev++`) также запаздывает до 60s (L1 allow) — принято по ADR-003.
 
-### S4 — read API (реализован; E2E зелёный, ждёт ревьюера)
+### S4 — read API (закрыт 2026-11-26)
 
 Реализовано:
 
@@ -201,6 +201,19 @@ go test -tags=e2e ./test/e2e/... -count=1
 - **Фильтр не размножает ключи**: полный каталог кэшируется под `programs:all`, фильтры применяются в памяти; Redis-bc3 ограничен `maxmemory 256mb` + `allkeys-lru`.
 
 Ограничение S4 (переносится в S5): ownership «урок доступен пациенту» через BC#4 не реализован — сейчас JWT + existence, любой аутентифицированный пользователь получает урок; 403 из classification появится в S5 вместе с синхронным guard удаления.
+
+### S5 — admin write API + S3 (текущий шаг)
+
+Подшаги:
+
+1. **S5.1 Write-репозиторий — закрыт 2026-11-26.** pgx-транзакции: создание программы + уроков атомарно; `SELECT ... FOR UPDATE` для append/insert; insert копирует уроки в новую версию (PK по версии, `lesson_id` стабилен); update метаданных; delete с CASCADE. Интеграционный тест `TestProgramWriterIntegration` (build tag `integration`, живой PostgreSQL): create 2 урока → append (version 1) → insert after 1 (version 2, позиции 1..4, id стабильны) → rename → update lesson → delete lesson → get v1/v2. **PASS**.
+2. **S5.2 S3 upload + дедупликация.** `PutObject` до транзакции, SHA256 содержимого, переиспользование `content_url` при совпадении hash, circuit breaker (5 failures → 30s), лимит 100 MB.
+3. **S5.3 Usecases + multipart handlers.** `POST/PATCH/DELETE /content/programs`, `POST/PATCH/DELETE /content/programs/:id/lessons`; RBAC administrator; 400/404/409/503; append без версии, insert_after_position требует `K < total`, лимит 200; инвалидация `programs:all`, `program:*`, `lesson:*`, `presigned_url:*`.
+4. **S5.4 Deletion guard BC#4.** `GET $BC4_URL/admin/progress/program/:id/version/:v/active-patients` с circuit breaker; count>0 → 409 `program_has_active_patients`; lesson ownership/403 для пациента (закрывает ограничение S4).
+5. **S5.5 Тесты/E2E.** CSV от чистого субагента `testdata/fixtures/write_api.csv` (36 кейсов: create/update/delete/lesson ops, 400/401/403/404/409/503), multipart E2E с реальной загрузкой PDF в s3mock и скачиванием по presigned URL, ревьюер.
+
+Гейт S5: `go build/vet/test -race`, integration-тесты репозитория, E2E по всем write-контрактам, swagger, ревьюер.
+
 
 
 
