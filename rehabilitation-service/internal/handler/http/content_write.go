@@ -172,8 +172,10 @@ func (h *ContentHandler) CreateProgram(c *gin.Context) {
 		h.Metrics.ProgramsTotal.WithLabelValues("created", program.diff(), program.aphasia()).Inc()
 		h.Metrics.ProgramsCount.WithLabelValues(program.diff(), program.aphasia(), "true").Inc()
 		h.Metrics.LessonsPerProgram.WithLabelValues(record.ProgramID).Set(float64(len(record.Lessons)))
-		for range uploads {
-			h.Metrics.PDFUploaded.WithLabelValues("application/pdf").Inc()
+		for _, upload := range uploads {
+			if len(upload.PDF) > 0 {
+				h.Metrics.PDFUploaded.WithLabelValues("application/pdf").Inc()
+			}
 		}
 	}
 }
@@ -304,14 +306,15 @@ func (h *ContentHandler) AddLesson(c *gin.Context) {
 		"updatedAt": record.UpdatedAt, "version": version,
 	})
 	if h.Metrics != nil {
-		h.Metrics.LessonsTotal.WithLabelValues("added").Inc()
 		h.Metrics.PDFUploaded.WithLabelValues("application/pdf").Inc()
 		h.Metrics.LessonsPerProgram.WithLabelValues(programID).Inc()
 		if insertAfter != nil {
+			// Insert — это version churn: копия версии + сдвиг позиций.
 			h.Metrics.LessonsTotal.WithLabelValues("inserted").Inc()
 			h.Metrics.ProgramVersionIncrements.WithLabelValues("lesson_inserted").Inc()
 		} else {
-			h.Metrics.ProgramVersionIncrements.WithLabelValues("lesson_added").Inc()
+			// Append не меняет version (S5-контракт), поэтому version-метрику не трогаем.
+			h.Metrics.LessonsTotal.WithLabelValues("added").Inc()
 		}
 	}
 }

@@ -7,14 +7,20 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
 
 // Init настраивает глобальный TracerProvider и возвращает shutdown-функцию.
-// Пустой endpoint = no-op (локальный запуск без Jaeger).
+// Пустой endpoint = no-op exporter, но propagator всё равно ставится: иначе
+// входящий traceparent не извлекается и X-Trace-ID перестаёт его отражать.
 func Init(ctx context.Context, endpoint, service, version string) (func(context.Context) error, error) {
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
 	if endpoint == "" {
 		return func(context.Context) error { return nil }, nil
 	}

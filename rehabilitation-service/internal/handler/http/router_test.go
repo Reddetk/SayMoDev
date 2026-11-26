@@ -15,6 +15,9 @@ import (
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/health"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 type fakeProbe struct {
@@ -130,6 +133,33 @@ func TestTraceIDFromTraceparent(t *testing.T) {
 
 	if got := rec.Header().Get("X-Trace-ID"); got != traceID {
 		t.Fatalf("X-Trace-ID: want %q, got %q", traceID, got)
+	}
+}
+
+func TestTraceparentPropagatesToSpan(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	previousPropagator := otel.GetTextMapPropagator()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() {
+		_ = provider.Shutdown(context.Background())
+		otel.SetTracerProvider(previousProvider)
+		otel.SetTextMapPropagator(previousPropagator)
+	})
+
+	router := newTestRouter()
+	const traceID = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("traceparent", "00-"+traceID+"-00f067aa0ba902b7-01")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	// С включённым провайдером X-Trace-ID берётся из span context: он обязан
+	// совпасть с входящим traceparent, иначе BC#3 начинает новый root-трейс.
+	if got := rec.Header().Get("X-Trace-ID"); got != traceID {
+		t.Fatalf("X-Trace-ID: want inbound %q, got %q", traceID, got)
 	}
 }
 

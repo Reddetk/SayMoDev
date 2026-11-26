@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -22,11 +23,14 @@ type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
 
-// tracing создаёт OTel-спан на HTTP-запрос; trace_id уходит в логи и заголовок.
+// tracing создаёт OTel-спан на HTTP-запрос. Входящий W3C traceparent извлекается,
+// поэтому BC#3 продолжает трейс вызывающего, а не начинает новый root.
 func tracing(service string) gin.HandlerFunc {
 	tracer := otel.Tracer(service + "/http")
+	propagator := otel.GetTextMapPropagator()
 	return func(c *gin.Context) {
-		ctx, span := tracer.Start(c.Request.Context(), c.Request.Method+" "+c.FullPath())
+		parent := propagator.Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
+		ctx, span := tracer.Start(parent, c.Request.Method+" "+c.FullPath())
 		defer span.End()
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
