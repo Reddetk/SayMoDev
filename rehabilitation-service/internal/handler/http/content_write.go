@@ -232,6 +232,13 @@ func (h *ContentHandler) DeleteProgram(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_program_id"})
 		return
 	}
+	// Классификатор нужен для decrement programs_count; читаем до удаления (best-effort).
+	var deletedDifficulty, deletedAphasia string
+	if h.Metrics != nil {
+		if record, err := h.Query.Get(c.Request.Context(), programID, 0); err == nil {
+			deletedDifficulty, deletedAphasia = record.Difficulty, record.AphasiaType
+		}
+	}
 	if err := h.Commands.DeleteProgram(c.Request.Context(), programID); err != nil {
 		if errors.Is(err, out.ErrConflict) && h.Metrics != nil {
 			h.Metrics.DeletionBlocked.WithLabelValues("program", "active_references").Inc()
@@ -240,9 +247,9 @@ func (h *ContentHandler) DeleteProgram(c *gin.Context) {
 		return
 	}
 	if h.Metrics != nil {
-		h.Metrics.ProgramsTotal.WithLabelValues("deleted", "", "").Inc()
-		if record, err := h.Query.Get(c.Request.Context(), programID, 0); err == nil {
-			h.Metrics.ProgramsCount.WithLabelValues(record.Difficulty, record.AphasiaType, "true").Dec()
+		h.Metrics.ProgramsTotal.WithLabelValues("deleted", deletedDifficulty, deletedAphasia).Inc()
+		if deletedDifficulty != "" || deletedAphasia != "" {
+			h.Metrics.ProgramsCount.WithLabelValues(deletedDifficulty, deletedAphasia, "true").Dec()
 		}
 		h.Metrics.LessonsPerProgram.DeleteLabelValues(programID)
 	}
