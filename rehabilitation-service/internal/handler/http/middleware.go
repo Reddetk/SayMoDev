@@ -27,8 +27,10 @@ func (discard) Write(p []byte) (int, error) { return len(p), nil }
 // поэтому BC#3 продолжает трейс вызывающего, а не начинает новый root.
 func tracing(service string) gin.HandlerFunc {
 	tracer := otel.Tracer(service + "/http")
-	propagator := otel.GetTextMapPropagator()
 	return func(c *gin.Context) {
+		// Пропагатор читается на каждый запрос: порядок Init/NewRouter не должен
+		// молча отключать извлечение traceparent.
+		propagator := otel.GetTextMapPropagator()
 		parent := propagator.Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
 		ctx, span := tracer.Start(parent, c.Request.Method+" "+c.FullPath())
 		defer span.End()

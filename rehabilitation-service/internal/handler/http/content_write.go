@@ -306,7 +306,9 @@ func (h *ContentHandler) AddLesson(c *gin.Context) {
 		"updatedAt": record.UpdatedAt, "version": version,
 	})
 	if h.Metrics != nil {
-		h.Metrics.PDFUploaded.WithLabelValues("application/pdf").Inc()
+		if len(pdf) > 0 {
+			h.Metrics.PDFUploaded.WithLabelValues("application/pdf").Inc()
+		}
 		h.Metrics.LessonsPerProgram.WithLabelValues(programID).Inc()
 		if insertAfter != nil {
 			// Insert — это version churn: копия версии + сдвиг позиций.
