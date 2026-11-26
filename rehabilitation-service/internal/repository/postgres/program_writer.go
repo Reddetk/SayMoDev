@@ -221,6 +221,18 @@ func (r *ProgramRepository) DeleteLesson(ctx context.Context, programID, lessonI
 	return nil
 }
 
+func (r *ProgramRepository) CurrentVersion(ctx context.Context, programID string) (int, error) {
+	var version int
+	err := r.pool.QueryRow(ctx, `SELECT version FROM programs WHERE id = $1`, programID).Scan(&version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, out.ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("current version: %w", err)
+	}
+	return version, nil
+}
+
 func (r *ProgramRepository) FindContentByHash(ctx context.Context, contentHash string) (string, bool, error) {
 	var contentURL string
 	err := r.pool.QueryRow(ctx, `

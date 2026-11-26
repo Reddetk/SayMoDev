@@ -38,10 +38,15 @@ type ProgramCommand struct {
 	writer   out.ProgramWriter
 	uploader PDFUploader
 	cache    CacheInvalidator
+	guard    out.ActivePatientsReader
 }
 
-func NewProgramCommand(writer out.ProgramWriter, uploader PDFUploader, cache CacheInvalidator) *ProgramCommand {
-	return &ProgramCommand{writer: writer, uploader: uploader, cache: cache}
+func NewProgramCommand(writer out.ProgramWriter, uploader PDFUploader, cache CacheInvalidator, guards ...out.ActivePatientsReader) *ProgramCommand {
+	var guard out.ActivePatientsReader
+	if len(guards) > 0 {
+		guard = guards[0]
+	}
+	return &ProgramCommand{writer: writer, uploader: uploader, cache: cache, guard: guard}
 }
 
 func (c *ProgramCommand) Create(ctx context.Context, title, difficulty, aphasiaType string, lessons []LessonUpload) (out.ProgramRecord, error) {
@@ -108,6 +113,9 @@ func (c *ProgramCommand) Rename(ctx context.Context, programID, title string) er
 }
 
 func (c *ProgramCommand) DeleteProgram(ctx context.Context, programID string) error {
+	if err := c.checkActivePatients(ctx, programID); err != nil {
+		return err
+	}
 	if err := c.writer.DeleteProgram(ctx, programID); err != nil {
 		return err
 	}
@@ -141,10 +149,33 @@ func (c *ProgramCommand) UpdateLesson(ctx context.Context, programID, lessonID s
 }
 
 func (c *ProgramCommand) DeleteLesson(ctx context.Context, programID, lessonID string) error {
+	if err := c.checkActivePatients(ctx, programID); err != nil {
+		return err
+	}
 	if err := c.writer.DeleteLesson(ctx, programID, lessonID); err != nil {
 		return err
 	}
 	c.invalidateProgram(ctx, programID)
+	return nil
+}
+
+// checkActivePatients — BC#4 deletion guard. Недоступность BC#4 = fail-closed 503,
+// наличие активных пациентов = 409. Без guard (local) остаётся локальный счётчик.
+func (c *ProgramCommand) checkActivePatients(ctx context.Context, programID string) error {
+	if c.guard == nil {
+		return nil
+	}
+	version, err := c.writer.CurrentVersion(ctx, programID)
+	if err != nil {
+		return err
+	}
+	count, err := c.guard.ActivePatients(ctx, programID, version)
+	if err != nil {
+		return fmt.Errorf("%w: bc4: %v", out.ErrUnavailable, err)
+	}
+	if count > 0 {
+		return fmt.Errorf("active_patients=%d: %w", count, out.ErrConflict)
+	}
 	return nil
 }
 

@@ -52,4 +52,5 @@ type ProgramWriter interface {
 	DeleteLesson(ctx context.Context, programID, lessonID string) error
 	// FindContentByHash — дедупликация PDF: существующий content_url для SHA-256.
 	FindContentByHash(ctx context.Context, contentHash string) (string, bool, error)
+	CurrentVersion(ctx context.Context, programID string) (int, error)
 }

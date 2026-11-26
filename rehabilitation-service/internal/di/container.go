@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/adapter/bc4"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/adapter/kafka"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/adapter/postgres"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/adapter/redis"
@@ -82,11 +83,19 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 		)
 	}
 
+	var bc4Guard *bc4.Client
+	if cfg.BC4URL != "" {
+		bc4Guard = bc4.New(cfg.BC4URL)
+	}
+
 	repo := repositorypostgres.NewProgramRepository(pg.Pool())
 	presigner := s3.NewPresigner(s3probe.Client(), cfg.S3Bucket)
 	uploader := s3.NewUploader(s3probe.Client(), cfg.S3Bucket, cfg.S3Endpoint)
 	query := usecase.NewProgramQuery(repo, presigner, redis.NewCache(rdb.Client()), log)
 	commands := usecase.NewProgramCommand(repo, uploader, query)
+	if bc4Guard != nil {
+		commands = usecase.NewProgramCommand(repo, uploader, query, bc4Guard)
+	}
 	content := &handlerhttp.ContentHandler{Query: query, Commands: commands, Log: log}
 
 	router := handlerhttp.NewRouter(handlerhttp.Deps{

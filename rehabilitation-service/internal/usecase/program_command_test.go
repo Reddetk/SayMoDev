@@ -62,6 +62,8 @@ func (w *fakeWriter) FindContentByHash(context.Context, string) (string, bool, e
 	return w.existingURL, w.hasExisting, nil
 }
 
+func (w *fakeWriter) CurrentVersion(context.Context, string) (int, error) { return 2, nil }
+
 type fakeUploader struct {
 	calls int
 }
@@ -81,6 +83,15 @@ func (i *fakeInvalidator) InvalidateAll(context.Context) error { i.all++; return
 func (i *fakeInvalidator) InvalidateProgram(_ context.Context, programID string) error {
 	i.programID = programID
 	return nil
+}
+
+type fakeGuard struct {
+	count int
+	err   error
+}
+
+func (g fakeGuard) ActivePatients(context.Context, string, int) (int, error) {
+	return g.count, g.err
 }
 
 func pdfBytes(size int) []byte {
@@ -152,5 +163,31 @@ func TestDeleteInvalidatesCaches(t *testing.T) {
 	}
 	if invalidator.programID != "p1" || invalidator.all != 1 {
 		t.Fatalf("invalidate: program=%q all=%d", invalidator.programID, invalidator.all)
+	}
+}
+
+func TestDeleteGuardBlocksActivePatients(t *testing.T) {
+	writer := &fakeWriter{}
+	command := NewProgramCommand(writer, &fakeUploader{}, nil, fakeGuard{count: 5})
+
+	err := command.DeleteProgram(context.Background(), "p1")
+	if !errors.Is(err, out.ErrConflict) {
+		t.Fatalf("want ErrConflict, got %v", err)
+	}
+	if writer.deleted {
+		t.Fatal("program must not be deleted while patients are active")
+	}
+}
+
+func TestDeleteGuardFailsClosedWhenBC4Unavailable(t *testing.T) {
+	writer := &fakeWriter{}
+	command := NewProgramCommand(writer, &fakeUploader{}, nil, fakeGuard{err: errors.New("dial tcp")})
+
+	err := command.DeleteProgram(context.Background(), "p1")
+	if !errors.Is(err, out.ErrUnavailable) {
+		t.Fatalf("want ErrUnavailable, got %v", err)
+	}
+	if writer.deleted {
+		t.Fatal("program must not be deleted when guard is unavailable")
 	}
 }
