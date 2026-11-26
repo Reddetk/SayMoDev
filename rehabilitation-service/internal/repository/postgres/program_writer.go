@@ -3,8 +3,10 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/port/out"
 	"github.com/jackc/pgx/v5"
@@ -45,6 +47,14 @@ RETURNING id, title, difficulty, aphasia_type, version, created_at, updated_at`,
 		record.Lessons = append(record.Lessons, inserted)
 	}
 
+	if err := insertOutbox(ctx, tx, "ProgramCreated", record.ProgramID, map[string]any{
+		"programId": record.ProgramID, "title": record.Title,
+		"difficulty": record.Difficulty, "aphasiaType": record.AphasiaType,
+		"version": record.Version, "created_at": time.Now().UTC(),
+	}); err != nil {
+		return out.ProgramRecord{}, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return out.ProgramRecord{}, fmt.Errorf("commit create program: %w", err)
 	}
@@ -69,6 +79,12 @@ func (r *ProgramRepository) AppendLesson(ctx context.Context, programID string, 
 	inserted, err := insertLesson(ctx, tx, programID, version, total+1, lesson)
 	if err != nil {
 		return out.LessonRecord{}, 0, mapWriteError("append lesson", err)
+	}
+	if err := insertOutbox(ctx, tx, "LessonAddedToProgram", programID, map[string]any{
+		"programId": programID, "lessonId": inserted.LessonID, "position": inserted.OrderPosition,
+		"lessonType": "pdf", "newTotalLessons": total + 1, "contentHash": inserted.ContentHash,
+	}); err != nil {
+		return out.LessonRecord{}, 0, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return out.LessonRecord{}, 0, fmt.Errorf("commit append lesson: %w", err)
@@ -118,6 +134,13 @@ WHERE program_id = $1 AND program_version = $4`,
 	if err != nil {
 		return out.LessonRecord{}, 0, mapWriteError("insert lesson", err)
 	}
+	if err := insertOutbox(ctx, tx, "LessonInsertedIntoProgram", programID, map[string]any{
+		"programId": programID, "lessonId": inserted.LessonID, "position": inserted.OrderPosition,
+		"oldVersion": version, "newVersion": newVersion,
+		"totalLessonsOld": total, "newTotalLessons": total + 1,
+	}); err != nil {
+		return out.LessonRecord{}, 0, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return out.LessonRecord{}, 0, fmt.Errorf("commit insert lesson: %w", err)
 	}
@@ -152,6 +175,11 @@ func (r *ProgramRepository) DeleteProgram(ctx context.Context, programID string)
 	}
 	if active > 0 {
 		return fmt.Errorf("active_patients=%d: %w", active, out.ErrConflict)
+	}
+	if err := insertOutbox(ctx, tx, "ProgramDeleted", programID, map[string]any{
+		"programId": programID, "deleted_at": time.Now().UTC(),
+	}); err != nil {
+		return err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM programs WHERE id = $1`, programID); err != nil {
 		return fmt.Errorf("delete program: %w", err)
@@ -214,6 +242,11 @@ func (r *ProgramRepository) DeleteLesson(ctx context.Context, programID, lessonI
 	}
 	if tag.RowsAffected() == 0 {
 		return out.ErrNotFound
+	}
+	if err := insertOutbox(ctx, tx, "LessonRemovedFromProgram", programID, map[string]any{
+		"programId": programID, "lessonId": lessonID,
+	}); err != nil {
+		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit delete lesson: %w", err)
@@ -279,6 +312,19 @@ RETURNING id, order_position, title, description, content_url, content_hash, cre
 	).Scan(&record.LessonID, &record.OrderPosition, &record.Title, &record.Description,
 		&record.ContentURL, &record.ContentHash, &record.CreatedAt, &record.UpdatedAt)
 	return record, err
+}
+
+func insertOutbox(ctx context.Context, tx pgx.Tx, eventType, aggregateID string, payload map[string]any) error {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal outbox payload: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO outbox (event_type, aggregate_id, payload) VALUES ($1, $2, $3)`,
+		eventType, aggregateID, raw); err != nil {
+		return fmt.Errorf("insert outbox %s: %w", eventType, err)
+	}
+	return nil
 }
 
 func mapWriteError(op string, err error) error {

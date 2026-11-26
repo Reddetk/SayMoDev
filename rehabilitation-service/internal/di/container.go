@@ -14,8 +14,10 @@ import (
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/adapter/redis"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/adapter/s3"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/auth"
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/consumer"
 	handlerhttp "github.com/Reddetk/SayMoDev/rehabilitation-service/internal/handler/http"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/health"
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/outbox"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/metrics"
 	repositorypostgres "github.com/Reddetk/SayMoDev/rehabilitation-service/internal/repository/postgres"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/usecase"
@@ -33,6 +35,9 @@ type App struct {
 	postgres   *postgres.Probe
 	redis      *redis.Probe
 	redisBlack *redis.Probe
+	outbox     *outbox.Worker
+	consumer   *consumer.Worker
+	producer   *kafka.Producer
 }
 
 // New собирает приложение. Ошибка возвращается только при невалидной конфигурации
@@ -98,6 +103,14 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 	}
 	content := &handlerhttp.ContentHandler{Query: query, Commands: commands, Log: log}
 
+	producer := kafka.NewProducer(cfg.KafkaBrokers)
+	outboxWorker := outbox.NewWorker(repositorypostgres.NewOutboxStore(pg.Pool()), producer, "saymo.content.events", log)
+	consumerWorker := consumer.NewWorker(
+		kafka.NewConsumer(cfg.KafkaBrokers, "bc3-content", "saymo.progress.events"),
+		repositorypostgres.NewProgramEventStore(pg.Pool()),
+		log,
+	)
+
 	router := handlerhttp.NewRouter(handlerhttp.Deps{
 		Health:        checker,
 		Metrics:       met,
@@ -116,6 +129,9 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 		postgres:   pg,
 		redis:      rdb,
 		redisBlack: redisBlack,
+		outbox:     outboxWorker,
+		consumer:   consumerWorker,
+		producer:   producer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
 			Handler:           router,
@@ -146,6 +162,8 @@ func (a *App) Run(ctx context.Context) error {
 	)
 
 	errCh := make(chan error, 2)
+	go a.outbox.Run(ctx)
+	go a.consumer.Run(ctx)
 	go func() {
 		if err := a.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
@@ -184,5 +202,6 @@ func (a *App) close() {
 		_ = a.redisBlack.Close()
 	}
 	_ = a.redis.Close()
+	_ = a.producer.Close()
 	_ = a.log.Sync()
 }

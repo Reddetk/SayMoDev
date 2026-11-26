@@ -214,6 +214,13 @@ go test -tags=e2e ./test/e2e/... -count=1
 
 Гейт S5: `go build/vet/test -race`, integration-тесты репозитория, E2E по всем write-контрактам, swagger, ревьюер.
 
+### S6 — Kafka outbox + consumers (реализовано, live-consumer не подтверждён)
+
+- **Outbox publisher** (`internal/outbox/worker.go`): пачки по 100, `FetchUnsent → Publish → MarkSent`; частичный сбой не помечает неотправленные. Live: после создания топика `saymo.content.events` воркер отправил 9 событий, `sent_at` заполнен (`outbox batch sent count=9`).
+- **Producers в транзакциях**: `ProgramCreated`, `LessonAddedToProgram`, `LessonInsertedIntoProgram`, `ProgramDeleted`, `LessonRemovedFromProgram` пишутся в `outbox` в той же транзакции, что и доменные изменения.
+- **Consumer** (`internal/consumer/program_events.go`): `ProgramActivated` → +1, `ProgramCompleted` → −1 (`GREATEST(0, …)`), throttle 20ms (50/s), идемпотентность через `processed_events` внутри транзакции; неизвестные/битые события пропускаются в лог.
+- **Проверено unit-тестами**: `internal/outbox` (publish+mark, partial failure), `internal/consumer` (delta +1/−1, дедупликация на уровне store-контракта). Интеграционный store `ApplyProgramEvent` покрыт SQL-логикой, но live-проверка consumption не завершена: после публикации `ProgramActivated` в `saymo.progress.events` `processed_events` остался пуст — consumer в运行时 не подтверждён (топик создан после старта воркера, требует перезапуска/диагностики).
+
 
 
 
