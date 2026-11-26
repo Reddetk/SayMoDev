@@ -89,6 +89,11 @@ func doJSON(t *testing.T, method, url, bearer string, body any) (*http.Response,
 
 func doMultipart(t *testing.T, url, bearer string, fields map[string]string, files map[string][]byte) (*http.Response, string) {
 	t.Helper()
+	return doMultipartMethod(t, http.MethodPost, url, bearer, fields, files)
+}
+
+func doMultipartMethod(t *testing.T, method, url, bearer string, fields map[string]string, files map[string][]byte) (*http.Response, string) {
+	t.Helper()
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
 	for name, value := range fields {
@@ -109,7 +114,7 @@ func doMultipart(t *testing.T, url, bearer string, fields map[string]string, fil
 		t.Fatalf("close multipart: %v", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, &buffer)
+	req, err := http.NewRequest(method, url, &buffer)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}

@@ -88,7 +88,7 @@ func (r *ProgramRepository) InsertLessonAfter(ctx context.Context, programID str
 		return out.LessonRecord{}, 0, err
 	}
 	if after < 1 || after >= total {
-		return out.LessonRecord{}, 0, fmt.Errorf("insert_after_position: %w", out.ErrConflict)
+		return out.LessonRecord{}, 0, fmt.Errorf("insert_after_position: %w", out.ErrInvalidPosition)
 	}
 	if total >= maxLessons {
 		return out.LessonRecord{}, 0, fmt.Errorf("lessons limit: %w", out.ErrConflict)
@@ -272,6 +272,9 @@ RETURNING id, order_position, title, description, content_url, content_hash, cre
 func mapWriteError(op string, err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if pgErr.ConstraintName == "uniq_programs_classifier" {
+			return fmt.Errorf("classifier: %w", out.ErrConflict)
+		}
 		return fmt.Errorf("%s: %w", op, out.ErrConflict)
 	}
 	return fmt.Errorf("%s: %w", op, err)

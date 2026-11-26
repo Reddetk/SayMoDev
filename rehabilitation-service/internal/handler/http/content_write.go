@@ -19,10 +19,26 @@ const maxPDFBytes = 100 << 20
 
 type programForm struct {
 	Title      string `json:"title"`
+	Difficulty string `json:"difficulty"`
+	Aphasia    string `json:"aphasiaType"`
 	Classifier struct {
 		Difficulty  string `json:"difficulty"`
 		AphasiaType string `json:"aphasiaType"`
 	} `json:"classifier"`
+}
+
+func (p programForm) diff() string {
+	if p.Classifier.Difficulty != "" {
+		return p.Classifier.Difficulty
+	}
+	return p.Difficulty
+}
+
+func (p programForm) aphasia() string {
+	if p.Classifier.AphasiaType != "" {
+		return p.Classifier.AphasiaType
+	}
+	return p.Aphasia
 }
 
 type lessonForm struct {
@@ -63,7 +79,19 @@ func (h *ContentHandler) writeError(c *gin.Context, err error) {
 	case errors.Is(err, out.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
 	case errors.Is(err, out.ErrConflict):
-		c.JSON(http.StatusConflict, gin.H{"error": "conflict"})
+		code := "conflict"
+		message := err.Error()
+		switch {
+		case strings.Contains(message, "active_patients"):
+			code = "active_patients"
+		case strings.Contains(message, "classifier"):
+			code = "classifier_exists"
+		case strings.Contains(message, "lessons"):
+			code = "lessons"
+		}
+		c.JSON(http.StatusConflict, gin.H{"error": code})
+	case errors.Is(err, out.ErrInvalidPosition):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "insert_after_position"})
 	case errors.Is(err, out.ErrUnavailable):
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "s3_unavailable"})
 	case errors.Is(err, usecase.ErrInvalidInput):
@@ -112,7 +140,7 @@ func (h *ContentHandler) CreateProgram(c *gin.Context) {
 		uploads = append(uploads, usecase.LessonUpload{Title: lesson.Title, Description: lesson.Description, PDF: pdf})
 	}
 
-	record, err := h.Commands.Create(c.Request.Context(), program.Title, program.Classifier.Difficulty, program.Classifier.AphasiaType, uploads)
+	record, err := h.Commands.Create(c.Request.Context(), program.Title, program.diff(), program.aphasia(), uploads)
 	if err != nil {
 		h.writeError(c, err)
 		return

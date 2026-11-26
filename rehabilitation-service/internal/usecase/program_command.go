@@ -59,7 +59,7 @@ func (c *ProgramCommand) Create(ctx context.Context, title, difficulty, aphasiaT
 	}
 
 	for _, lesson := range lessons {
-		prepared, err := c.prepareLesson(ctx, programID, uuid.NewString(), lesson)
+		prepared, err := c.prepareLesson(ctx, programID, uuid.NewString(), lesson, true)
 		if err != nil {
 			return out.ProgramRecord{}, err
 		}
@@ -75,7 +75,7 @@ func (c *ProgramCommand) Create(ctx context.Context, title, difficulty, aphasiaT
 }
 
 func (c *ProgramCommand) AddLesson(ctx context.Context, programID string, lesson LessonUpload, insertAfter *int) (out.LessonRecord, int, error) {
-	prepared, err := c.prepareLesson(ctx, programID, uuid.NewString(), lesson)
+	prepared, err := c.prepareLesson(ctx, programID, uuid.NewString(), lesson, true)
 	if err != nil {
 		return out.LessonRecord{}, 0, err
 	}
@@ -122,7 +122,7 @@ func (c *ProgramCommand) UpdateLesson(ctx context.Context, programID, lessonID s
 	}
 
 	if pdf != nil {
-		prepared, err := c.prepareLesson(ctx, programID, lessonID, LessonUpload{PDF: pdf})
+		prepared, err := c.prepareLesson(ctx, programID, lessonID, LessonUpload{PDF: pdf}, false)
 		if err != nil {
 			return out.LessonRecord{}, err
 		}
@@ -148,14 +148,14 @@ func (c *ProgramCommand) DeleteLesson(ctx context.Context, programID, lessonID s
 	return nil
 }
 
-func (c *ProgramCommand) prepareLesson(ctx context.Context, programID, lessonID string, lesson LessonUpload) (out.LessonWrite, error) {
+func (c *ProgramCommand) prepareLesson(ctx context.Context, programID, lessonID string, lesson LessonUpload, requireTitle bool) (out.LessonWrite, error) {
 	if len(lesson.PDF) == 0 {
 		return out.LessonWrite{}, fmt.Errorf("%w: pdf_file is required", ErrInvalidInput)
 	}
 	if len(lesson.PDF) > maxPDFBytes {
 		return out.LessonWrite{}, fmt.Errorf("%w: pdf_file exceeds 100 MB", ErrInvalidInput)
 	}
-	if strings.TrimSpace(lesson.Title) == "" {
+	if requireTitle && strings.TrimSpace(lesson.Title) == "" {
 		return out.LessonWrite{}, fmt.Errorf("%w: title", ErrInvalidInput)
 	}
 	if !bytes.HasPrefix(lesson.PDF, []byte("%PDF")) {

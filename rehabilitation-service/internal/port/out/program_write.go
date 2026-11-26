@@ -8,6 +8,7 @@ import (
 
 var ErrConflict = errors.New("conflict")
 var ErrUnavailable = errors.New("dependency unavailable")
+var ErrInvalidPosition = errors.New("invalid insert position")
 
 // LessonWrite — поля нового/обновляемого урока.
 type LessonWrite struct {

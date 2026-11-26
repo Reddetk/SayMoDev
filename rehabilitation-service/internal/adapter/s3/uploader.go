@@ -82,7 +82,7 @@ func (u *Uploader) UploadPDF(ctx context.Context, programID, lessonID string, co
 	})
 	if err != nil {
 		u.breaker.failure()
-		return "", "", 0, fmt.Errorf("s3 put object: %w", err)
+		return "", "", 0, fmt.Errorf("s3 put object: %w: %v", out.ErrUnavailable, err)
 	}
 	u.breaker.success()
 
