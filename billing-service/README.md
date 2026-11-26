@@ -294,7 +294,7 @@ go run ./cmd/devtoken -sub <uuid> -role patient|administrator
 
 ## Диаграммы
 
-Сгенерированы tech-writer-субагентом через skill `diagram-design`, standalone SVG:
+Standalone SVG, отражают текущую реализацию:
 
 | Файл | Содержание |
 |------|------------|
