@@ -214,6 +214,9 @@ func (c *Config) validate() error {
 	if err != nil || (ep.Scheme != "http" && ep.Scheme != "https") || ep.Host == "" {
 		return &ValidationError{"S3_ENDPOINT", "must be an http(s) URL with host"}
 	}
+	if c.Env == EnvProd && ep.Scheme != "https" {
+		return &ValidationError{"S3_ENDPOINT", "must use https in prod (presigned PDF URLs)"}
+	}
 	if c.S3Bucket == "" {
 		return &ValidationError{"S3_BUCKET", "is required"}
 	}

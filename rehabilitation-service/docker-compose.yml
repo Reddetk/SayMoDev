@@ -28,7 +28,7 @@ services:
   redis-bc3:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
       - "${REDIS_PORT:-6381}:6379"
     healthcheck:
@@ -127,7 +127,7 @@ services:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
       S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
       S3_BUCKET: ${S3_BUCKET:-saymo-programs}
-      JWKS_URL: http://host.docker.internal:8001/jwks.json
+      JWKS_URL: http://host.docker.internal:8084/jwks.json
       JAEGER_OTLP_ENDPOINT: jaeger:4317
     ports:
       - "8003:8003"

@@ -6,6 +6,9 @@
 // @description BC#3 Rehabilitation Content Management (SayMo). S1: health/readiness.
 // @host localhost:8003
 // @BasePath /
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 package main
 
 import (

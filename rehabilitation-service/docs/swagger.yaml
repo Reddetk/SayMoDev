@@ -6,6 +6,114 @@ info:
   title: SayMo Rehabilitation Content Service API
   version: 0.1.0
 paths:
+  /content/programs:
+    get:
+      description: 'Public catalog: latest version of each program. Filters are optional.'
+      parameters:
+      - description: easy|medium|hard
+        in: query
+        name: difficulty
+        type: string
+      - description: aphasia type, up to 50 chars
+        in: query
+        name: aphasia_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List rehabilitation programs
+      tags:
+      - content
+  /content/programs/{programId}:
+    get:
+      description: Public program card. version defaults to the latest; lessons belong
+        to that version.
+      parameters:
+      - description: program UUID
+        in: path
+        name: programId
+        required: true
+        type: string
+      - description: program version
+        in: query
+        name: version
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get program by id and version
+      tags:
+      - content
+  /content/programs/{programId}/lessons/{lessonId}:
+    get:
+      description: Requires a valid patient/administrator JWT. contentUrl is a presigned
+        GET URL (TTL 1h).
+      parameters:
+      - description: program UUID
+        in: path
+        name: programId
+        required: true
+        type: string
+      - description: lesson UUID
+        in: path
+        name: lessonId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get lesson with presigned PDF URL
+      tags:
+      - content
   /health:
     get:
       description: Returns 200 while the process is alive.
@@ -40,4 +148,9 @@ paths:
       summary: Readiness probe
       tags:
       - health
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

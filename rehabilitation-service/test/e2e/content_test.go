@@ -3,12 +3,19 @@
 package e2e
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/auth"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 const seedProgramID = "3f2a9c11-7b4d-4e21-9c8a-1d2e3f4a5b6c"
@@ -101,4 +108,89 @@ func TestReadAPISeeded(t *testing.T) {
 			t.Fatalf("lesson contentUrl must be presigned: %s", body)
 		}
 	}
+}
+
+// TestLessonPresignedWithSignedToken подписывает токен ключом BC#1 (локальный E2E).
+// Требует E2E_SIGN_KEY (PEM), актуальный account:rev:<sub> в shared blacklist и JWKS_URL.
+func TestLessonPresignedWithSignedToken(t *testing.T) {
+	keyPath := os.Getenv("E2E_SIGN_KEY")
+	if keyPath == "" {
+		t.Skip("E2E_SIGN_KEY is not set")
+	}
+	key := loadPrivateKey(t, keyPath)
+
+	kid := os.Getenv("E2E_KID")
+	if kid == "" {
+		kid = "key-v1"
+	}
+	sub := os.Getenv("E2E_SUB")
+	if sub == "" {
+		sub = "3f2b9c4e-71a5-4d2e-9b8f-0c6a1d5e7f21"
+	}
+
+	now := time.Now()
+	claims := auth.Claims{
+		Role:      "patient",
+		SessionID: uuid.NewString(),
+		Rev:       1,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    auth.Issuer,
+			Subject:   sub,
+			Audience:  jwt.ClaimStrings{auth.Audience},
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ID:        uuid.NewString(),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = kid
+	signed, err := token.SignedString(key)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+
+	resp, body := doGet(t, baseURL()+"/content/programs/"+seedProgramID, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get program: %d (%s)", resp.StatusCode, body)
+	}
+	var program struct {
+		Lessons []struct {
+			LessonID string `json:"lessonId"`
+		} `json:"lessons"`
+	}
+	if err := json.Unmarshal([]byte(body), &program); err != nil || len(program.Lessons) == 0 {
+		t.Fatalf("parse program: %v (%s)", err, body)
+	}
+
+	resp, body = doGet(t, baseURL()+"/content/programs/"+seedProgramID+"/lessons/"+program.Lessons[0].LessonID, signed)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("lesson with signed JWT: want 200, got %d (%s)", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "X-Amz-Signature") {
+		t.Fatalf("contentUrl must be presigned: %s", body)
+	}
+}
+
+func loadPrivateKey(t *testing.T, path string) *rsa.PrivateKey {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read key: %v", err)
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		t.Fatal("PEM block not found")
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse key: %v", err)
+	}
+	key, ok := parsed.(*rsa.PrivateKey)
+	if !ok {
+		t.Fatal("key is not RSA")
+	}
+	return key
 }

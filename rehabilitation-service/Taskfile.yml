@@ -32,6 +32,11 @@ tasks:
     cmds:
       - go run ./cmd/migrate/main.go -action up
 
+  seed:
+    desc: Идемпотентный сид программы/уроков для E2E
+    cmds:
+      - go run ./cmd/seed/main.go
+
   migrate:down:
     desc: Откатить последнюю миграцию
     cmds:

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	rediscache "github.com/Reddetk/SayMoDev/rehabilitation-service/internal/adapter/redis"
+	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/domain"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/platform/cache"
 	"github.com/Reddetk/SayMoDev/rehabilitation-service/internal/port/out"
 	"go.uber.org/zap"
@@ -16,11 +16,17 @@ import (
 )
 
 const (
-	l1TTL           = 5 * time.Minute
-	l2TTL           = time.Hour
-	presignTTL      = time.Hour
-	presignCacheTTL = 55 * time.Minute
+	l1TTL            = 5 * time.Minute
+	l2TTL            = time.Hour
+	presignTTL       = time.Hour
+	presignCacheTTL  = 55 * time.Minute
+	presignMinRemain = 5 * time.Minute
 )
+
+type presignedRecord struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
 
 var ErrInvalidFilter = errors.New("invalid filter")
 
@@ -28,12 +34,12 @@ type ProgramQuery struct {
 	repo      out.ProgramRepository
 	presigner out.Presigner
 	l1        *cache.Cache
-	l2        *rediscache.Cache
+	l2        out.Cache
 	log       *zap.Logger
 	group     singleflight.Group
 }
 
-func NewProgramQuery(repo out.ProgramRepository, presigner out.Presigner, l2 *rediscache.Cache, log *zap.Logger) *ProgramQuery {
+func NewProgramQuery(repo out.ProgramRepository, presigner out.Presigner, l2 out.Cache, log *zap.Logger) *ProgramQuery {
 	if log == nil {
 		log = zap.NewNop()
 	}
@@ -47,40 +53,49 @@ func NewProgramQuery(repo out.ProgramRepository, presigner out.Presigner, l2 *re
 }
 
 func (q *ProgramQuery) List(ctx context.Context, filter out.ProgramFilter) ([]out.ProgramSummary, error) {
-	if filter.Difficulty != "" {
-		switch filter.Difficulty {
-		case "easy", "medium", "hard":
-		default:
-			return nil, ErrInvalidFilter
-		}
-	}
-	if filter.AphasiaType != "" && filter.AphasiaType != trimSpace(filter.AphasiaType) {
-		return nil, ErrInvalidFilter
+	if err := validateFilter(filter); err != nil {
+		return nil, err
 	}
 
-	key := fmt.Sprintf("programs:all:%s:%s", filter.Difficulty, filter.AphasiaType)
+	// Полный каталог кэшируется под документированным ключом programs:all;
+	// фильтры применяются в памяти, чтобы публичный query не плодил ключи L2/БД.
+	const key = "programs:all"
+	var items []out.ProgramSummary
 	if value, ok := q.l1.Get(key); ok {
-		return value.([]out.ProgramSummary), nil
-	}
+		items = value.([]out.ProgramSummary)
+	} else {
+		value, err, _ := q.group.Do(key, func() (any, error) {
+			var cached []out.ProgramSummary
+			if q.l2Get(ctx, key, &cached) {
+				q.l1.Set(key, cached, l1TTL)
+				return cached, nil
+			}
 
-	value, err, _ := q.group.Do(key, func() (any, error) {
-		var cached []out.ProgramSummary
-		if q.l2Get(ctx, key, &cached) {
-			return cached, nil
-		}
-
-		items, err := q.repo.List(ctx, filter)
+			fetched, err := q.repo.List(ctx, out.ProgramFilter{})
+			if err != nil {
+				return nil, err
+			}
+			q.l1.Set(key, fetched, l1TTL)
+			q.l2Set(ctx, key, fetched, l2TTL)
+			return fetched, nil
+		})
 		if err != nil {
 			return nil, err
 		}
-		q.l1.Set(key, items, l1TTL)
-		q.l2Set(ctx, key, items, l2TTL)
-		return items, nil
-	})
-	if err != nil {
-		return nil, err
+		items = value.([]out.ProgramSummary)
 	}
-	return value.([]out.ProgramSummary), nil
+
+	filtered := make([]out.ProgramSummary, 0, len(items))
+	for _, item := range items {
+		if filter.Difficulty != "" && item.Difficulty != filter.Difficulty {
+			continue
+		}
+		if filter.AphasiaType != "" && item.AphasiaType != filter.AphasiaType {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered, nil
 }
 
 func (q *ProgramQuery) Get(ctx context.Context, programID string, version int) (out.ProgramRecord, error) {
@@ -92,6 +107,7 @@ func (q *ProgramQuery) Get(ctx context.Context, programID string, version int) (
 	value, err, _ := q.group.Do(key, func() (any, error) {
 		var cached out.ProgramRecord
 		if q.l2Get(ctx, key, &cached) {
+			q.l1.Set(key, cached, l1TTL)
 			return cached, nil
 		}
 
@@ -110,28 +126,76 @@ func (q *ProgramQuery) Get(ctx context.Context, programID string, version int) (
 }
 
 func (q *ProgramQuery) GetLesson(ctx context.Context, programID, lessonID string) (out.LessonRecord, error) {
-	lesson, err := q.repo.GetLesson(ctx, programID, lessonID)
-	if err != nil {
-		return out.LessonRecord{}, err
+	metaKey := fmt.Sprintf("lesson:%s:%s", programID, lessonID)
+	var lesson out.LessonRecord
+	if value, ok := q.l1.Get(metaKey); ok {
+		lesson = value.(out.LessonRecord)
+	} else {
+		value, err, _ := q.group.Do(metaKey, func() (any, error) {
+			var cached out.LessonRecord
+			if q.l2Get(ctx, metaKey, &cached) {
+				q.l1.Set(metaKey, cached, l1TTL)
+				return cached, nil
+			}
+			record, err := q.repo.GetLesson(ctx, programID, lessonID)
+			if err != nil {
+				return nil, err
+			}
+			q.l1.Set(metaKey, record, l1TTL)
+			q.l2Set(ctx, metaKey, record, l2TTL)
+			return record, nil
+		})
+		if err != nil {
+			return out.LessonRecord{}, err
+		}
+		lesson = value.(out.LessonRecord)
 	}
 
-	presignKey := "presigned_url:" + lessonID
+	// Presigned URL живёт 1h; кэш 55min. Ссылка с остатком <=5min не отдаётся:
+	// перегенерируем, иначе клиент получит почти истёкший URL.
+	presignKey := fmt.Sprintf("presigned_url:%s:%s", programID, lessonID)
 	var presigned string
-	if q.l2Get(ctx, presignKey, &presigned) && presigned != "" {
-		lesson.ContentURL = presigned
-		return lesson, nil
-	}
+	value, err, _ := q.group.Do("presign:"+presignKey, func() (any, error) {
+		var cached presignedRecord
+		if q.l2Get(ctx, presignKey, &cached) && time.Until(cached.ExpiresAt) > presignMinRemain {
+			return cached.URL, nil
+		}
 
-	if q.presigner == nil {
-		return out.LessonRecord{}, fmt.Errorf("presigner is not configured")
-	}
-	presigned, err = q.presigner.PresignGet(ctx, lesson.ContentURL, presignTTL)
+		if q.presigner == nil {
+			return nil, fmt.Errorf("presigner is not configured")
+		}
+		generatedAt := time.Now()
+		generated, err := q.presigner.PresignGet(ctx, lesson.ContentURL, presignTTL)
+		if err != nil {
+			return nil, err
+		}
+		q.l2Set(ctx, presignKey, presignedRecord{URL: generated, ExpiresAt: generatedAt.Add(presignTTL)}, presignCacheTTL)
+		return generated, nil
+	})
 	if err != nil {
 		return out.LessonRecord{}, err
 	}
-	q.l2Set(ctx, presignKey, presigned, presignCacheTTL)
+	presigned = value.(string)
+
 	lesson.ContentURL = presigned
 	return lesson, nil
+}
+
+func validateFilter(filter out.ProgramFilter) error {
+	if filter.Difficulty != "" {
+		switch filter.Difficulty {
+		case "easy", "medium", "hard":
+		default:
+			return ErrInvalidFilter
+		}
+	}
+	if filter.AphasiaType != "" {
+		// Та же структурная валидация, что и домен: ≤50 рун, без обрамляющих пробелов.
+		if _, err := domain.NewClassifier("easy", filter.AphasiaType); err != nil {
+			return ErrInvalidFilter
+		}
+	}
+	return nil
 }
 
 func (q *ProgramQuery) l2Get(ctx context.Context, key string, dst any) bool {
@@ -153,15 +217,4 @@ func (q *ProgramQuery) l2Set(ctx context.Context, key string, value any, ttl tim
 	if err := q.l2.Set(ctx, key, value, ttl); err != nil {
 		q.log.Warn("l2 cache set failed", zap.String("key", key), zap.Error(err))
 	}
-}
-
-func trimSpace(value string) string {
-	start, end := 0, len(value)
-	for start < end && (value[start] == ' ' || value[start] == '\t' || value[start] == '\n' || value[start] == '\r') {
-		start++
-	}
-	for end > start && (value[end-1] == ' ' || value[end-1] == '\t' || value[end-1] == '\n' || value[end-1] == '\r') {
-		end--
-	}
-	return value[start:end]
 }

@@ -85,7 +85,7 @@ func New(ctx context.Context, cfg *config.Config, build handlerhttp.BuildInfo) (
 	repo := repositorypostgres.NewProgramRepository(pg.Pool())
 	presigner := s3.NewPresigner(s3probe.Client(), cfg.S3Bucket)
 	query := usecase.NewProgramQuery(repo, presigner, redis.NewCache(rdb.Client()), log)
-	content := &handlerhttp.ContentHandler{Query: query}
+	content := &handlerhttp.ContentHandler{Query: query, Log: log}
 
 	router := handlerhttp.NewRouter(handlerhttp.Deps{
 		Health:        checker,

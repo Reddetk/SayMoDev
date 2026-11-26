@@ -14,7 +14,7 @@
 
 ## План реализации (пайплайн AGENTS.md)
 
-**Текущий шаг: S4 — read API.** S1 закрыт 2026-11-25, S2 закрыт 2026-11-25 (домен 94.5% coverage, миграции 000004–000014), S3 закрыт 2026-11-26 (PASS ревьюера). **Блокер окружения:** на `C:` 0 байт свободно, Docker daemon отвечает 500 — E2E S4 и compose временно недоступны (см. «Блокер S4» ниже). Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
+**Текущий шаг: S5 — admin write API + S3.** S1 закрыт 2026-11-25, S2 закрыт 2026-11-25 (домен 94.5% coverage, миграции 000004–000014), S3 закрыт 2026-11-26 (PASS ревьюера), S4 — реализован и E2E-зелёный (7/7), ждёт ревьюера. Измерено 2026-11-25: Go 1.26.0 (windows/amd64), Docker 29.9.3, Docker Compose v5.7.0, goca v1.27.0, swag v1.16.4; `task` и `golangci-lint` не установлены.
 
 ### AS-IS: измеренные цифры (2026-11-25, до S1)
 
@@ -70,8 +70,8 @@ sequenceDiagram
 | **S1** | Окружение, тестовый стенд, health-check каждой среды | compose 2 → 8 сервисов (postgres, redis-bc3, kafka, s3mock, s3init, jaeger, migrate, server); `/health`+`/ready`+`/metrics` 2 → 3 (метрики на :9003); миграции 1 пустая → 3 инфраструктурные пары; тесты 0 → 9 test-функций / 40 PASS-записей + 5 E2E; GORM AutoMigrate → golang-migrate; 3 env-файла | deployment/*, Observability.md |
 | **S2** | Домен Program/Lesson + миграции | таблицы 0 → 2 (`programs`, `program_lessons`); миграции 3 → 14 пар (PK по версии, 5 индексов, CHECK-и домена); инварианты: classifier unique/immutable, ≥1 lesson, order_position без дыр, лимит 200; 107 PASS-записей; покрытие домена 94.5% | classification BC#3 §1–4 |
 | **S3** | JWT (RS256/JWKS) + RBAC + L1/L2 revocation | 3 CSV-фикстуры (62 кейса), auth coverage 76.6%; 401/403 ветки; JWKS-кэш TTL 1h, timeout 2s, fail-closed; RBAC `administrator`; fail-closed группы при `Auth == nil` (503) | classification §Authentication, ADR-003/004 |
-| **S4** | Read API каталога | 0 → 3 GET (`/content/programs`, `/{id}?version`, `/{id}/lessons/{lessonId}`); L1 5min + L2 Redis 1h + singleflight; presigned URL TTL 1h / кэш 55min; 15 fixture-кейсов, handler coverage 88.8%; E2E — блокер окружения | endpoints.md#bc3, classification §HTTP |
-| **S5** | Admin write API + S3 | 0 → 5 write-маршрутов (POST/PATCH/DELETE program, POST/PATCH/DELETE lesson); dedup SHA256; append не инкрементирует версию, insert_after_position инкрементирует; лимит 200 уроков; guard удаления через BC#4 | endpoints.md#bc3, classification §1–5 |
+| **S4** | Read API каталога | 0 → 3 GET (`/content/programs`, `/{id}?version`, `/{id}/lessons/{lessonId}`); L1 5min + L2 Redis 1h + singleflight; presigned URL TTL 1h / кэш 55min с перегенерацией при остатке ≤5min; 15 fixture-кейсов, handler 85.5%, E2E 7/7 | endpoints.md#bc3, classification §HTTP |
+| **S5** | Admin write API + S3 | 0 → 5 write-маршрутов (POST/PATCH/DELETE program, POST/PATCH/DELETE lesson); dedup SHA256; append не инкрементирует версию, insert_after_position инкрементирует; лимит 200; guard удаления через BC#4; ownership/403 для урока; инвалидация `programs:all`, `program:*`, `lesson:*`, `presigned_url:*` | endpoints.md#bc3, classification §1–5 |
 | **S6** | Kafka: outbox publisher + consumers | события 0 → 8 типов (`ProgramCreated`, `ProgramUpdated`, `ProgramDeleted`, `LessonAddedToProgram`, `LessonInsertedIntoProgram`, `LessonUpdated`, `LessonContentChanged`, `LessonRemovedFromProgram`); consumers 0 → 2 (`ProgramActivated`, `ProgramCompleted`), throttle 50 events/sec, idempotency TTL 7d | events.md#bc3, EventDataFlow T1/T2 |
 | **S7** | Миграция пациентов | 0 → 1 endpoint `POST /admin/content/programs/{programId}/migrate-patients`; 202 + `migration_job_id`; rate limit 10/min | endpoints.md#bc3, classification |
 | **S8** | Наблюдаемость, swagger, E2E | метрик 0 → семейства из Observability.md BC#3; `/metrics` :9003; `docs/` swagger; E2E по всем контрактам BC#3 | Observability.md |
@@ -167,7 +167,7 @@ Definition of done каждого шага: `go vet ./...`, `go build ./...`, `g
 - 401-ответ больше не содержит топологию/URL: `{"error":"unauthorized","code":"expired|signature|..."}`; детали — в WARN-лог.
 - `session_id` валидируется как UUID; `iat` обязателен; L1-кэш ограничен `min(now+60s, token.exp)`; массовый отзыв (`rev++`) также запаздывает до 60s (L1 allow) — принято по ADR-003.
 
-### S4 — read API (реализован, E2E заблокирован окружением)
+### S4 — read API (реализован; E2E зелёный, ждёт ревьюера)
 
 Реализовано:
 
@@ -178,9 +178,31 @@ Definition of done каждого шага: `go vet ./...`, `go build ./...`, `g
 - `internal/handler/http`: `GET /content/programs` (фильтры + 400), `GET /content/programs/:programId?version` (404/400), `GET /.../lessons/:lessonId` (JWT через auth-middleware, 401/404); публичные и auth-only группы роутера.
 - `cmd/seed`: идемпотентный сид программы/уроков для E2E.
 
-Гейт S4 (частично): `go build/vet/test -race` зелёные; `TestReadAPIFixtures` — **15/15 PASS**; `internal/handler/http` coverage **88.8%**. Ещё нет: E2E через Docker/БД, тесты usecase-кэша и pgx-SQL.
+Гейт S4: `go build/vet/test -race` зелёные; `TestReadAPIFixtures` — **15/15 PASS**; coverage: handler **85.5%**, usecase **69.6%**, platform/cache **84.8%**; E2E — **7/7 PASS**, в том числе `TestLessonPresignedWithSignedToken` (RS256-токен, подписанный ключом BC#1, реальный JWKS `:8084`, shared blacklist `:6383`, presigned URL из s3mock); swagger перегенерирован (`/content/programs*` в `docs/swagger.json`). Для повторного E2E:
 
-**Блокер S4 (только действие пользователя):** `C:` заполнен до 0 байт, Docker daemon (`/var/run/docker.sock` через Docker Desktop WSL) отвечает `500 Internal Server Error`. Контейнеры postgres/redis/kafka недоступны, поэтому `docker compose up`, миграции на живом стенде и HTTP-E2E выполнить нельзя. Нужно освободить место на `C:` (крупнейший потребитель — `C:\Users\user\AppData\Local\Docker`, ~25.7 GB) и перезапустить Docker Desktop. После этого: `docker compose --env-file .env.local up -d`, `go run ./cmd/migrate`, `go run ./cmd/seed`, `go test -tags=e2e ./test/e2e/...`.
+```powershell
+$env:POSTGRES_DSN='postgres://content:content_local_pw@localhost:5435/content_db?sslmode=disable'
+docker compose --env-file .env.local up -d
+go run ./cmd/migrate/main.go -action up
+go run ./cmd/seed/main.go
+$env:E2E_SIGN_KEY='D:\Program\sayMoDev\identy-service\testdata\keys\private.pem'
+$env:E2E_KID='key-v1'
+go test -tags=e2e ./test/e2e/... -count=1
+```
+
+Исправлено после ревью S4:
+
+- **Урок кэшируется L1 5min + singleflight**: L1 хранит метаданные урока (`lesson:<programId>:<lessonId>`), presign — отдельный L2-ключ; 20 параллельных запросов → 1 SQL + 1 presign (тест `TestGetLessonSingleflightAndPresignOnce`). L2-hit каталога/карточки теперь заполняет L1.
+- **L1 ограничен 1024 ключами** с вытеснением (защита от уникальных фильтров); `aphasia_type` валидируется доменом (≤50, без обрамляющих пробелов); пустой фильтр = «не задан» (docs: optional), фикстура `list_07` выровнена.
+- **Swagger**: аннотации `@Router` для трёх GET + `BearerAuth` security definition; `docs/` перегенерирован.
+- Usecase зависит от порта `out.Cache`, а не от адаптера Redis; добавлены unit-тесты L1/L2/singleflight/фильтров и границ L1.
+- 500-ошибки логируются через zap; `S3_ENDPOINT` в prod обязан быть https.
+- **Presigned TTL**: в L2 хранится `{url, expiresAt}`; при остатке ≤5min ссылка перегенерируется (тест `TestPresignedURLRegeneratedWhenLessThanFiveMinutesLeft`).
+- **Фильтр не размножает ключи**: полный каталог кэшируется под `programs:all`, фильтры применяются в памяти; Redis-bc3 ограничен `maxmemory 256mb` + `allkeys-lru`.
+
+Ограничение S4 (переносится в S5): ownership «урок доступен пациенту» через BC#4 не реализован — сейчас JWT + existence, любой аутентифицированный пользователь получает урок; 403 из classification появится в S5 вместе с синхронным guard удаления.
+
+
 
 
 
