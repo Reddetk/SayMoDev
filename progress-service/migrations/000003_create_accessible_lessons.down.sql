@@ -1,0 +1,3 @@
+BEGIN;
+DROP TABLE IF EXISTS accessible_lessons CASCADE;
+COMMIT;

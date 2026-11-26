@@ -1,0 +1,543 @@
+basePath: /
+definitions:
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AccessibleLessonView:
+    properties:
+      lessonId:
+        type: string
+      lessonType:
+        type: string
+      nextUnlockDate:
+        type: string
+      unlockReason:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActivateResult:
+    properties:
+      accessibleLesson:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.GrantedLessonView'
+      accountId:
+        type: string
+      completionPercent:
+        type: integer
+      programId:
+        type: string
+      status:
+        type: string
+      totalLessons:
+        type: integer
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActivePatientsView:
+    properties:
+      activePatientCount:
+        type: integer
+      patientIds:
+        items:
+          type: string
+        type: array
+      programId:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActiveProgramView:
+    properties:
+      activatedAt:
+        type: string
+      completedAt:
+        type: string
+      completionPercent:
+        type: integer
+      pausedAt:
+        type: string
+      programId:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAccessibleLessonView:
+    properties:
+      lessonId:
+        type: string
+      revokedAt:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAnswerView:
+    properties:
+      answerId:
+        type: string
+      lessonId:
+        type: string
+      lessonTitle:
+        type: string
+      mediaType:
+        type: string
+      payload:
+        type: string
+      submittedAt:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAnswersPage:
+    properties:
+      answers:
+        items:
+          $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAnswerView'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminProgressView:
+    properties:
+      accessibleLessons:
+        items:
+          $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAccessibleLessonView'
+        type: array
+      accountId:
+        type: string
+      activeProgram:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActiveProgramView'
+      completedLessons:
+        type: integer
+      completionPercent:
+        type: integer
+      email:
+        type: string
+      lastUpdatedAt:
+        type: string
+      pausedPrograms:
+        items:
+          $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.PausedProgramView'
+        type: array
+      programId:
+        type: string
+      status:
+        type: string
+      tariffSnapshot:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.TariffSnapshotView'
+      totalLessons:
+        type: integer
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ChangeDifficultyResult:
+    properties:
+      message:
+        type: string
+      newCompletionPercent:
+        type: integer
+      newProgramId:
+        type: string
+      oldCompletionPercent:
+        type: integer
+      oldProgramId:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.CompleteResult:
+    properties:
+      completionPercent:
+        type: integer
+      nextLessonId:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.GrantedLessonView:
+    properties:
+      lessonId:
+        type: string
+      orderPosition:
+        type: integer
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.PausedProgramView:
+    properties:
+      activatedAt:
+        type: string
+      completionPercent:
+        type: integer
+      pausedAt:
+        type: string
+      programId:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.PresignResult:
+    properties:
+      expiresAt:
+        type: string
+      objectKey:
+        type: string
+      presignedPutUrl:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ProgressView:
+    properties:
+      accessibleLesson:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AccessibleLessonView'
+      accountId:
+        type: string
+      activeProgram:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActiveProgramView'
+      completedLessons:
+        type: integer
+      completionPercent:
+        type: integer
+      lastUpdatedAt:
+        type: string
+      programId:
+        type: string
+      status:
+        type: string
+      tariffSnapshot:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.TariffSnapshotView'
+      totalLessons:
+        type: integer
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ResumeResult:
+    properties:
+      accessibleLesson:
+        $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.GrantedLessonView'
+      completionPercent:
+        type: integer
+      message:
+        type: string
+      programId:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.SubmitAnswerResult:
+    properties:
+      answerId:
+        type: string
+      message:
+        type: string
+      submittedAt:
+        type: string
+    type: object
+  github_com_Reddetk_SayMoDev_progress-service_internal_port_in.TariffSnapshotView:
+    properties:
+      activatedAt:
+        type: string
+      timezone:
+        type: string
+      validUntil:
+        type: string
+      weekBitmap:
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: 'Progress tracking and assessment: programs, answers, completion, tariff-based
+    access.'
+  title: progress-service API (BC#4)
+  version: "1.0"
+paths:
+  /admin/answers/{accountId}:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAnswersPage'
+      security:
+      - BearerAuth: []
+      summary: 'Admin: all answers'
+      tags:
+      - admin
+  /admin/answers/{accountId}/{lessonId}:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAnswerView'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 'Admin: lesson answers'
+      tags:
+      - admin
+  /admin/progress/{accountId}:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminProgressView'
+      security:
+      - BearerAuth: []
+      summary: 'Admin: patient progress'
+      tags:
+      - admin
+  /admin/progress/{accountId}/difficulty:
+    patch:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ChangeDifficultyResult'
+      security:
+      - BearerAuth: []
+      summary: 'Admin: change difficulty'
+      tags:
+      - admin
+  /admin/progress/program/{programId}/version/{version}/active-patients:
+    get:
+      parameters:
+      - description: Shared service-to-service secret
+        in: header
+        name: X-Service-Token
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActivePatientsView'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 'Deletion guard: active patients'
+      tags:
+      - admin
+  /progress/difficulty:
+    patch:
+      parameters:
+      - description: UUID v4
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ChangeDifficultyResult'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Change difficulty
+      tags:
+      - progress
+  /progress/lessons/{lessonId}/answers:
+    post:
+      parameters:
+      - description: UUID v4
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.SubmitAnswerResult'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Submit answer
+      tags:
+      - answers
+  /progress/lessons/{lessonId}/answers/presign:
+    post:
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.PresignResult'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Presign answer upload
+      tags:
+      - answers
+  /progress/lessons/{lessonId}/complete:
+    post:
+      parameters:
+      - description: UUID v4
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.CompleteResult'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Complete lesson
+      tags:
+      - progress
+  /progress/me:
+    delete:
+      parameters:
+      - description: delete-my-progress
+        in: header
+        name: X-Confirmation
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Self-delete progress
+      tags:
+      - progress
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ProgressView'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Patient progress
+      tags:
+      - progress
+  /progress/me/activate:
+    post:
+      parameters:
+      - description: UUID v4
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActivateResult'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Activate program
+      tags:
+      - progress
+  /progress/programs/{programId}/resume:
+    post:
+      parameters:
+      - description: UUID v4
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ResumeResult'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Resume program
+      tags:
+      - progress
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

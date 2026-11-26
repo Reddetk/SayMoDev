@@ -1,0 +1,858 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Progress tracking and assessment: programs, answers, completion, tariff-based access.",
+        "title": "progress-service API (BC#4)",
+        "contact": {},
+        "version": "1.0"
+    },
+    "basePath": "/",
+    "paths": {
+        "/admin/answers/{accountId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Admin: all answers",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAnswersPage"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/answers/{accountId}/{lessonId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Admin: lesson answers",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAnswerView"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/progress/program/{programId}/version/{version}/active-patients": {
+            "get": {
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Deletion guard: active patients",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shared service-to-service secret",
+                        "name": "X-Service-Token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActivePatientsView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/progress/{accountId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Admin: patient progress",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminProgressView"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/progress/{accountId}/difficulty": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Admin: change difficulty",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ChangeDifficultyResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/progress/difficulty": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "progress"
+                ],
+                "summary": "Change difficulty",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID v4",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ChangeDifficultyResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/progress/lessons/{lessonId}/answers": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "answers"
+                ],
+                "summary": "Submit answer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID v4",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.SubmitAnswerResult"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/progress/lessons/{lessonId}/answers/presign": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "answers"
+                ],
+                "summary": "Presign answer upload",
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.PresignResult"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/progress/lessons/{lessonId}/complete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "progress"
+                ],
+                "summary": "Complete lesson",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID v4",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.CompleteResult"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/progress/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "progress"
+                ],
+                "summary": "Patient progress",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ProgressView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "progress"
+                ],
+                "summary": "Self-delete progress",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "delete-my-progress",
+                        "name": "X-Confirmation",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/progress/me/activate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "progress"
+                ],
+                "summary": "Activate program",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID v4",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActivateResult"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/progress/programs/{programId}/resume": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "progress"
+                ],
+                "summary": "Resume program",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID v4",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ResumeResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AccessibleLessonView": {
+            "type": "object",
+            "properties": {
+                "lessonId": {
+                    "type": "string"
+                },
+                "lessonType": {
+                    "type": "string"
+                },
+                "nextUnlockDate": {
+                    "type": "string"
+                },
+                "unlockReason": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActivateResult": {
+            "type": "object",
+            "properties": {
+                "accessibleLesson": {
+                    "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.GrantedLessonView"
+                },
+                "accountId": {
+                    "type": "string"
+                },
+                "completionPercent": {
+                    "type": "integer"
+                },
+                "programId": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "totalLessons": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActivePatientsView": {
+            "type": "object",
+            "properties": {
+                "activePatientCount": {
+                    "type": "integer"
+                },
+                "patientIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "programId": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActiveProgramView": {
+            "type": "object",
+            "properties": {
+                "activatedAt": {
+                    "type": "string"
+                },
+                "completedAt": {
+                    "type": "string"
+                },
+                "completionPercent": {
+                    "type": "integer"
+                },
+                "pausedAt": {
+                    "type": "string"
+                },
+                "programId": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAccessibleLessonView": {
+            "type": "object",
+            "properties": {
+                "lessonId": {
+                    "type": "string"
+                },
+                "revokedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAnswerView": {
+            "type": "object",
+            "properties": {
+                "answerId": {
+                    "type": "string"
+                },
+                "lessonId": {
+                    "type": "string"
+                },
+                "lessonTitle": {
+                    "type": "string"
+                },
+                "mediaType": {
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "string"
+                },
+                "submittedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAnswersPage": {
+            "type": "object",
+            "properties": {
+                "answers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAnswerView"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminProgressView": {
+            "type": "object",
+            "properties": {
+                "accessibleLessons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AdminAccessibleLessonView"
+                    }
+                },
+                "accountId": {
+                    "type": "string"
+                },
+                "activeProgram": {
+                    "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActiveProgramView"
+                },
+                "completedLessons": {
+                    "type": "integer"
+                },
+                "completionPercent": {
+                    "type": "integer"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "lastUpdatedAt": {
+                    "type": "string"
+                },
+                "pausedPrograms": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.PausedProgramView"
+                    }
+                },
+                "programId": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tariffSnapshot": {
+                    "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.TariffSnapshotView"
+                },
+                "totalLessons": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ChangeDifficultyResult": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "newCompletionPercent": {
+                    "type": "integer"
+                },
+                "newProgramId": {
+                    "type": "string"
+                },
+                "oldCompletionPercent": {
+                    "type": "integer"
+                },
+                "oldProgramId": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.CompleteResult": {
+            "type": "object",
+            "properties": {
+                "completionPercent": {
+                    "type": "integer"
+                },
+                "nextLessonId": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.GrantedLessonView": {
+            "type": "object",
+            "properties": {
+                "lessonId": {
+                    "type": "string"
+                },
+                "orderPosition": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.PausedProgramView": {
+            "type": "object",
+            "properties": {
+                "activatedAt": {
+                    "type": "string"
+                },
+                "completionPercent": {
+                    "type": "integer"
+                },
+                "pausedAt": {
+                    "type": "string"
+                },
+                "programId": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.PresignResult": {
+            "type": "object",
+            "properties": {
+                "expiresAt": {
+                    "type": "string"
+                },
+                "objectKey": {
+                    "type": "string"
+                },
+                "presignedPutUrl": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ProgressView": {
+            "type": "object",
+            "properties": {
+                "accessibleLesson": {
+                    "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.AccessibleLessonView"
+                },
+                "accountId": {
+                    "type": "string"
+                },
+                "activeProgram": {
+                    "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ActiveProgramView"
+                },
+                "completedLessons": {
+                    "type": "integer"
+                },
+                "completionPercent": {
+                    "type": "integer"
+                },
+                "lastUpdatedAt": {
+                    "type": "string"
+                },
+                "programId": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tariffSnapshot": {
+                    "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.TariffSnapshotView"
+                },
+                "totalLessons": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.ResumeResult": {
+            "type": "object",
+            "properties": {
+                "accessibleLesson": {
+                    "$ref": "#/definitions/github_com_Reddetk_SayMoDev_progress-service_internal_port_in.GrantedLessonView"
+                },
+                "completionPercent": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "programId": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.SubmitAnswerResult": {
+            "type": "object",
+            "properties": {
+                "answerId": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "submittedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Reddetk_SayMoDev_progress-service_internal_port_in.TariffSnapshotView": {
+            "type": "object",
+            "properties": {
+                "activatedAt": {
+                    "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
+                },
+                "validUntil": {
+                    "type": "string"
+                },
+                "weekBitmap": {
+                    "type": "integer"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

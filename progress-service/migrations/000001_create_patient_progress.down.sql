@@ -1,0 +1,3 @@
+BEGIN;
+DROP TABLE IF EXISTS patient_progress CASCADE;
+COMMIT;

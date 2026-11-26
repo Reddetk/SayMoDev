@@ -1,0 +1,70 @@
+version: "3"
+
+dotenv: [".env.{{.ENV | default "local"}}"]
+
+vars:
+  ENV: '{{.ENV | default "local"}}'
+  POSTGRES_DSN: '{{.POSTGRES_DSN}}'
+
+tasks:
+  infra:up:
+    desc: Start postgres + redis-bc4 + shared redis-blacklist
+    cmds:
+      - docker network create saymo-blacklist 2>nul || exit 0
+      - docker compose --env-file .env.{{.ENV}} up -d postgres redis-bc4 redis-blacklist
+
+  infra:down:
+    desc: Stop infrastructure
+    cmds:
+      - docker compose --env-file .env.{{.ENV}} down
+
+  keys:
+    desc: Generate local RS256 keys for the test bench
+    cmds:
+      - go run ./cmd/genrsa -out ./testdata/keys
+
+  jwks:mock:
+    desc: Serve local JWKS on :8099
+    cmds:
+      - go run ./cmd/jwksmock
+
+  migrate:up:
+    desc: Apply all pending migrations
+    cmds:
+      - go run ./cmd/migrate/main.go -action up
+
+  migrate:down:
+    desc: Roll back the last migration
+    cmds:
+      - go run ./cmd/migrate/main.go -action down
+
+  migrate:force:
+    desc: Force migration version (VERSION=N)
+    cmds:
+      - go run ./cmd/migrate/main.go -action force -version {{.VERSION}}
+
+  run:
+    desc: Run the HTTP server
+    cmds:
+      - go run ./cmd/server/main.go
+
+  test:unit:
+    desc: Unit tests (no external dependencies)
+    cmds:
+      - go test ./internal/core/... -count=1 -race
+
+  test:integration:
+    desc: Adapter/HTTP tests against real postgres+redis
+    cmds:
+      - go test -tags=integration ./... -count=1 -race
+
+  build:
+    desc: Build the server binary
+    cmds:
+      - go build -o bin/server ./cmd/server/main.go
+
+  lint:
+    desc: Vet + golangci-lint when installed
+    cmds:
+      - go vet ./...
+      - golangci-lint run ./...

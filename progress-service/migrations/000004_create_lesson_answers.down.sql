@@ -1,0 +1,3 @@
+BEGIN;
+DROP TABLE IF EXISTS lesson_answers CASCADE;
+COMMIT;
